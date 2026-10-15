@@ -9,6 +9,7 @@ use crate::{primitives::FocusNext, theme::Theme};
 
 mod boards;
 mod panels;
+mod pinch;
 mod stale;
 mod tools;
 
