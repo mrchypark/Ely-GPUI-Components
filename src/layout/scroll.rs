@@ -17,16 +17,10 @@ const IDLE: Duration = Duration::from_millis(900);
 /// Sets `scroll`'s offset along `axis` whole so `item`, as painted, sits inside the box, its start first when it is longer; true when it moved.
 pub(crate) fn bring_into_view(scroll: &ScrollHandle, item: Bounds<Pixels>, axis: Axis) -> bool {
     let (frame, offset) = (scroll.bounds(), scroll.offset());
-    let ((start, end), (first, last)) = match axis {
-        Axis::Horizontal => ((item.left(), item.right()), (frame.left(), frame.right())),
-        Axis::Vertical => ((item.top(), item.bottom()), (frame.top(), frame.bottom())),
-    };
-    let shift = if start < first {
-        first - start
-    } else if end > last {
-        (last - end).max(first - start)
-    } else {
-        Pixels::ZERO
+    let delta = super::reveal_offset(item, frame);
+    let shift = match axis {
+        Axis::Horizontal => delta.x,
+        Axis::Vertical => delta.y,
     };
     if shift != Pixels::ZERO {
         scroll.set_offset(match axis {
@@ -46,19 +40,72 @@ pub(crate) fn reveal_when_focused(
     window: &mut Window,
     cx: &mut App,
 ) -> Canvas<()> {
-    let shown = window.use_keyed_state(id, cx, |_, _| false);
+    focus_revealer(id, scroll, focus, axis, None, window, cx)
+}
+
+/// Reveals again when usable bounds change while focus stays in the same field.
+/// Resize the scroll viewport or add keyboard padding before layout; bounds alone add no scroll reach.
+pub fn reveal_when_focused_in_bounds(
+    id: impl Into<ElementId>,
+    scroll: &ScrollHandle,
+    focus: &FocusHandle,
+    axis: Axis,
+    visible: Bounds<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Canvas<()> {
+    focus_revealer(id, scroll, focus, axis, Some(visible), window, cx)
+}
+
+fn focus_revealer(
+    id: impl Into<ElementId>,
+    scroll: &ScrollHandle,
+    focus: &FocusHandle,
+    axis: Axis,
+    visible: Option<Bounds<Pixels>>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Canvas<()> {
+    let shown = window.use_keyed_state(id, cx, |_, _| (false, None));
     let (scroll, focus) = (scroll.clone(), focus.clone());
     canvas(
         move |bounds, window, cx| {
             let (focused, held) = (focus.is_focused(window), *shown.read(cx));
-            if focused && !held {
-                shown.update(cx, |shown, _| *shown = true);
-                if bring_into_view(&scroll, bounds, axis) {
+            if focused && (!held.0 || held.1 != visible) {
+                shown.update(cx, |shown, _| *shown = (true, visible));
+                let moved = if let Some(mut visible) = visible {
+                    let frame = scroll.bounds();
+                    match axis {
+                        Axis::Horizontal => {
+                            visible.origin.y = frame.origin.y;
+                            visible.size.height = frame.size.height;
+                        }
+                        Axis::Vertical => {
+                            visible.origin.x = frame.origin.x;
+                            visible.size.width = frame.size.width;
+                        }
+                    }
+                    let mut field = bounds;
+                    match axis {
+                        Axis::Horizontal => {
+                            field.origin.y = frame.origin.y;
+                            field.size.height = frame.size.height;
+                        }
+                        Axis::Vertical => {
+                            field.origin.x = frame.origin.x;
+                            field.size.width = frame.size.width;
+                        }
+                    }
+                    super::reveal_in_bounds(&scroll, field, visible)
+                } else {
+                    bring_into_view(&scroll, bounds, axis)
+                };
+                if moved {
                     log::info!("scroll: a focused stop came into view");
                     window.request_animation_frame();
                 }
-            } else if !focused && held {
-                shown.update(cx, |shown, _| *shown = false);
+            } else if !focused && held.0 {
+                shown.update(cx, |shown, _| *shown = (false, None));
             }
         },
         |_, _, _, _| {},
