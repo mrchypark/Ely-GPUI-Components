@@ -1,9 +1,10 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, DragMoveEvent, ElementId, EmptyView, EntityId,
-    FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce,
-    SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*, relative,
+    Animation, AnimationExt, AnyElement, App, Bounds, DragMoveEvent, ElementId, EmptyView,
+    EntityId, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*,
+    relative,
 };
 use smallvec::SmallVec;
 
@@ -39,6 +40,7 @@ fn title_row(title: SharedString, close: Close, cx: &App) -> impl IntoElement + 
 pub struct Sheet {
     id: ElementId,
     side: Place,
+    usable_bounds: Option<Bounds<Pixels>>,
     title: SharedString,
     on_close: Close,
     body: SmallVec<[AnyElement; 2]>,
@@ -56,10 +58,17 @@ impl Sheet {
         Self {
             id: id.into(),
             side,
+            usable_bounds: None,
             title: title.into(),
             on_close: Rc::new(on_close),
             body: SmallVec::new(),
         }
+    }
+
+    /// Constrains the panel to logical window bounds supplied by the host.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 }
 
@@ -76,6 +85,7 @@ impl RenderOnce for Sheet {
         let travel = size.to_pixels(window.rem_size());
         let side = self.side;
         let panel = div()
+            .id((self.id.clone(), "panel"))
             .flex()
             .flex_col()
             .gap_5()
@@ -85,6 +95,18 @@ impl RenderOnce for Sheet {
             .map(|panel| match side {
                 Place::Left | Place::Right => panel.w(size).h_full(),
                 Place::Top | Place::Bottom | Place::Center => panel.h(size).w_full(),
+            })
+            .when_some(self.usable_bounds, |panel, bounds| {
+                panel
+                    .map(|panel| match side {
+                        Place::Left | Place::Right => {
+                            panel.w(travel.min(bounds.size.width)).h(bounds.size.height)
+                        }
+                        _ => panel.w(bounds.size.width).h(travel.min(bounds.size.height)),
+                    })
+                    .max_w(bounds.size.width)
+                    .max_h(bounds.size.height)
+                    .overflow_y_scroll()
             })
             .child(title_row(self.title, self.on_close.clone(), cx))
             .children(self.body)
@@ -105,6 +127,9 @@ impl RenderOnce for Sheet {
         let close = self.on_close;
         Backdrop::new(self.id)
             .place(side)
+            .when_some(self.usable_bounds, |backdrop, bounds| {
+                backdrop.content_bounds(bounds)
+            })
             .on_dismiss(move |window, cx| close(window, cx))
             .child(panel)
     }

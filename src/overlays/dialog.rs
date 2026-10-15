@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ElementId, FocusHandle, FontWeight,
+    Animation, AnimationExt, AnyElement, App, Bounds, ElementId, FocusHandle, FontWeight,
     InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, Role, SharedString,
     StatefulInteractiveElement, Styled, Window, anchored, div, point, prelude::*,
 };
@@ -32,6 +32,7 @@ pub struct Dialog {
     enter: Option<OnEnter>,
     scrim_closes: bool,
     fullscreen: bool,
+    usable_bounds: Option<Bounds<Pixels>>,
     first: Option<FocusHandle>,
     on_close: Run,
 }
@@ -52,6 +53,7 @@ impl Dialog {
             enter: None,
             scrim_closes: true,
             fullscreen: false,
+            usable_bounds: None,
             first: None,
             on_close: Rc::new(on_close),
         }
@@ -78,6 +80,12 @@ impl Dialog {
     /// Fills the window below its title bar, under a bar with the title and a close button.
     pub fn fullscreen(mut self) -> Self {
         self.fullscreen = true;
+        self
+    }
+
+    /// Uses logical window bounds supplied by the host, including keyboard avoidance.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
         self
     }
 
@@ -226,6 +234,14 @@ impl RenderOnce for Dialog {
                 .gap_5()
                 .w(theme.dialog_width())
                 .max_h(window.viewport_size().height - margin * 2.0)
+                .when_some(self.usable_bounds, |card, bounds| {
+                    card.w(bounds
+                        .size
+                        .width
+                        .min(theme.dialog_width().to_pixels(window.rem_size())))
+                        .max_h(bounds.size.height)
+                        .overflow_hidden()
+                })
                 .p_6()
                 .rounded(theme.radius(Radius::Xl))
                 .bg(colors.overlay)
@@ -277,12 +293,21 @@ impl RenderOnce for Dialog {
         if fullscreen {
             let viewport = window.viewport_size();
             let top = cx.theme().titlebar_height().to_pixels(window.rem_size());
+            let bounds = self.usable_bounds.unwrap_or_else(|| {
+                Bounds::new(
+                    point(Pixels::ZERO, top),
+                    gpui::size(viewport.width, viewport.height - top),
+                )
+            });
             return raise(
                 (self.id.clone(), "raised"),
-                anchored().position(point(Pixels::ZERO, top)).child(
+                anchored().position(bounds.origin).child(
                     div()
-                        .w(viewport.width)
-                        .h(viewport.height - top)
+                        .w(bounds.size.width)
+                        .h(bounds.size.height)
+                        .when(self.usable_bounds.is_some(), |layer| {
+                            layer.overflow_hidden()
+                        })
                         .occlude()
                         .child(layer),
                 ),
@@ -292,6 +317,9 @@ impl RenderOnce for Dialog {
         }
         let scrim_closes = self.scrim_closes;
         Backdrop::new((self.id, "scrim"))
+            .when_some(self.usable_bounds, |backdrop, bounds| {
+                backdrop.content_bounds(bounds)
+            })
             .on_dismiss(move |window, cx| {
                 if scrim_closes {
                     dismiss(window, cx);
