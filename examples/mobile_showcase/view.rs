@@ -3,6 +3,7 @@ use ely_gpui_component::{
     canvas::{CanvasTouch, InfiniteCanvas, TouchAction, TouchContact, Viewport, ZoomControls},
     forms::{Input, TextInput},
     layout::{ViewportInsets, is_compact, reveal_when_focused_in_bounds, usable_bounds},
+    menus::{DropdownMenu, Menu, MenuItem},
     overlays::Dialog,
     primitives::{FocusScope, Place},
     theme::ActiveTheme,
@@ -235,6 +236,16 @@ impl Render for Showcase {
                             .child("Desktop preview · simulated insets and contacts")
                             .child(controls)
                             .child(navigation)
+                            .child(DropdownMenu::new(
+                                "mobile-menu",
+                                "Menu",
+                                Menu::new().usable_bounds(available).item(MenuItem::submenu(
+                                    "Workspace",
+                                    Menu::new()
+                                        .item(MenuItem::new("Map"))
+                                        .item(MenuItem::new("Layers")),
+                                )),
+                            ))
                             .child(Button::new("info", "Map info").on_click(move |_, _, cx| {
                                 info_open.update(cx, |view, cx| {
                                     view.info = true;

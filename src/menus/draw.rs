@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Bounds, Div, ElementId, Entity, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Pixels, Role, SharedString, Stateful, Styled, accesskit::Action,
-    canvas, div, prelude::*,
+    MouseButton, ParentElement, Pixels, Role, ScrollHandle, SharedString, Stateful, Styled, Window,
+    accesskit::Action, canvas, div, prelude::*,
 };
 
 use super::{
@@ -12,7 +12,7 @@ use super::{
     model::{Entry, Kind, Menu, MenuItem},
 };
 use crate::{
-    forms::{Run, surface},
+    forms::{Run, reveal, revealer, surface},
     i18n,
     navigation::marked,
     primitives::{Icon, IconName, Tooltip},
@@ -159,13 +159,38 @@ pub(super) fn panel(
     depth: usize,
     close: &Run,
     head: Option<AnyElement>,
-    cx: &App,
+    window: &mut Window,
+    cx: &mut App,
 ) -> Stateful<Div> {
+    let path: Vec<_> = state.read(cx).levels[..depth]
+        .iter()
+        .map(|level| (level.at, level.column, level.name.clone()))
+        .collect();
+    let scrolling = window.use_keyed_state((id.clone(), format!("scroll-{path:?}")), cx, |_, _| {
+        (ScrollHandle::new(), None)
+    });
+    let at = state.read(cx).levels[depth].at;
+    let reveal = reveal(
+        &scrolling,
+        |state| &mut state.1,
+        at.is_some(),
+        at.unwrap_or(0),
+        cx,
+    );
+    let handle = scrolling.read(cx).0.clone();
     let open = state.read(cx);
     let here = at_depth(menu, &open.levels, depth).expect("settled levels follow submenu rows");
     let at = open.levels[depth].at;
     let theme = cx.theme();
     let colors = &theme.colors;
+    let height = theme
+        .list_max_height()
+        .to_pixels(window.rem_size())
+        .min((window.viewport_size().height - theme.window_margin() * 2.0).max(Pixels::ZERO));
+    let usable = menu
+        .usable_bounds
+        .map(|bounds| super::placement::area(bounds, window.viewport_size()));
+    let height = usable.map_or(height, |bounds| height.min(bounds.size.height));
     let rows = here
         .entries
         .iter()
@@ -256,6 +281,7 @@ pub(super) fn panel(
             }
         });
     surface((id.clone(), format!("panel-{depth}")), cx)
+        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
         .role(Role::Menu)
         .debug_selector(move || format!("menu-panel-{depth}"))
         .relative()
@@ -267,11 +293,44 @@ pub(super) fn panel(
             cx.stop_propagation();
         })
         .min_w(theme.menu_width())
+        .when_some(usable, |panel, bounds| {
+            let width = theme
+                .menu_width()
+                .to_pixels(window.rem_size())
+                .min(bounds.size.width);
+            panel.min_w(width).w(width).max_w(width).overflow_hidden()
+        })
+        .max_h(height)
         .p_1()
         .flex()
         .flex_col()
-        .children(head)
-        .children(rows)
+        .children(head.map(|head| div().flex_none().child(head)))
+        .child(
+            div()
+                .id((id.clone(), format!("rows-{depth}")))
+                .debug_selector(move || format!("menu-scroll-{depth}"))
+                .min_h_0()
+                .overflow_y_scroll()
+                .track_scroll(&handle)
+                .flex()
+                .flex_col()
+                .children(rows.map(|row| div().flex_none().child(row)))
+                .when_some(reveal, |rows, (ix, done)| {
+                    rows.child(revealer(&handle, ix, done))
+                })
+                .on_scroll_wheel({
+                    let state = state.clone();
+                    move |_, _, cx| {
+                        state.update(cx, |open, cx| {
+                            open.pending = None;
+                            if open.levels.len() > depth + 1 {
+                                open.levels.truncate(depth + 1);
+                                cx.notify();
+                            }
+                        });
+                    }
+                }),
+        )
         .child(measure(state.clone(), move |open, bounds| {
             let level = &mut open.levels[depth];
             let changed = level.panel != bounds;

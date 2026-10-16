@@ -1,5 +1,30 @@
 # Mobile layout and input contract
 
+## Current validation (2026-10-17)
+
+The app-compatible Git GPUI branch passed 42 focused menu tests; the registry
+upstream branch passed 60. These are separate runs, not full-suite certification.
+On Android, the app-compatible integration APK SHA-256
+`0098ddda661c0050794bba25efd6a099f7cac83dda659942d3d53dffc9ac5341`
+passed menu opening, overlapping submenu swipe with stable background, Last item
+selection (index 30, count 1), Home/resume, outside dismissal, and subsequent
+canvas drag. The upstream registry branch was not the APK's dependency.
+
+The previous APK leaked wheel events into underlying controls/canvas. Both source
+lines now stop propagation at the outer menu panel after the rows handle their
+scroll. Host regressions include an actual ancestor ScrollHandle, boundary/padding
+containment and a closed-menu scrolling positive control. One earlier resume
+observation (capture 13) remains unexplained and did not recur after cold restart;
+it is not assigned a root cause. Cleanup stopped the test app and retained the APK.
+
+This does not certify IME, rotation, multitouch, GPS/BLE, iOS runtime or all widgets.
+IME backend ownership remains with gpui-mobile. Local evidence is retained under
+`outputs/ely-menu-device-20261016/result.md` in the task workspace; artifacts are not
+included in this library. Older check-only results below are historical snapshots,
+not a statement that the focused menu tests remain unexecuted.
+See [component roadmap](mobile-component-roadmap.md) for proposed follow-up work.
+
+
 This document specifies the adapter contract for the forward port. It is not evidence of device support. See [the compatibility matrix](mobile-build-compatibility.md) for dependency identities and validation status.
 
 ## Geometry and focus
@@ -9,6 +34,8 @@ The application supplies window geometry in logical window pixels, not physical 
 A keyboard rectangle may become a bottom inset only when it covers the full viewport width and docks to its bottom edge, after normalization to the current viewport. Floating or split keyboard rectangles are unsupported by this conversion; do not treat their height as a bottom inset. The example-only conversion helper and tests are implemented. Review found no functional issues for expected finite, valid bounds: coverage includes a nonzero origin, full-width bottom dock, maximum overlapping exclusion, hidden keyboard, and floating/partial rectangles. The scratch shared-view tests compiled successfully for iOS (exit 0); their execution remains unverified. This mock helper demonstrates the integration contract, not a native backend; OS normalization remains unverified. Insets alone do not prove focused-field visibility: the integration must connect current focused-field/caret bounds to its scroll owner, reveal the field after layout changes, and preserve focus restoration when overlays close.
 
 Choose compact navigation and overlay placement from available bounds, not OS identity. Reuse existing Dialog and Sheet behavior; clamp their size and placement to the available region. Preserve desktop keyboard behavior and focus ownership. Test 280px width, large text, light/dark appearance, rotation, keyboard transitions and overlay dismissal separately from compilation.
+
+Pass that same rectangle to `Menu::usable_bounds(available)` on the root menu. Dropdown, context and searchable menu panels and their submenus share the region; filtering preserves it. Rebuild with updated bounds when keyboard or viewport geometry changes. The option caps panel width and scrolling height and clamps placement using the current frame's actual layout size. Without it, desktop placement is unchanged. The mobile showcase includes a nested menu using its simulated usable region. Focused menu regressions passed as recorded above; Android evidence applies only to the app-compatible branch. Keyboard acceptance remains separate.
 
 ## Canvas coordinates and gesture ownership
 
@@ -32,6 +59,6 @@ The adapter owns pointer capture, focus assignment, native event translation and
 
 ## Scope and evidence limits
 
-The showcase demonstrates integration policy with simulated safe-area/keyboard data and gesture replay. A desktop launcher or mobile type-check entry point is not an iOS/Android host. Buttons, inputs, lists, menus, scrolling, dialogs and sheets still require real touch, keyboard/IME, accessibility and focus testing. Hover-dependent affordances and small controls need device review. GPS/BLE and domain-specific map editing belong outside Ely.
+The showcase demonstrates integration policy with simulated safe-area/keyboard data and gesture replay. A desktop launcher or mobile type-check entry point is not an iOS/Android host. Broader real touch, keyboard/IME, accessibility and focus testing remains necessary beyond the bounded app-compatible menu acceptance above. Hover-dependent affordances and small controls need device review. GPS/BLE and domain-specific map editing belong outside Ely.
 
 The patch-map application uses `canvas::Viewport`; it does not gain mobile support merely because `layout::Viewport` changes. Application editing/history, backend rendering, linking and performance require independent integration evidence. The registry candidate does not change the application's pinned GPUI contract.

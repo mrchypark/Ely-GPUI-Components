@@ -11,7 +11,7 @@ use smallvec::SmallVec;
 use crate::{
     buttons::IconButton,
     motion,
-    primitives::{Backdrop, IconName, Place},
+    primitives::{Backdrop, FocusScope, IconName, Place, give_back, take_focus},
     theme::{ActiveTheme, Elevation, Radius, TextSize},
 };
 
@@ -80,6 +80,14 @@ impl ParentElement for Sheet {
 
 impl RenderOnce for Sheet {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let takeover = take_focus((self.id.clone(), "takeover"), window, cx);
+        let focus = takeover.read(cx).focus.clone();
+        let on_close = self.on_close;
+        let close: Close = Rc::new(move |window, cx| {
+            give_back(&takeover, window, cx);
+            on_close(window, cx);
+        });
+        let escape = close.clone();
         let theme = cx.theme();
         let size = theme.sheet_size();
         let travel = size.to_pixels(window.rem_size());
@@ -106,10 +114,36 @@ impl RenderOnce for Sheet {
                     })
                     .max_w(bounds.size.width)
                     .max_h(bounds.size.height)
-                    .overflow_y_scroll()
             })
-            .child(title_row(self.title, self.on_close.clone(), cx))
-            .children(self.body)
+            .on_key_down(move |event, window, cx| {
+                if event.keystroke.key == "escape" {
+                    cx.stop_propagation();
+                    escape(window, cx);
+                }
+            })
+            .child(
+                FocusScope::new(&focus)
+                    .trap()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .id((self.id.clone(), "body"))
+                            .debug_selector(|| "sheet-body".into())
+                            .flex_1()
+                            .min_h_0()
+                            .flex()
+                            .flex_col()
+                            .gap_5()
+                            .when(self.usable_bounds.is_some(), |body| {
+                                body.overflow_y_scroll()
+                            })
+                            .child(title_row(self.title, close.clone(), cx))
+                            .children(self.body),
+                    ),
+            )
             .with_animation(
                 "sheet-in",
                 Animation::new(motion::duration(motion::BASE, cx))
@@ -124,7 +158,6 @@ impl RenderOnce for Sheet {
                     }
                 },
             );
-        let close = self.on_close;
         Backdrop::new(self.id)
             .place(side)
             .when_some(self.usable_bounds, |backdrop, bounds| {

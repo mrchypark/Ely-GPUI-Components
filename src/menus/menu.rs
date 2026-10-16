@@ -11,7 +11,7 @@ use super::{
     model::{Kind, Menu},
 };
 use crate::{
-    forms::{Down, Enter, Left, Right, Run, TextInput, Up, float},
+    forms::{Down, Enter, Left, Right, Run, TextInput, Up},
     motion,
     primitives::{Icon, IconName, Takeover, give_back, raise, take_focus},
     theme::{ActiveTheme, IconSize},
@@ -370,7 +370,7 @@ pub(crate) fn hang(
     let (down_menu, down_state, down_close) = (menu.clone(), state.clone(), close.clone());
     let (left_menu, left_state, left_close) = (menu.clone(), state.clone(), close.clone());
     let (right_menu, right_state, right_close) = (menu.clone(), state.clone(), close.clone());
-    let root = draw::panel(id, menu, state, 0, &close, head, cx)
+    let root = draw::panel(id, menu, state, 0, &close, head, window, cx)
         .track_focus(&focus)
         .when(!spaced, |root| {
             root.capture_action(move |_: &Up, window, cx| {
@@ -431,30 +431,11 @@ pub(crate) fn hang(
                 out_close(window, cx);
             }
         });
-    let placed = match spot {
-        Spot::Under => float(
-            (id.clone(), "panel"),
-            state.read(cx).anchor,
-            menu.entries.len(),
-            root,
-            window,
-            cx,
-        ),
-        Spot::At(point) => raise(
-            (id.clone(), "panel"),
-            anchored()
-                .position(point)
-                .snap_to_window()
-                .child(
-                    root.with_animation((id.clone(), "in"), enter.clone(), |root, t| {
-                        root.opacity(t)
-                    }),
-                ),
-        )
-        .with_priority(1)
-        .into_any_element(),
-    };
-    let room = window.viewport_size().width;
+    let placed = super::placement::root(id, menu, spot, state.read(cx).anchor, root, window, cx);
+    let usable = menu
+        .usable_bounds
+        .map(|bounds| super::placement::area(bounds, window.viewport_size()));
+    let room = usable.map_or(window.viewport_size().width, |bounds| bounds.right());
     let subs = (1..depth).filter_map(|level| {
         let open = state.read(cx);
         let row = open.levels[level - 1].row;
@@ -463,12 +444,27 @@ pub(crate) fn hang(
             _ => cx.theme().menu_width().to_pixels(window.rem_size()),
         };
         // No room on the right: open on the left.
-        let left = row.right() + width > room && row.left() >= width;
+        let left = row.right() + width > room
+            && row.left() - usable.map_or(Pixels::ZERO, |bounds| bounds.left()) >= width;
         let (corner, from, slide) = match left {
             true => (Anchor::TopRight, row.origin, -1.0),
             false => (Anchor::TopLeft, row.top_right(), 1.0),
         };
         (row != Bounds::default()).then(|| {
+            if let Some(bounds) = usable {
+                let from = if left {
+                    gpui::point(row.left() - width, row.top())
+                } else {
+                    from
+                };
+                let panel = draw::panel(id, menu, state, level, &close, None, window, cx);
+                return raise(
+                    (id.clone(), format!("level-{level}")),
+                    super::placement::bounded(bounds, from, panel, window, cx),
+                )
+                .with_priority(2)
+                .into_any_element();
+            }
             raise(
                 (id.clone(), format!("level-{level}")),
                 anchored()
@@ -476,7 +472,7 @@ pub(crate) fn hang(
                     .position(from)
                     .snap_to_window()
                     .child(
-                        draw::panel(id, menu, state, level, &close, None, cx)
+                        draw::panel(id, menu, state, level, &close, None, window, cx)
                             .mt_neg_1()
                             .with_animation(
                                 (id.clone(), format!("sub-{level}")),

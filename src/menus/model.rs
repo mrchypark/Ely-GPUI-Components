@@ -1,6 +1,6 @@
 use std::{ops::Range, rc::Rc};
 
-use gpui::{App, SharedString, Window};
+use gpui::{App, Bounds, Pixels, SharedString, Window};
 
 use crate::{forms::Run, navigation::fuzzy, primitives::IconName};
 
@@ -92,11 +92,18 @@ pub(super) enum Entry {
 #[derive(Clone, Default)]
 pub struct Menu {
     pub(super) entries: Vec<Entry>,
+    pub(super) usable_bounds: Option<Bounds<Pixels>>,
 }
 
 impl Menu {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Window-local usable area for this menu and all its submenu panels.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 
     pub fn item(mut self, item: MenuItem) -> Self {
@@ -214,6 +221,7 @@ impl Menu {
             .collect();
         found.sort_by(|(a, _), (b, _)| b.cmp(a));
         Menu {
+            usable_bounds: self.usable_bounds,
             entries: found
                 .into_iter()
                 .map(|(_, item)| Entry::Item(item))
