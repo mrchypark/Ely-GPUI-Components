@@ -10,7 +10,7 @@ use super::{
     model::{Kind, Menu},
 };
 use crate::{
-    forms::{Down, Enter, Run, TextInput, Up, float},
+    forms::{Down, Enter, Run, TextInput, Up},
     motion,
     primitives::{Icon, IconName, Takeover, give_back, raise, take_focus},
     theme::{ActiveTheme, IconSize},
@@ -71,6 +71,16 @@ pub(crate) struct Open {
     host: Bounds<Pixels>,
     anchor: Bounds<Pixels>,
     takeover: Option<Entity<Takeover>>,
+    on_open_change: Option<Rc<dyn Fn(bool)>>,
+}
+
+impl Drop for Open {
+    fn drop(&mut self) {
+        if let Some(handler) = self.on_open_change.take() {
+            self.spot = None;
+            handler(false);
+        }
+    }
 }
 
 impl Open {
@@ -92,11 +102,18 @@ impl Open {
     pub(crate) fn show(state: &Entity<Open>, menu: &Menu, spot: Spot, marked: bool, cx: &mut App) {
         let first = menu.step(None, 1).filter(|_| marked);
         state.update(cx, |open, cx| {
+            let opening = !open.is_open();
             open.spot = Some(spot);
             open.levels = vec![Level {
                 at: first,
                 ..Level::default()
             }];
+            if opening {
+                open.on_open_change = menu.on_open_change.clone();
+                if let Some(handler) = &open.on_open_change {
+                    handler(true);
+                }
+            }
             cx.notify();
         });
     }
@@ -118,6 +135,9 @@ impl Open {
         let takeover = state.update(cx, |open, cx| {
             open.spot = None;
             open.levels.clear();
+            if let Some(handler) = open.on_open_change.take() {
+                handler(false);
+            }
             cx.notify();
             open.takeover.take()
         });
@@ -333,7 +353,7 @@ pub(crate) fn hang(
     });
     let (up_menu, up_state, up_close) = (menu.clone(), state.clone(), close.clone());
     let (down_menu, down_state, down_close) = (menu.clone(), state.clone(), close.clone());
-    let root = draw::panel(id, menu, state, 0, &close, head, cx)
+    let root = draw::panel(id, menu, state, 0, &close, head, window, cx)
         .track_focus(&focus)
         .when(!spaced, |root| {
             root.capture_action(move |_: &Up, window, cx| {
@@ -381,36 +401,23 @@ pub(crate) fn hang(
                 out_close(window, cx);
             }
         });
-    let placed = match spot {
-        Spot::Under => float(
-            (id.clone(), "panel"),
-            state.read(cx).anchor,
-            menu.entries.len(),
-            root,
-            window,
-            cx,
-        ),
-        Spot::At(point) => raise(
-            (id.clone(), "panel"),
-            anchored()
-                .position(point)
-                .snap_to_window()
-                .child(
-                    root.with_animation((id.clone(), "in"), enter.clone(), |root, t| {
-                        root.opacity(t)
-                    }),
-                ),
-        )
-        .with_priority(1)
-        .into_any_element(),
-    };
+    let placed = super::placement::root(id, menu, spot, state.read(cx).anchor, root, window, cx);
     let subs = (1..depth).filter_map(|level| {
         let row = state.read(cx).levels[level - 1].row;
         (row != Bounds::default()).then(|| {
+            if let Some(bounds) = menu.usable_bounds {
+                let panel = draw::panel(id, menu, state, level, &close, None, window, cx);
+                return raise(
+                    (id.clone(), format!("level-{level}")),
+                    super::placement::bounded(bounds, row.top_right(), panel, window, cx),
+                )
+                .with_priority(2)
+                .into_any_element();
+            }
             raise(
                 (id.clone(), format!("level-{level}")),
                 anchored().position(row.top_right()).snap_to_window().child(
-                    draw::panel(id, menu, state, level, &close, None, cx)
+                    draw::panel(id, menu, state, level, &close, None, window, cx)
                         .mt_neg_1()
                         .with_animation(
                             (id.clone(), format!("sub-{level}")),

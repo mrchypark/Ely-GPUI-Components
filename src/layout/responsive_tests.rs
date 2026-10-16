@@ -149,3 +149,121 @@ fn keyboard_reveal_reports_no_movement_without_scroll_range(cx: &mut TestAppCont
 fn keyboard_reveal_clamps_to_insufficient_scroll_range(cx: &mut TestAppContext) {
     limited_scroll_reveal(cx, 140., 30.);
 }
+
+struct FocusedSheet {
+    before: FocusHandle,
+    inside: FocusHandle,
+    open: bool,
+    closes: usize,
+}
+
+impl Render for FocusedSheet {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let owner = cx.entity();
+        div()
+            .size_full()
+            .child(div().track_focus(&self.before))
+            .children(self.open.then(|| {
+                super::Sheet::new(
+                    "focus-sheet",
+                    crate::primitives::Place::Bottom,
+                    "Sheet",
+                    move |_, cx| {
+                        owner.update(cx, |view, cx| {
+                            view.open = false;
+                            view.closes += 1;
+                            cx.notify();
+                        });
+                    },
+                )
+                .usable_bounds(Bounds::new(point(px(0.), px(0.)), size(px(390.), px(300.))))
+                .child(crate::buttons::Button::new("inside", "Inside").focus_handle(&self.inside))
+                .child(
+                    div()
+                        .debug_selector(|| "sheet-tall".into())
+                        .h(px(1000.))
+                        .flex_none(),
+                )
+            }))
+    }
+}
+
+#[gpui::test]
+fn sheet_traps_tab_and_escape_restores_previous_focus(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        crate::theme::Theme::init(cx);
+        crate::theme::Theme::update(cx, |theme| theme.reduced_motion = true);
+        cx.bind_keys([gpui::KeyBinding::new(
+            "tab",
+            crate::primitives::FocusNext,
+            None,
+        )]);
+    });
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let before = cx.focus_handle().tab_stop(true);
+        window.focus(&before, cx);
+        FocusedSheet {
+            before,
+            inside: cx.focus_handle().tab_stop(true),
+            open: false,
+            closes: 0,
+        }
+    });
+    cx.run_until_parked();
+    view.update(cx, |view, cx| {
+        view.open = true;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let (before, inside) = view.read_with(cx, |view, _| (view.before.clone(), view.inside.clone()));
+    assert!(!cx.update(|window, _| before.is_focused(window)));
+    cx.simulate_keystrokes("tab");
+    cx.simulate_keystrokes("tab");
+    assert!(cx.update(|window, _| inside.is_focused(window)));
+    cx.simulate_keystrokes("tab");
+    assert!(
+        !cx.update(|window, _| before.is_focused(window)),
+        "Tab stays in the sheet"
+    );
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(
+        view.read_with(cx, |view, _| (view.open, view.closes)),
+        (false, 1)
+    );
+    assert!(cx.update(|window, _| before.is_focused(window)));
+}
+
+#[gpui::test]
+fn bounded_sheet_scrolls_tall_nonshrinking_content(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        crate::theme::Theme::init(cx);
+        crate::theme::Theme::update(cx, |theme| theme.reduced_motion = true);
+    });
+    let (_, cx) = cx.add_window_view(|_, cx| FocusedSheet {
+        before: cx.focus_handle(),
+        inside: cx.focus_handle().tab_stop(true),
+        open: true,
+        closes: 0,
+    });
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    let frame = cx.debug_bounds("sheet-body").expect("scroll body");
+    let before = cx.debug_bounds("sheet-tall").expect("tall child");
+    assert!(frame.size.height < before.size.height);
+    assert_eq!(before.size.height, px(1000.));
+    cx.simulate_event(gpui::ScrollWheelEvent {
+        position: frame.center(),
+        delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-2000.))),
+        modifiers: gpui::Modifiers::none(),
+        touch_phase: gpui::TouchPhase::Moved,
+    });
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    let after = cx.debug_bounds("sheet-tall").expect("scrolled child");
+    assert!(after.top() < before.top());
+    assert!(
+        after.bottom() <= frame.bottom(),
+        "the content's end is reachable"
+    );
+}

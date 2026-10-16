@@ -5,6 +5,7 @@ use gpui::{
 };
 
 mod more;
+mod scroll;
 
 use super::{ContextMenu, DropdownMenu, Menu, MenuItem, SearchableMenu};
 use crate::{primitives::FocusScope, theme::Theme};
@@ -407,4 +408,72 @@ fn clearing_the_filter_marks_the_first_row_again(cx: &mut TestAppContext) {
     press("backspace", cx);
     press("enter", cx);
     assert_eq!(ran(&view, cx), ["cut"]);
+}
+
+#[test]
+fn filtering_preserves_open_observer_even_without_matches() {
+    use std::rc::Rc;
+    let menu = Menu::new()
+        .on_open_change(|_| {})
+        .item(MenuItem::new("Alpha"));
+    for query in ["", "Al", "zzzz"] {
+        let filtered = menu.filtered(query);
+        assert!(Rc::ptr_eq(
+            menu.on_open_change.as_ref().unwrap(),
+            filtered.on_open_change.as_ref().unwrap(),
+        ));
+    }
+}
+
+#[gpui::test]
+fn open_observer_tracks_sessions_not_submenus_or_restarts(cx: &mut TestAppContext) {
+    use super::menu::{Open, Spot, mark};
+    use std::{cell::RefCell, rc::Rc};
+    let (_, cx) = desk(cx);
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let observed = events.clone();
+    let menu = Menu::new()
+        .on_open_change(move |open| observed.borrow_mut().push(open))
+        .item(MenuItem::submenu(
+            "Child",
+            Menu::new().item(MenuItem::new("Leaf")),
+        ));
+    let state = cx.update(|_, cx| cx.new(|_| Open::default()));
+    cx.update(|window, cx| {
+        Open::close(&state, window, cx);
+        Open::show(&state, &menu, Spot::Under, true, cx);
+        mark(&state, &menu, 0, 0, true, cx);
+        Open::restart(&state, &menu, cx);
+        // Repositioning or replacing rendered rows retains the session's observer.
+        Open::show(&state, &Menu::new(), Spot::Under, false, cx);
+        assert_eq!(*events.borrow(), [true]);
+        Open::close(&state, window, cx);
+        Open::close(&state, window, cx);
+        assert_eq!(*events.borrow(), [true, false]);
+        Open::show(&state, &menu, Spot::Under, true, cx);
+        Open::close(&state, window, cx);
+    });
+    drop(state);
+    cx.run_until_parked();
+    assert_eq!(*events.borrow(), [true, false, true, false]);
+}
+
+#[gpui::test]
+fn dropping_open_menu_releases_observer_once(cx: &mut TestAppContext) {
+    use super::menu::{Open, Spot};
+    use std::{cell::RefCell, rc::Rc};
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let observed = events.clone();
+    let menu = Menu::new().on_open_change(move |open| observed.borrow_mut().push(open));
+    let state = cx.new(|_| Open::default());
+    cx.update(|cx| Open::show(&state, &menu, Spot::Under, false, cx));
+    assert_eq!(*events.borrow(), [true]);
+    drop(state);
+    cx.run_until_parked();
+    // Entity values are released at App update completion, not by executor draining.
+    cx.update(|_| {});
+    assert_eq!(*events.borrow(), [true, false]);
+    cx.update(|_| {});
+    cx.run_until_parked();
+    assert_eq!(*events.borrow(), [true, false]);
 }

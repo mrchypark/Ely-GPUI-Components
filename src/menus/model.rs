@@ -1,6 +1,6 @@
 use std::{ops::Range, rc::Rc};
 
-use gpui::{App, SharedString, Window};
+use gpui::{App, Bounds, Pixels, SharedString, Window};
 
 use crate::{forms::Run, navigation::fuzzy, primitives::IconName};
 
@@ -90,9 +90,25 @@ pub(super) enum Entry {
 #[derive(Clone, Default)]
 pub struct Menu {
     pub(super) entries: Vec<Entry>,
+    pub(super) usable_bounds: Option<Bounds<Pixels>>,
+    pub(super) on_open_change: Option<Rc<dyn Fn(bool)>>,
 }
 
 impl Menu {
+    /// Observes root open/close transitions, including teardown while open.
+    /// Called synchronously; use external state such as `Cell`, without reentering the App.
+    /// The callback selected when opening is retained until that session closes.
+    pub fn on_open_change(mut self, handler: impl Fn(bool) + 'static) -> Self {
+        self.on_open_change = Some(Rc::new(handler));
+        self
+    }
+
+    /// Window-local usable area for this menu and all its submenu panels.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -162,6 +178,8 @@ impl Menu {
             .collect();
         found.sort_by(|(a, _), (b, _)| b.cmp(a));
         Menu {
+            usable_bounds: self.usable_bounds,
+            on_open_change: self.on_open_change.clone(),
             entries: found
                 .into_iter()
                 .map(|(_, item)| Entry::Item(item))

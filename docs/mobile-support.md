@@ -1,7 +1,32 @@
 # Mobile UI support (implementation preview)
 
+## Current validation (2026-10-17)
+
+The app-compatible Git GPUI branch passed 42 focused menu tests; the registry
+upstream branch passed 60. These are separate runs, not full-suite certification.
+On Android, the app-compatible integration APK SHA-256
+`0098ddda661c0050794bba25efd6a099f7cac83dda659942d3d53dffc9ac5341`
+passed menu opening, overlapping submenu swipe with stable background, Last item
+selection (index 30, count 1), Home/resume, outside dismissal, and subsequent
+canvas drag. The upstream registry branch was not the APK's dependency.
+
+The previous APK leaked wheel events into underlying controls/canvas. Both source
+lines now stop propagation at the outer menu panel after the rows handle their
+scroll. Host regressions include an actual ancestor ScrollHandle, boundary/padding
+containment and a closed-menu scrolling positive control. One earlier resume
+observation (capture 13) remains unexplained and did not recur after cold restart;
+it is not assigned a root cause. Cleanup stopped the test app and retained the APK.
+
+This does not certify IME, rotation, multitouch, GPS/BLE, iOS runtime or all widgets.
+IME backend ownership remains with gpui-mobile. Local evidence is retained under
+`outputs/ely-menu-device-20261016/result.md` in the task workspace; artifacts are not
+included in this library. Older check-only results below are historical snapshots,
+not a statement that the focused menu tests remain unexecuted.
+See [component roadmap](mobile-component-roadmap.md) for proposed follow-up work.
+
+
 This branch adds opt-in UI policies to historical Ely `083ef856` with Zed GPUI
-`1a28cff4b409169bac058bca40dfbfeb7621d19b`. It does not establish a working mobile
+`1a28cff4b409169bac058bca40dfbfeb7621d19b`. Its initial check-only evidence did not establish a working mobile
 application. See [mobile compatibility](mobile-build-compatibility.md) for dependency
 identity and build evidence maintained by the build owner.
 
@@ -52,6 +77,14 @@ painted field bounds and a real scroll owner when using lower-level reveal helpe
 
 ## Backend/application input adapter
 
+Pass the same available rectangle to `Menu::usable_bounds(available)` on the root
+menu. Dropdown, context and searchable menus and all their submenus share it;
+filtering preserves it. Rebuild with updated bounds when keyboard or viewport
+geometry changes. Explicit bounds cap width and scrolling height and clamp
+placement using the current frame's actual layout size. Default desktop placement
+is unchanged. The mobile showcase demonstrates a nested menu with simulated
+insets. Core Android menu touch acceptance is recorded above; keyboard acceptance remains separate.
+
 The inspected sibling contract is `gpui-mobile/src/mobile_events.rs`:
 `MobileEvent::Touch` carries one GPUI TouchEvent with Started/Moved/Ended/Cancelled
 and window-local logical coordinates. CanvasTouch instead consumes a snapshot of
@@ -97,8 +130,8 @@ pan, zoom or commit twice. No such native suppression adapter is supplied here.
 | Input | Real focus reveal with changing usable bounds | Native IME, caret/selection, floating keyboard |
 | List/scroll | Existing scroll container; focus reveal helper | Inertia, nested scrolling, capture outside bounds |
 | Dialog | Opt-in usable bounds; existing focus policy | Keyboard and focus return on a real device |
-| Sheet/navigation | Opt-in bounds; compact bottom sheet example | Sheet focus is not equivalent to Dialog's focus trap |
-| Menu | Existing desktop implementation | Touch dismissal, long press, safe-area popup placement |
+| Sheet/navigation | Opt-in bounds, focus trap/return and body scroll | Broader device accessibility and keyboard checks |
+| Menu | Usable bounds, scrolling and wheel containment | Core Android menu PASS above; long press and accessibility remain unverified |
 | Canvas | Recognized GPUI PinchEvent handler plus opt-in normalized contacts | Backend adapter, edit/history adapter, duplicate event suppression |
 | Desktop | Existing APIs retained | Full regression suite and visual checks pending |
 
@@ -117,7 +150,7 @@ The example tests `patch_map_viewport_contract_keeps_pinch_anchor` and
 `safe_origin_is_removed_before_canvas_hit_testing` cover API/math compatibility,
 not patch-map integration, editing history, linking or rendering.
 
-## Current evidence
+## Historical initial implementation evidence
 
 Implementation commits: canvas `141f3b4`, layout `870a1b5`, platform/showcase
 `1f215e9` on feature/mobile-ui.
@@ -136,7 +169,7 @@ levels; compiler success does not establish linking, execution or performance.
 | Final Android library | Exit 0, 1m26s; check-final-android.log; final source type-check only |
 | All existing desktop examples | Exit 0, 5.27s; check-final-examples.log; upstream block 0.1.6 future-incompatibility warning |
 | Final iOS Clippy | Exit 0, 41.81s; --lib --tests, test-support, -D warnings; clippy-final-ios.log |
-| Test execution, link, simulator/device, visuals, native IME, FPS | GPUI tests not executed; runtime/visual evidence not established |
+| Initial test execution and runtime status | At that initial snapshot GPUI tests were not executed; later focused menu and Android results supersede this status as described above |
 
 The source identity check uses `work/patch-map-check/verify-source.sh`. Only the
 scratch manifest adapts workspace dependencies. Shared-view verification uses
