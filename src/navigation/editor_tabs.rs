@@ -43,7 +43,7 @@ impl EditorTab {
         self
     }
 
-    /// Unsaved work: a dot that turns into the close button on hover.
+    /// Unsaved work: a dot beside the touch close button, or replaced by it on desktop hover.
     pub fn dirty(mut self, dirty: bool) -> Self {
         self.dirty = dirty;
         self
@@ -213,12 +213,23 @@ impl RenderOnce for EditorTabs {
                                 run(&close, "close", &slot_id, window, cx);
                             })
                     };
-                    let hidden = tab.dirty || !on;
+                    let hidden = !theme.touch_mode && (tab.dirty || !on);
+                    let close_id = tab.id.clone();
                     div()
                         .relative()
                         .flex_none()
                         .size(theme.control_height(ControlSize::Sm))
-                        .when(tab.dirty, |slot| {
+                        .when(theme.touch_mode, |slot| {
+                            slot.size(
+                                theme.touch_minimum(
+                                    theme
+                                        .control_height(ControlSize::Sm)
+                                        .to_pixels(window.rem_size()),
+                                ),
+                            )
+                        })
+                        .debug_selector(move || format!("editor-close-{close_id}"))
+                        .when(tab.dirty && !theme.touch_mode, |slot| {
                             slot.child(
                                 div()
                                     .absolute()
@@ -258,6 +269,15 @@ impl RenderOnce for EditorTabs {
                     .gap_1p5()
                     .max_w(wide)
                     .h(theme.control_height(ControlSize::Lg))
+                    .when(theme.touch_mode, |el| {
+                        el.min_h(
+                            theme.touch_minimum(
+                                theme
+                                    .control_height(ControlSize::Lg)
+                                    .to_pixels(window.rem_size()),
+                            ),
+                        )
+                    })
                     .pl_3()
                     .pr_1()
                     .border_r_1()
@@ -321,6 +341,15 @@ impl RenderOnce for EditorTabs {
                             .text_ellipsis()
                             .child(tab.title.clone()),
                     )
+                    .when(theme.touch_mode && tab.dirty, |el| {
+                        el.child(
+                            div()
+                                .flex_none()
+                                .size(theme.status_dot())
+                                .rounded_full()
+                                .bg(fg),
+                        )
+                    })
                     .child(slot)
                     .into_any_element()
             })

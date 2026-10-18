@@ -5,6 +5,7 @@ mod other;
 mod stale;
 mod structure;
 mod tags;
+mod touch;
 mod upload;
 
 use gpui::{

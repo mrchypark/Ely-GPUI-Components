@@ -113,6 +113,7 @@ impl RenderOnce for QuickActions {
                 let (hover, action_for_click) = (state.clone(), action.clone());
                 div()
                     .id(("quick", ix))
+                    .map(|el| theme.touch_target(el))
                     .flex()
                     .items_center()
                     .gap_3()

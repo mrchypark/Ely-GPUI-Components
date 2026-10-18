@@ -47,10 +47,9 @@ fn along(bounds: Bounds<Pixels>, at: Point<Pixels>, vertical: bool) -> f32 {
     }
 }
 
-/// A drag of thumb `index`, or of the thumb the last track press grabbed.
+/// A drag owned by this track; the press selects its thumb.
 struct Thumb {
     owner: EntityId,
-    index: Option<usize>,
 }
 
 type Commit = Rc<dyn Fn(usize, f64, &mut Window, &mut App)>;
@@ -74,6 +73,7 @@ impl Track {
             .use_keyed_state((self.id.clone(), "drag"), cx, |_, _| ())
             .entity_id();
         let grabbed = window.use_keyed_state((self.id.clone(), "grab"), cx, |_, _| 0usize);
+        let tied = window.use_keyed_state((self.id.clone(), "tie"), cx, |_, _| None::<f64>);
         let measured = window.use_keyed_state((self.id.clone(), "bounds"), cx, |_, _| {
             Bounds::<Pixels>::default()
         });
@@ -97,6 +97,7 @@ impl Track {
         let theme = cx.theme();
         let colors = &theme.colors;
         let (thumb, line) = (theme.slider_thumb(), theme.slider_track());
+        let hit = theme.touch_minimum(thumb.to_pixels(window.rem_size()));
         let fractions: Vec<f32> = self
             .values
             .iter()
@@ -158,6 +159,7 @@ impl Track {
                 };
                 div()
                     .id(("thumb", k))
+                    .debug_selector(move || format!("slider-thumb-{k}"))
                     .role(Role::Slider)
                     .aria_numeric_value(value)
                     .aria_min_numeric_value(floor)
@@ -169,33 +171,35 @@ impl Track {
                     })
                     .track_focus(&handles[k])
                     .absolute()
-                    .size(thumb)
-                    .rounded_full()
-                    .bg(colors.surface)
-                    .border_1()
-                    .border_color(if focused {
-                        colors.focus
-                    } else {
-                        colors.border_strong
-                    })
-                    .shadow(theme.elevation(Elevation::Raised))
+                    .size(hit)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        div()
+                            .flex_none()
+                            .size(thumb)
+                            .rounded_full()
+                            .bg(colors.surface)
+                            .border_1()
+                            .border_color(if focused {
+                                colors.focus
+                            } else {
+                                colors.border_strong
+                            })
+                            .shadow(theme.elevation(Elevation::Raised)),
+                    )
                     .map(|thumb_box| {
                         if vertical {
-                            thumb_box.left_0().bottom(relative(*at)).mb(thumb * -0.5)
+                            thumb_box.left_0().bottom(relative(*at)).mb(hit * -0.5)
                         } else {
-                            thumb_box.top_0().left(relative(*at)).ml(thumb * -0.5)
+                            thumb_box.top_0().left(relative(*at)).ml(hit * -0.5)
                         }
                     })
                     .when(!self.disabled, |thumb_box| {
                         thumb_box
                             .cursor_pointer()
-                            .on_drag(
-                                Thumb {
-                                    owner,
-                                    index: Some(k),
-                                },
-                                |_, _, _, cx| cx.new(|_| EmptyView),
-                            )
+                            .on_drag(Thumb { owner }, |_, _, _, cx| cx.new(|_| EmptyView))
                             .on_key_down(move |event, window, cx| {
                                 if let Some(next) =
                                     keyed(&event.keystroke.key, value, min, max, step)
@@ -210,8 +214,11 @@ impl Track {
         let (drag, jump) = (self.commit.clone(), self.commit);
         let (values, focus) = (self.values, handles);
         let bounds_state = measured.clone();
+        let grab = grabbed.clone();
+        let press_tie = tied.clone();
         let inner = div()
             .id((self.id.clone(), "inner"))
+            .debug_selector(|| "slider-track".into())
             .relative()
             .size_full()
             .child(rail)
@@ -232,36 +239,31 @@ impl Track {
                 .size_full(),
             )
             .when(!self.disabled, |inner| {
-                let grab = grabbed.clone();
+                let drag_focus = focus.clone();
                 inner
-                    .on_drag(Thumb { owner, index: None }, |_, _, _, cx| {
-                        cx.new(|_| EmptyView)
-                    })
+                    .on_drag(Thumb { owner }, |_, _, _, cx| cx.new(|_| EmptyView))
                     .on_drag_move(move |event: &DragMoveEvent<Thumb>, window, cx| {
                         let thumb = event.drag(cx);
                         if thumb.owner != owner {
                             return;
                         }
-                        let index = thumb.index.unwrap_or(*grabbed.read(cx));
                         let next = value_at(
                             along(event.bounds, event.event.position, vertical),
                             min,
                             max,
                             step,
                         );
+                        if let Some(value) = *tied.read(cx) {
+                            if next == value {
+                                return;
+                            }
+                            let index = usize::from(next > value);
+                            grabbed.update(cx, |grab, _| *grab = index);
+                            tied.update(cx, |tie, _| *tie = None);
+                            window.focus(&drag_focus[index], cx);
+                        }
+                        let index = *grabbed.read(cx);
                         drag(index, next, window, cx);
-                    })
-                    .on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                        let bounds = *measured.read(cx);
-                        let next =
-                            value_at(along(bounds, event.position, vertical), min, max, step);
-                        let index = match values.as_slice() {
-                            [low, high] if (next - high).abs() < (next - low).abs() => 1,
-                            _ => 0,
-                        };
-                        grab.update(cx, |grab, _| *grab = index);
-                        window.focus(&focus[index], cx);
-                        jump(index, next, window, cx);
                     })
             });
         div()
@@ -270,10 +272,29 @@ impl Track {
             .flex_none()
             .map(|outer| {
                 if vertical {
-                    outer.h_full().w(thumb).py(thumb * 0.5)
+                    outer.h_full().w(hit).py(hit * 0.5)
                 } else {
-                    outer.h(thumb).px(thumb * 0.5)
+                    outer.h(hit).px(hit * 0.5)
                 }
+            })
+            .when(!self.disabled, |outer| {
+                outer.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    let bounds = *measured.read(cx);
+                    let next = value_at(along(bounds, event.position, vertical), min, max, step);
+                    let index = match values.as_slice() {
+                        [low, high] if low == high && next > *high => 1,
+                        [low, high] if (next - high).abs() < (next - low).abs() => 1,
+                        _ => 0,
+                    };
+                    let tie = match values.as_slice() {
+                        [low, high] if low == high && next == *low => Some(*low),
+                        _ => None,
+                    };
+                    press_tie.update(cx, |pending, _| *pending = tie);
+                    grab.update(cx, |grab, _| *grab = index);
+                    window.focus(&focus[index], cx);
+                    jump(index, next, window, cx);
+                })
             })
             .when(self.disabled, |outer| outer.opacity(0.5))
             .child(inner)

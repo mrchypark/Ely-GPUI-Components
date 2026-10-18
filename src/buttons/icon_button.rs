@@ -85,6 +85,7 @@ impl RenderOnce for IconButton {
             .items_center()
             .justify_center()
             .size(side)
+            .map(|el| theme.touch_target(el))
             .rounded(theme.radius(Radius::Md))
             .bg(tone.bg)
             .border_1()
