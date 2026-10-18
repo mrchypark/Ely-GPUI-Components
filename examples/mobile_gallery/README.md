@@ -86,8 +86,8 @@ Run from the task workspace root after the parent's compile grant; capture each 
 
 ```sh
 export CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
-CARGO_TARGET_DIR=/Users/cypark/Documents/Codex/2026-10-15/gpui-mobile-mrchypark/work/gpui-mobile/example/target cargo +1.97.1 test --locked --offline --manifest-path outputs/mobile-gallery-simulator-20261017/Cargo.toml -p ely-mobile-gallery --features test-support --lib -j1 -- --test-threads=1 --nocapture
-CARGO_TARGET_DIR=/Users/cypark/Documents/Codex/2026-10-15/ely-mobile-mrchypark/work/ely-upstream/target cargo +1.97.1 test --locked --offline --manifest-path outputs/upstream-mobile-gallery-host-20261018/Cargo.toml -p ely-upstream-mobile-gallery-host --features test-support,runtime_shaders --lib -j1 -- --test-threads=1 --nocapture
+CARGO_TARGET_DIR="<gpui-mobile-checkout>/example/target" cargo +1.97.1 test --locked --offline --manifest-path outputs/mobile-gallery-simulator-20261017/Cargo.toml -p ely-mobile-gallery --features test-support --lib -j1 -- --test-threads=1 --nocapture
+CARGO_TARGET_DIR="<ely-upstream-checkout>/target" cargo +1.97.1 test --locked --offline --manifest-path outputs/upstream-mobile-gallery-host-20261018/Cargo.toml -p ely-upstream-mobile-gallery-host --features test-support,runtime_shaders --lib -j1 -- --test-threads=1 --nocapture
 ```
 
 ### Mobile Shell repair gate
