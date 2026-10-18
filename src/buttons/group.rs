@@ -95,6 +95,7 @@ fn toggle_face(
     on: bool,
     size: ControlSize,
     press: Option<OnPress>,
+    rem_size: gpui::Pixels,
     cx: &App,
 ) -> impl IntoElement + use<> {
     assert!(
@@ -125,6 +126,10 @@ fn toggle_face(
         .gap_1p5()
         .h(theme.control_height(size))
         .min_w(theme.control_height(size))
+        .map(|el| theme.touch_target(el))
+        .when(theme.touch_mode, |face| {
+            face.min_w(theme.touch_minimum(theme.control_height(size).to_pixels(rem_size)))
+        })
         .when(item.label.is_some(), |face| {
             face.px(theme.control_padding(size))
         })
@@ -200,7 +205,7 @@ impl ToggleButton {
 }
 
 impl RenderOnce for ToggleButton {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (on, toggle, value) = (self.on, self.on_toggle, self.item.value.clone());
         let press: OnPress = Rc::new(move |window, cx| {
             log::info!("toggle {value}: {}", !on);
@@ -209,7 +214,15 @@ impl RenderOnce for ToggleButton {
             }
         });
         let press = (!self.disabled).then_some(press);
-        toggle_face(self.id, &self.item, on, self.size, press, cx)
+        toggle_face(
+            self.id,
+            &self.item,
+            on,
+            self.size,
+            press,
+            window.rem_size(),
+            cx,
+        )
     }
 }
 
@@ -279,7 +292,7 @@ fn pressed(selected: &[SharedString], value: &SharedString, multiple: bool) -> V
 }
 
 impl RenderOnce for ToggleGroup {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let faces: Vec<_> = self
             .items
@@ -301,6 +314,7 @@ impl RenderOnce for ToggleGroup {
                     on,
                     self.size,
                     Some(press),
+                    window.rem_size(),
                     cx,
                 )
             })
@@ -311,6 +325,9 @@ impl RenderOnce for ToggleGroup {
             .flex_wrap()
             .items_center()
             .gap_0p5()
+            .when(cx.theme().touch_mode, |el| {
+                el.gap(cx.theme().touch_spacing())
+            })
             .p_0p5()
             .rounded(theme.radius(Radius::Lg))
             .border_1()

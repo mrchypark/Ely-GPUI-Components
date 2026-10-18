@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, ElementId, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Pixels, RenderOnce, ScrollDelta, SharedString, StatefulInteractiveElement, Styled, TouchPhase,
-    Window, div, prelude::*,
+    AnyElement, App, ElementId, InteractiveElement, IntoElement, IsZero, MouseButton,
+    ParentElement, Pixels, RenderOnce, ScrollDelta, SharedString, StatefulInteractiveElement,
+    Styled, TouchPhase, Window, div, prelude::*,
 };
 use web_time::Instant;
 
@@ -49,6 +49,7 @@ struct Swipe {
     offset: Pixels,
     fingers: bool,
     across: Option<bool>,
+    start: Pixels,
     from: Pixels,
     since: Option<Instant>,
 }
@@ -167,13 +168,23 @@ impl RenderOnce for SwipeableListItem {
                 };
                 fingers.update(cx, |swipe, cx| {
                     match event.touch_phase {
-                        TouchPhase::Started => {
-                            swipe.offset = swipe.now(length);
-                            swipe.since = None;
-                            swipe.fingers = true;
-                            swipe.across = None;
-                        }
-                        TouchPhase::Moved if swipe.fingers => {
+                        TouchPhase::Started | TouchPhase::Moved => {
+                            if event.touch_phase == TouchPhase::Started {
+                                swipe.start = swipe.offset;
+                                swipe.offset = swipe.now(length);
+                                swipe.since = None;
+                                swipe.fingers = true;
+                                swipe.across = None;
+                            }
+                            if !swipe.fingers {
+                                return;
+                            }
+                            if delta.x.is_zero() && delta.y.is_zero() {
+                                if swipe.across == Some(true) {
+                                    cx.stop_propagation();
+                                }
+                                return;
+                            }
                             if !*swipe.across.get_or_insert(delta.x.abs() > delta.y.abs()) {
                                 return;
                             }
@@ -185,12 +196,22 @@ impl RenderOnce for SwipeableListItem {
                             if swipe.across != Some(true) {
                                 return;
                             }
+                            cx.stop_propagation();
                             let to = rest(swipe.offset, reach);
                             log::info!(
                                 "swipeable row {id:?}: {}",
                                 if to < Pixels::ZERO { "open" } else { "shut" }
                             );
                             swipe.settle(to, length);
+                            swipe.across = None;
+                        }
+                        TouchPhase::Cancelled if swipe.fingers => {
+                            swipe.fingers = false;
+                            if swipe.across.take() == Some(true) {
+                                cx.stop_propagation();
+                            }
+                            let start = swipe.start;
+                            swipe.settle(start, length);
                         }
                         _ => return,
                     }

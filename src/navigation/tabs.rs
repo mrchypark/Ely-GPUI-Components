@@ -7,10 +7,11 @@ use gpui::{
 };
 
 use crate::{
+    buttons::IconButton,
     forms::{Choice, Pick, step},
     layout::{measure_width, text_width},
     motion::{self, Axis, Marker, glide, measure_item, measure_origin, slide},
-    primitives::{Icon, Tooltip, tab_stop},
+    primitives::{Icon, IconName, Tooltip, tab_stop},
     theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
 };
 
@@ -169,6 +170,7 @@ impl RenderOnce for Tabs {
                 };
                 let pick = pick.clone();
                 let context = self.on_context.clone().filter(|_| !tab.disabled);
+                let touch_context = self.on_context.clone().filter(|_| theme.touch_mode);
                 let value = tab.value.clone();
                 div()
                     .id(("tab", ix))
@@ -180,6 +182,7 @@ impl RenderOnce for Tabs {
                     .items_center()
                     .gap_1p5()
                     .h(theme.control_height(ControlSize::Md))
+                    .map(|item| theme.touch_target(item))
                     .px_3()
                     .rounded(theme.radius(Radius::Md))
                     .border_1()
@@ -222,6 +225,30 @@ impl RenderOnce for Tabs {
                         item.tooltip(Tooltip::text(tab.label.clone()))
                     })
                     .when(!compact, |item| item.child(tab.label.clone()))
+                    .when_some(touch_context, |item, context| {
+                        let value = tab.value.clone();
+                        let selector = value.clone();
+                        item.child(
+                            div()
+                                .id(("context-control", ix))
+                                .flex_none()
+                                .debug_selector(move || format!("tab-context-{selector}"))
+                                .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                    window.prevent_default();
+                                    cx.stop_propagation();
+                                })
+                                .on_click(|_, _, cx| cx.stop_propagation())
+                                .child(
+                                    IconButton::new(("context", ix), IconName::Ellipsis)
+                                        .tooltip("More actions")
+                                        .disabled(tab.disabled)
+                                        .on_click(move |event, window, cx| {
+                                            cx.stop_propagation();
+                                            context(&value, event.position(), window, cx);
+                                        }),
+                                ),
+                        )
+                    })
                     .when_some(tab.note.clone().filter(|_| !compact), |item, note| {
                         item.child(div().text_color(colors.fg_subtle).child(note))
                     })

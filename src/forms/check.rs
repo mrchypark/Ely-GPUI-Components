@@ -160,6 +160,7 @@ impl RenderOnce for Checkbox {
         div()
             .id(self.id)
             .role(Role::CheckBox)
+            .map(|row| theme.touch_target(row))
             .aria_toggled(toggled)
             .when_some(self.label.clone(), |row, label| row.aria_label(label))
             .when(self.disabled, |row| {
@@ -247,7 +248,7 @@ pub(crate) fn toggled(
 }
 
 impl RenderOnce for CheckboxGroup {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (choices, selected, on_change) = (
             Rc::new(self.choices),
             Rc::new(self.selected),
@@ -271,7 +272,15 @@ impl RenderOnce for CheckboxGroup {
                     })
             })
             .collect();
-        div().id(self.id).flex().flex_col().gap_2().children(boxes)
+        div()
+            .id(self.id)
+            .flex()
+            .flex_col()
+            .gap_2()
+            .when(cx.theme().touch_mode, |group| {
+                group.gap((window.rem_size() * 0.5).max(cx.theme().touch_spacing()))
+            })
+            .children(boxes)
     }
 }
 

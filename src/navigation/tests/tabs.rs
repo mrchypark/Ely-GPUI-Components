@@ -180,3 +180,118 @@ fn tabs_whose_choice_closed_mark_none_and_arrows_start_at_the_ends(cx: &mut Test
     cx.simulate_keystrokes("left");
     assert_eq!(view.read_with(cx, |view, _| view.chosen.clone()), "c");
 }
+
+struct TouchDocs {
+    closed: Vec<SharedString>,
+    selections: usize,
+}
+impl Render for TouchDocs {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (close, select) = (cx.entity(), cx.entity());
+        EditorTabs::new(
+            "touch-docs",
+            [
+                EditorTab::new("dirty", "Dirty").dirty(true),
+                EditorTab::new("inactive", "Inactive"),
+            ],
+        )
+        .selected("dirty")
+        .on_close(move |id, _, cx| close.update(cx, |view, _| view.closed.push(id.clone())))
+        .on_select(move |_, _, cx| select.update(cx, |view, _| view.selections += 1))
+    }
+}
+
+#[gpui::test]
+fn touch_close_is_visible_for_dirty_and_inactive_tabs_without_selecting(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = true));
+    let (view, cx) = cx.add_window_view(|window, _| {
+        window.set_rem_size(px(8.));
+        TouchDocs {
+            closed: Vec::new(),
+            selections: 0,
+        }
+    });
+    settle(cx);
+    let dirty = cx
+        .debug_bounds("editor-close-dirty")
+        .expect("dirty close slot");
+    let inactive = cx
+        .debug_bounds("editor-close-inactive")
+        .expect("inactive close slot");
+    for bounds in [dirty, inactive] {
+        assert!(bounds.size.width >= px(48.) && bounds.size.height >= px(48.));
+    }
+    assert!(
+        dirty.right() <= inactive.left(),
+        "close targets must not overlap"
+    );
+    // No simulated hover: the invisible desktop covers would reject these clicks.
+    cx.simulate_click(
+        point(dirty.right() - px(2.), dirty.bottom() - px(2.)),
+        Modifiers::none(),
+    );
+    cx.simulate_click(
+        point(inactive.right() - px(2.), inactive.bottom() - px(2.)),
+        Modifiers::none(),
+    );
+    assert_eq!(
+        view.read_with(cx, |view, _| view.closed.clone()),
+        vec![SharedString::from("dirty"), SharedString::from("inactive")]
+    );
+    assert_eq!(view.read_with(cx, |view, _| view.selections), 0);
+}
+
+struct TouchContextTabs {
+    contexts: Vec<SharedString>,
+    selections: usize,
+}
+impl Render for TouchContextTabs {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (context, select) = (cx.entity(), cx.entity());
+        Tabs::new(
+            "touch-context",
+            [
+                Choice::new("a", "A"),
+                Choice::new("b", "B").disabled(),
+                Choice::new("c", "C"),
+            ],
+            "c",
+        )
+        .on_context(move |id, _, _, cx| {
+            context.update(cx, |view, _| view.contexts.push(id.clone()))
+        })
+        .on_change(move |_, _, cx| select.update(cx, |view, _| view.selections += 1))
+    }
+}
+
+#[gpui::test]
+fn touch_tab_context_uses_visible_control_without_selecting(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = true));
+    let (view, cx) = cx.add_window_view(|window, _| {
+        window.set_rem_size(px(8.));
+        TouchContextTabs {
+            contexts: Vec::new(),
+            selections: 0,
+        }
+    });
+    settle(cx);
+    for selector in ["tab-context-a", "tab-context-b", "tab-context-c"] {
+        let bounds = cx.debug_bounds(selector).expect("visible more control");
+        assert!(bounds.size.width >= px(48.) && bounds.size.height >= px(48.));
+        cx.simulate_click(bounds.center(), Modifiers::none());
+    }
+    assert_eq!(
+        view.read_with(cx, |view, _| view.contexts.clone()),
+        vec![SharedString::from("a"), SharedString::from("c")]
+    );
+    assert_eq!(view.read_with(cx, |view, _| view.selections), 0);
+    assert!(!cx.update(|_, cx| cx.has_active_drag()));
+    cx.update(|_, cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = false));
+    settle(cx);
+    assert!(
+        cx.debug_bounds("tab-context-a").is_none(),
+        "desktop keeps the right-click path"
+    );
+}

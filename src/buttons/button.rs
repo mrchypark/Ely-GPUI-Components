@@ -271,6 +271,7 @@ impl RenderOnce for Button {
             .justify_center()
             .gap_1p5()
             .h(theme.control_height(self.size))
+            .map(|el| theme.touch_target(el))
             .when(!link, |el| el.px(theme.control_padding(self.size)))
             .border_1()
             .border_color(tone.border)
