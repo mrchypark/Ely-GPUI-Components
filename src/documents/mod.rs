@@ -33,6 +33,8 @@ pub(crate) use blocks::source;
 pub use blocks::{Align, BlockData, BlockEditor, BlockEvent, BlockKind, Media};
 pub use contents::outline;
 pub use counts::{ReadingTime, WordCount};
+#[cfg(test)]
+pub(crate) use diagram::flatten_fixture;
 pub use diagram::{Diagram, diagram_svg};
 pub(crate) use diagram::{flatten, options as svg_options};
 pub use document::{

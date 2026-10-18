@@ -5,6 +5,7 @@ use ely_gpui_component::{
     primitives::IconName,
     theme::{ActiveTheme, TextSize},
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{AnyElement, App, FontWeight, IntoElement, ParentElement, Styled, Window, div};
 
 use crate::{
@@ -12,7 +13,11 @@ use crate::{
     ui::{keep, row, section, set, specimen},
 };
 
-pub fn popovers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn popovers(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let public = keep("share-public", || true, window, cx);
     let on = *public.read(cx);
     let theme = cx.theme();
@@ -54,7 +59,7 @@ pub fn popovers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .child(probe(
                 "share",
-                Popover::new("share", "Share", panel).icon(IconName::Share2),
+                Popover::new("share", "Share", panel).when_some(bounds, |overlay, area| overlay.usable_bounds(area)).icon(IconName::Share2),
             ))
             .child(
                 div()
@@ -69,7 +74,7 @@ pub fn popovers(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                                 .w_72()
                                 .text_color(cx.theme().colors.fg_muted)
                                 .child("Plain words: you own your work, and we keep it private.")
-                        })
+                        }).when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                         .variant(ButtonVariant::Link),
                     )
                     .child("before you share."),
@@ -127,15 +132,18 @@ fn profile(cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-pub fn hover_card(cx: &App) -> impl IntoElement + use<> {
+pub fn hover_card(
+    cx: &App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     section(
         "HoverCard",
-        "Rest the pointer on a name and a card opens. It stays while the pointer is on either, and never takes focus.",
+        "On desktop, rest the pointer on a name to open a card without taking focus. On touch, press the separate disclosure to open it; the name keeps its primary action.",
         cx,
     )
     .child(specimen(
-        "rest the pointer on the name",
+        "desktop: hover the name; touch: press its disclosure",
         probe(
             "ada",
             HoverCard::new(
@@ -145,7 +153,7 @@ pub fn hover_card(cx: &App) -> impl IntoElement + use<> {
                     .font_weight(FontWeight::MEDIUM)
                     .child("@ada"),
                 |_, cx| profile(cx),
-            ),
+            ).when_some(bounds, |overlay, area| overlay.usable_bounds(area)),
         ),
         cx,
     ))

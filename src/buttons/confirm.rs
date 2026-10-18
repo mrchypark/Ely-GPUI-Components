@@ -176,6 +176,7 @@ impl RenderOnce for ConfirmButton {
             .justify_center()
             .gap_1p5()
             .h(theme.control_height(self.size))
+            .map(|el| theme.touch_target(el))
             .px(theme.control_padding(self.size))
             .rounded(theme.radius(Radius::Md))
             .border_1()

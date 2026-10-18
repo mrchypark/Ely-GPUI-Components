@@ -9,8 +9,10 @@ use crate::{
     buttons::{Button, ButtonVariant},
     forms::{Run, float_height, surface},
     primitives::{FocusScope, IconName, Takeover, give_back, take_focus},
-    theme::ControlSize,
+    theme::{ActiveTheme, ControlSize},
 };
+
+pub(super) mod bounded;
 
 type Content = Box<dyn FnOnce(Run, &mut Window, &mut App) -> AnyElement>;
 type Own = Box<dyn FnOnce(Run) -> AnyElement>;
@@ -56,6 +58,7 @@ pub struct Popover {
     id: ElementId,
     opener: Opener,
     content: Content,
+    usable_bounds: Option<Bounds<Pixels>>,
 }
 
 impl Popover {
@@ -74,6 +77,7 @@ impl Popover {
                 size: ControlSize::default(),
             }),
             content: Box::new(move |_, window, cx| content(window, cx).into_any_element()),
+            usable_bounds: None,
         }
     }
 
@@ -89,6 +93,7 @@ impl Popover {
             content: Box::new(move |close, window, cx| {
                 content(close, window, cx).into_any_element()
             }),
+            usable_bounds: None,
         }
     }
 
@@ -115,15 +120,27 @@ impl Popover {
         self.face("a size").size = size;
         self
     }
+
+    /// Limits placement and scrolling content to the host's logical usable rectangle.
+    /// If its padding and border leave no content space, closes until explicitly reopened.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
 }
 
 impl RenderOnce for Popover {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let available = bounded::available(self.usable_bounds, cx.theme().touch_mode, window);
+        let room = bounded::has_room(available, bounded::POPOVER_PADDING, window);
         let state = window.use_keyed_state((self.id.clone(), "popover"), cx, |_, _| Pop::default());
         let open = state.read(cx).open;
         let toggle: Run = {
             let state = state.clone();
             Rc::new(move |window, cx| {
+                if !room {
+                    return;
+                }
                 if open {
                     close(&state, window, cx);
                 } else {
@@ -168,6 +185,12 @@ impl RenderOnce for Popover {
                 .left_0()
                 .size_full(),
             );
+        if !room {
+            if open {
+                close(&state, window, cx);
+            }
+            return host;
+        }
         if !open {
             return host;
         }
@@ -191,6 +214,7 @@ impl RenderOnce for Popover {
         );
         let panel = div()
             .id((self.id.clone(), "panel"))
+            .debug_selector(|| "popover-panel".into())
             .relative()
             .occlude()
             .on_key_down(move |event, window, cx| {
@@ -204,10 +228,21 @@ impl RenderOnce for Popover {
                     close(&out, window, cx);
                 }
             })
+            .when(available.is_some(), |panel| {
+                panel.on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+            })
             .child(
-                FocusScope::new(&focus)
-                    .trap()
-                    .child(surface((self.id.clone(), "surface"), cx).p_3().child(body)),
+                FocusScope::new(&focus).trap().child(
+                    surface((self.id.clone(), "surface"), cx)
+                        .p(bounded::POPOVER_PADDING)
+                        .when_some(available, |surface, bounds| {
+                            surface
+                                .max_w(bounds.size.width)
+                                .max_h(bounds.size.height)
+                                .overflow_scroll()
+                        })
+                        .child(body),
+                ),
             )
             .child(
                 canvas(
@@ -227,6 +262,9 @@ impl RenderOnce for Popover {
                 .left_0()
                 .size_full(),
             );
+        if let Some(bounds) = available {
+            return host.child(bounded::place(self.id, anchor, bounds, panel));
+        }
         host.child(float_height(
             self.id.clone(),
             anchor,

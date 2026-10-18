@@ -4,6 +4,8 @@ mod element;
 mod geometry;
 mod highlight;
 mod ime;
+#[cfg(all(test, feature = "test-support"))]
+mod ime_tests;
 
 use std::{ops::Range, rc::Rc, time::Duration};
 
@@ -99,9 +101,10 @@ impl TextInput {
                 input.restart_blink(cx);
                 cx.emit(InputEvent::Focus);
             }),
-            cx.on_blur(&focus, window, |input, _, cx| {
+            cx.on_blur(&focus, window, |input, window, cx| {
                 input.focused = false;
                 input.selecting = false;
+                gpui::EntityInputHandler::unmark_text(input, window, cx);
                 input._blink = None;
                 cx.emit(InputEvent::Blur);
                 cx.notify();
@@ -249,6 +252,9 @@ impl TextInput {
     }
 
     pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
+        if !self.disabled && disabled {
+            self.finish_composition(cx);
+        }
         self.disabled = disabled;
         self.focus = self.focus.clone().tab_stop(!disabled);
         cx.notify();

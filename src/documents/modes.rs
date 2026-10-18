@@ -415,6 +415,7 @@ fn visual(
         .id(editor.id.clone())
         .flex()
         .flex_col()
+        .when(cx.theme().touch_mode, |frame| frame.min_w_0().w_full())
         .rounded(frame)
         .border_1()
         .border_color(colors.border)
@@ -425,6 +426,9 @@ fn visual(
                 .items_center()
                 .justify_between()
                 .h(bar)
+                .when(cx.theme().touch_mode, |row| {
+                    row.h_auto().min_h(bar).flex_wrap().min_w_0()
+                })
                 .px_2()
                 .border_b_1()
                 .border_color(colors.border)

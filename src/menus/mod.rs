@@ -5,6 +5,7 @@ mod hosts;
 mod menu;
 mod model;
 mod pie;
+mod placement;
 #[cfg(all(test, feature = "test-support"))]
 mod tests;
 

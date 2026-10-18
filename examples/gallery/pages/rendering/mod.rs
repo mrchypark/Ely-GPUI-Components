@@ -33,7 +33,11 @@ pub const PAGE: Page = Page {
 const SOURCES: [(f32, f32); 3] = [(0.2, 0.5), (0.62, 0.3), (0.78, 0.74)];
 const BANDS: f32 = 8.0;
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div().child(surface(window, cx)).into_any_element()
 }
 

@@ -7,6 +7,7 @@ use ely_gpui_component::{
     forms::{Input, TextInput},
     theme::ActiveTheme,
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use jiff::{Timestamp, ToSpan};
 
@@ -109,7 +110,11 @@ fn reply_field(key: &'static str, window: &mut Window, cx: &mut App) -> Entity<T
     })
 }
 
-pub fn comments(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn comments(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let all = keep("collab-threads", || threads(Timestamp::now()), window, cx);
     let now = all.read(cx).clone();
     let (one, marked, side) = (
@@ -133,6 +138,7 @@ pub fn comments(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let key = |key: &'static str| SharedString::from(key);
     let (sent, resolved, reacted) = (all.clone(), all.clone(), all.clone());
     let first = CommentThread::new("collab-thread", thread("gamma"))
+        .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
         .reply(&one, {
             let one = one.clone();
             move |_, cx| answer(&sent, &key("gamma"), &one, cx)
@@ -147,6 +153,7 @@ pub fn comments(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         });
     let (sent, resolved) = (all.clone(), all.clone());
     let marker = CommentMarker::new("collab-marker", thread("weight"))
+        .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
         .reply(&marked, {
             let marked = marked.clone();
             move |_, cx| answer(&sent, &key("weight"), &marked, cx)
@@ -156,6 +163,7 @@ pub fn comments(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         });
     let (sent, resolved, reacted, pick) = (all.clone(), all.clone(), all, active.clone());
     let sidebar = CommentSidebar::new("collab-sidebar", now.clone())
+        .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
         .active(picked.clone(), move |key, _, cx| {
             set(&pick, Some(key.clone()), cx)
         })

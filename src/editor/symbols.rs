@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
+    App, Bounds, ElementId, Hsla, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
+    Styled, Window, div,
 };
 
 use crate::{
@@ -231,12 +232,19 @@ type OnFlip = Rc<dyn Fn(bool, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct GoToSymbol {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     symbols: Vec<Symbol>,
     on_pick: Option<OnLine>,
     on_close: OnClose,
 }
 
 impl GoToSymbol {
+    /// Current usable rectangle in logical window coordinates.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     /// Render it while open; `on_close` runs on Escape, a click outside, or a pick.
     pub fn new(
         id: impl Into<ElementId>,
@@ -248,6 +256,7 @@ impl GoToSymbol {
             symbols: symbols.into_iter().collect(),
             on_pick: None,
             on_close: Rc::new(on_close),
+            usable_bounds: None,
         }
     }
 
@@ -311,6 +320,7 @@ impl RenderOnce for GoToSymbol {
         });
         Palette {
             id: self.id,
+            usable_bounds: self.usable_bounds,
             input,
             groups: vec![Group {
                 title: None,

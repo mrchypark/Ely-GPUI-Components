@@ -212,7 +212,7 @@ impl RenderOnce for ZoomControl {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         if let Some((percent, on_zoom)) = self.owned {
-            return owned(self.id, percent, on_zoom, cx).into_any_element();
+            return owned(self.id, percent, on_zoom, window, cx).into_any_element();
         }
         let percent = (window.rem_size() / theme.base_rem() * 100.0).round() as u32;
         let (down, up) = (step(percent, -1), step(percent, 1));
@@ -223,6 +223,7 @@ impl RenderOnce for ZoomControl {
             .gap_0p5()
             .child(
                 IconButton::new("zoom-out", IconName::ZoomOut)
+                    .debug_selector(|| "shell-zoom-out".into())
                     .size(ControlSize::Sm)
                     .disabled(down.is_none())
                     .when_some(down, |button, next| {
@@ -232,10 +233,19 @@ impl RenderOnce for ZoomControl {
             .child(
                 div()
                     .id("zoom-reset")
+                    .debug_selector(|| "shell-zoom-reset".into())
                     .flex()
                     .items_center()
                     .justify_center()
                     .min_w(theme.control_height(ControlSize::Lg) * 1.5)
+                    .when(theme.touch_mode, |el| {
+                        theme.touch_target(el).min_w(
+                            theme.touch_minimum(
+                                (theme.control_height(ControlSize::Lg) * 1.5)
+                                    .to_pixels(window.rem_size()),
+                            ),
+                        )
+                    })
                     .h(theme.control_height(ControlSize::Sm))
                     .rounded_full()
                     .cursor_pointer()
@@ -246,6 +256,7 @@ impl RenderOnce for ZoomControl {
             )
             .child(
                 IconButton::new("zoom-in", IconName::ZoomIn)
+                    .debug_selector(|| "shell-zoom-in".into())
                     .size(ControlSize::Sm)
                     .variant(ButtonVariant::Ghost)
                     .disabled(up.is_none())
@@ -258,7 +269,13 @@ impl RenderOnce for ZoomControl {
 }
 
 /// The owner's zoom: its percent, its steps.
-fn owned(id: ElementId, percent: u32, on_zoom: OnZoom, cx: &App) -> impl IntoElement {
+fn owned(
+    id: ElementId,
+    percent: u32,
+    on_zoom: OnZoom,
+    window: &Window,
+    cx: &App,
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let press = |step: ZoomStep| {
         let on_zoom = on_zoom.clone();
@@ -272,16 +289,23 @@ fn owned(id: ElementId, percent: u32, on_zoom: OnZoom, cx: &App) -> impl IntoEle
         .gap_0p5()
         .child(
             IconButton::new("zoom-out", IconName::ZoomOut)
+                .debug_selector(|| "shell-owned-zoom-out".into())
                 .size(ControlSize::Sm)
                 .on_click(press(ZoomStep::Out)),
         )
         .child(
             div()
                 .id("zoom-reset")
+                .debug_selector(|| "shell-owned-zoom-reset".into())
                 .flex()
                 .items_center()
                 .justify_center()
                 .min_w(theme.control_height(ControlSize::Lg) * 1.5)
+                .when(theme.touch_mode, |el| {
+                    theme.touch_target(el).min_w(theme.touch_minimum(
+                        (theme.control_height(ControlSize::Lg) * 1.5).to_pixels(window.rem_size()),
+                    ))
+                })
                 .h(theme.control_height(ControlSize::Sm))
                 .rounded_full()
                 .cursor_pointer()
@@ -292,6 +316,7 @@ fn owned(id: ElementId, percent: u32, on_zoom: OnZoom, cx: &App) -> impl IntoEle
         )
         .child(
             IconButton::new("zoom-in", IconName::ZoomIn)
+                .debug_selector(|| "shell-owned-zoom-in".into())
                 .size(ControlSize::Sm)
                 .on_click(press(ZoomStep::In)),
         )

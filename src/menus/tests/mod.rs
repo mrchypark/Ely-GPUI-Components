@@ -7,6 +7,7 @@ use gpui::{
 mod aim;
 mod buttons;
 mod more;
+mod scroll;
 
 use super::{ContextMenu, DropdownMenu, Menu, MenuItem, SearchableMenu};
 use crate::{primitives::FocusScope, theme::Theme};

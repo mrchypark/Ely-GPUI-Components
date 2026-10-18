@@ -128,6 +128,15 @@ pub struct Favorite {
 
 type OnMove = Rc<dyn Fn(usize, usize, &mut Window, &mut App)>;
 
+fn favorite_tools(group: SharedString, touch: bool) -> gpui::Div {
+    div()
+        .opacity(if touch { 1.0 } else { 0.0 })
+        .group_hover(group, |tools| tools.opacity(1.0))
+}
+
+#[cfg(all(test, feature = "test-support"))]
+mod touch_tests;
+
 /// Pages pinned for quick reach: a press opens one, dragging reorders them, and the star lets one go.
 #[derive(IntoElement)]
 pub struct Favorites {
@@ -195,6 +204,7 @@ impl RenderOnce for Favorites {
                 );
                 let group = SharedString::from(format!("favorite-{}", page.key));
                 let unpin_key = key.clone();
+                let selector = key.clone();
                 list.row(
                     page.key.clone(),
                     div()
@@ -215,16 +225,19 @@ impl RenderOnce for Favorites {
                         .child(page.icon.clone())
                         .child(div().flex_1().min_w_0().child(page.title.clone()))
                         .child(
-                            div()
-                                .opacity(0.0)
-                                .group_hover(group, |star| star.opacity(1.0))
+                            favorite_tools(group, theme.touch_mode)
+                                .id((self.id.clone(), format!("unpin-host-{selector}")))
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .on_click(|_, _, cx| cx.stop_propagation())
                                 .child(
                                     IconButton::new(
                                         (self.id.clone(), format!("unpin-{unpin_key}")),
                                         IconName::Star,
                                     )
+                                    .debug_selector(move || format!("favorite-remove-{selector}"))
                                     .variant(ButtonVariant::Ghost)
                                     .size(ControlSize::Sm)
+                                    .disabled(unpin.is_none())
                                     .tooltip("Remove from favorites")
                                     .when_some(
                                         unpin,

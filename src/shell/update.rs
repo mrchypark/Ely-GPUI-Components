@@ -44,27 +44,37 @@ fn progress_line(state: UpdateState) -> Option<AnyElement> {
     }
 }
 
-fn buttons(state: UpdateState, actions: &Actions, size: ControlSize, cx: &App) -> Vec<Button> {
-    let wire = |button: Button, action: &Option<Action>| {
+fn buttons(
+    state: UpdateState,
+    actions: &Actions,
+    size: ControlSize,
+    prefix: &'static str,
+    cx: &App,
+) -> Vec<Button> {
+    let wire = |button: Button, action: &Option<Action>, name: &'static str| {
         action.clone().map(|action| {
             button
                 .size(size)
+                .debug_selector(|| format!("{prefix}-{name}"))
                 .on_click(move |_, window, cx| action(window, cx))
         })
     };
     let later = wire(
         Button::new("update-later", text(cx, "update.later", &[])).variant(ButtonVariant::Ghost),
         &actions.later,
+        "later",
     );
     let main = match state {
         UpdateState::Available => wire(
             Button::new("update-download", text(cx, "update.download", &[])).primary(),
             &actions.download,
+            "download",
         ),
         UpdateState::Downloading(_) => None,
         UpdateState::Ready => wire(
             Button::new("update-restart", text(cx, "update.restart", &[])).primary(),
             &actions.restart,
+            "restart",
         ),
     };
     later.into_iter().chain(main).collect()
@@ -160,11 +170,13 @@ impl RenderOnce for UpdateBanner {
                     ..self.actions.clone()
                 },
                 ControlSize::Sm,
+                "shell-update-banner",
                 cx,
             ))
             .when_some(dismiss, |banner, dismiss| {
                 banner.child(
                     IconButton::new("update-dismiss", IconName::X)
+                        .debug_selector(|| "shell-update-banner-dismiss".into())
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| dismiss(window, cx)),
                 )
@@ -278,6 +290,7 @@ impl RenderOnce for UpdateDialog {
                 self.state,
                 &self.actions,
                 ControlSize::Md,
+                "shell-update-dialog",
                 cx,
             )))
     }

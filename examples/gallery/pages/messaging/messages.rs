@@ -8,6 +8,7 @@ use ely_gpui_component::{
     motion::TypingIndicator,
     theme::{ActiveTheme, Radius},
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, px};
 use jiff::{SignedDuration, Timestamp, civil::date, tz::TimeZone};
 
@@ -47,7 +48,11 @@ fn thread_mark(open: Entity<bool>) -> MessageThread {
     .on_open(move |_, cx| change(&open, cx, |open| *open = true))
 }
 
-pub fn conversation(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn conversation(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let reactions = keep(
         "messaging-reactions",
         || {
@@ -74,9 +79,11 @@ pub fn conversation(window: &mut Window, cx: &mut App) -> impl IntoElement + use
         .flex_col()
         .gap_1()
         .child(
-            Reactions::new("messaging-reactions", shown).on_toggle(move |emoji, _, cx| {
-                change(&reactions, cx, |all| *all = toggled(all, emoji))
-            }),
+            Reactions::new("messaging-reactions", shown)
+                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+                .on_toggle(move |emoji, _, cx| {
+                    change(&reactions, cx, |all| *all = toggled(all, emoji))
+                }),
         )
         .child(thread_mark(open));
     section(

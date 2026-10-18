@@ -128,6 +128,7 @@ impl RenderOnce for Switch {
         div()
             .id(self.id)
             .role(Role::Switch)
+            .map(|row| theme.touch_target(row))
             .aria_toggled(self.on.into())
             .when_some(self.label.clone().or(self.name), |row, label| {
                 row.aria_label(label)

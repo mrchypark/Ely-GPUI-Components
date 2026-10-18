@@ -54,7 +54,11 @@ const SCRIPT: &[Step] = &[
     Step::Shot("answered"),
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(tools::calls(window, cx))
         .child(tools::approval(window, cx))

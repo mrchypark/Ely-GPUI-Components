@@ -1,11 +1,13 @@
 use ely_gpui_component::{
+    buttons::Button,
     files::{FileGrid, FileIcon, FileItem},
     forms::{DropZone, InlineEdit},
     lists::{DirEntry, SelectableList},
     menus::{ContextMenu, Menu, MenuItem},
     primitives::IconName,
+    theme::ActiveTheme,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::*, px};
 use jiff::Timestamp;
 
 use crate::{
@@ -13,13 +15,36 @@ use crate::{
     ui::{change, keep, section},
 };
 
-pub fn context_menu(cx: &mut App) -> impl IntoElement + use<> {
+pub fn context_menu(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
+    let touch = cx.theme().touch_mode;
+    let request = keep(
+        "files-action-request",
+        || None::<(u64, gpui::Point<gpui::Pixels>)>,
+        window,
+        cx,
+    );
+    let result = keep(
+        "files-action-result",
+        || (0usize, SharedString::default()),
+        window,
+        cx,
+    );
+    let asked = *request.read(cx);
+    let (count, last) = result.read(cx).clone();
     let item = |label: &'static str, icon: IconName| {
-        MenuItem::new(label)
-            .icon(icon)
-            .on_click(move |_, _| log::info!("gallery: {label}"))
+        let result = result.clone();
+        MenuItem::new(label).icon(icon).on_click(move |_, cx| {
+            change(&result, cx, |result| {
+                result.0 += 1;
+                result.1 = label.into();
+            })
+        })
     };
-    let menu = Menu::new()
+    let menu = crate::ui::bounded_menu(Menu::new(), bounds)
         .item(item("Open", IconName::FolderOpen))
         .item(item("Rename", IconName::PenLine))
         .item(item("Duplicate", IconName::Copy))
@@ -27,16 +52,30 @@ pub fn context_menu(cx: &mut App) -> impl IntoElement + use<> {
         .item(item("Move to Trash", IconName::Trash2));
     section(
         "FileContextMenu",
-        "What a right press on files offers, as menus::ContextMenu draws it: open, rename, duplicate, and the trash apart.",
+        "Actions opens the same file menu on touch; desktop uses right press. Choices are recorded locally; no filesystem operation is performed.",
         cx,
     )
     .child(probe(
         "files-context",
-        div().w(px(640.)).child(
+        div().when(touch, |view| view.w_full().min_w_0()).when(!touch, |view| view.w(px(640.))).child(
             ContextMenu::new("files-context", menu)
+                .when(touch, |menu| menu.manual(asked))
+                .children(touch.then(|| div().flex().child(
+                    Button::new("files-actions", "Actions")
+                        .debug_selector(|| "files-actions".into())
+                        .on_click(move |event, _, cx| {
+                            cx.stop_propagation();
+                            change(&request, cx, |request| {
+                                let number = request.map_or(1, |(number, _)| number + 1);
+                                *request = Some((number, event.position()));
+                            });
+                        }),
+                )))
                 .child(FileGrid::new("files-context-grid", super::entries().into_iter().take(6))),
         ),
     ))
+    .children((count > 0).then(|| div().debug_selector(|| "files-action-result".into())
+        .child(format!("{last}: local callback {count}; no filesystem operation."))))
 }
 
 pub fn rename(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {

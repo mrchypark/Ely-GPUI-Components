@@ -7,7 +7,9 @@ use gpui::{
     point, px,
 };
 
+mod dialogs_bounds;
 mod guides;
+mod touch;
 
 use super::{AlertDialog, ConfirmDialog, Dialog, HoverCard, Popover, PromptDialog};
 use crate::{

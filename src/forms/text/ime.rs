@@ -10,6 +10,14 @@ use super::{
 };
 
 impl TextInput {
+    pub(super) fn finish_composition(&mut self, cx: &mut Context<Self>) {
+        let Some(marked) = self.marked.clone() else {
+            return;
+        };
+        let composed = self.text[marked.clone()].to_string();
+        self.replace(marked, &composed, true, cx);
+    }
+
     fn range_from_utf16(&self, range: &Range<usize>) -> Range<usize> {
         from_utf16(&self.text, range.start)..from_utf16(&self.text, range.end)
     }
@@ -55,11 +63,7 @@ impl EntityInputHandler for TextInput {
     }
 
     fn unmark_text(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(marked) = self.marked.clone() else {
-            return;
-        };
-        let composed = self.text[marked.clone()].to_string();
-        self.replace(marked, &composed, true, cx);
+        self.finish_composition(cx);
     }
 
     fn replace_text_in_range(

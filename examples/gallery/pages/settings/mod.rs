@@ -41,6 +41,12 @@ const SCRIPT: &[Step] = &[
     Step::Shot("advanced"),
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
-    div().child(window::settings(window, cx)).into_any_element()
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
+    div()
+        .child(window::settings(window, cx, bounds))
+        .into_any_element()
 }

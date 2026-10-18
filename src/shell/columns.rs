@@ -120,6 +120,7 @@ impl RenderOnce for ColumnShell {
             route_close(&self.id, self.on_close.clone(), window, cx);
         }
         let (system, style) = controls_style(self.platform, cx);
+        let touch = cx.theme().touch_mode;
         let controls = || {
             let controls = WindowControls::new((self.id.clone(), "controls")).platform(style);
             let controls = match self.on_close.clone() {
@@ -131,14 +132,15 @@ impl RenderOnce for ColumnShell {
                 .debug_selector(|| "column-shell-controls".into())
                 .child(controls)
         };
-        let room = system && !window.is_fullscreen();
+        let room = !touch && system && !window.is_fullscreen();
         let mut columns = Vec::with_capacity(count);
         for (ix, column) in self.columns.into_iter().enumerate() {
             let (first, last) = (ix == 0, ix + 1 == count);
-            let lead = (!system && first && style == Platform::Mac).then(controls);
-            let trail = (!system && last && style != Platform::Mac).then(controls);
+            let lead = (!touch && !system && first && style == Platform::Mac).then(controls);
+            let trail = (!touch && !system && last && style != Platform::Mac).then(controls);
             let flush = trail.is_some() && style == Platform::Windows;
             let header = header(column.id.clone(), window, cx)
+                .debug_selector(move || format!("column-shell-header-{ix}"))
                 .when(first && room, |header| {
                     header.pl(cx.theme().traffic_light_inset())
                 })
@@ -200,12 +202,15 @@ impl RenderOnce for ColumnShell {
 
 /// A header strip at the title bar's height that drags the window.
 fn header(id: ElementId, window: &mut Window, cx: &mut App) -> gpui::Stateful<gpui::Div> {
-    drag_region((id, "header"), window, cx)
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap_2()
-        .h(cx.theme().titlebar_height())
+    let theme = cx.theme();
+    let height = theme.titlebar_height().to_pixels(window.rem_size());
+    let height = theme.touch_minimum(height);
+    let header = if theme.touch_mode {
+        div().id((id, "header"))
+    } else {
+        drag_region((id, "header"), window, cx)
+    };
+    header.flex().flex_none().items_center().gap_2().h(height)
 }
 
 /// The host's header items: one control wide at least, scrolling when short.

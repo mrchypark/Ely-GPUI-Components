@@ -55,10 +55,14 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(core::plain(cx))
-        .child(core::orders(window, cx))
+        .child(core::orders(window, cx, bounds))
         .child(features::wide(cx))
         .child(features::rows(window, cx))
         .child(features::grouped(cx))

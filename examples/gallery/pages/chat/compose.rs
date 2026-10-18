@@ -10,6 +10,7 @@ use ely_gpui_component::{
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use web_time::Instant;
 
@@ -42,7 +43,7 @@ fn attachments() -> Vec<Attachment> {
             key: "olive".into(),
             name: "atrium-olive.jpg".into(),
             bytes: 184_000,
-            preview: Some(asset!("atrium-olive.jpg").into()),
+            preview: Some(crate::assets::file(asset!("atrium-olive.jpg")).into()),
             progress: None,
         },
         Attachment {
@@ -188,6 +189,7 @@ pub fn pickers(
     draft: &Entity<TextInput>,
     window: &mut Window,
     cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
 ) -> impl IntoElement + use<> {
     let model = keep("chat-model", || SharedString::from("large"), window, cx);
     let mode = keep("chat-mode-pick", || SharedString::from("chat"), window, cx);
@@ -250,7 +252,7 @@ pub fn pickers(
             .child(DropdownMenu::new(
                 "chat-tools",
                 "Tools",
-                Menu::new()
+                crate::ui::bounded_menu(Menu::new(), bounds)
                     .item(MenuItem::check("Web search", web).on_click(flip(&tools, 0)))
                     .item(MenuItem::check("Run code", code).on_click(flip(&tools, 1)))
                     .item(MenuItem::check("Make images", images).on_click(flip(&tools, 2))),
@@ -260,7 +262,7 @@ pub fn pickers(
                 DropdownMenu::new(
                     "chat-templates",
                     "Prompts",
-                    Menu::new()
+                    crate::ui::bounded_menu(Menu::new(), bounds)
                         .item(MenuItem::new("Review this code").on_click(fill(draft, "Review the code below. List bugs first, then anything unclear, each with its line and a fix.")))
                         .item(MenuItem::new("Explain like a textbook").on_click(fill(draft, "Explain the idea below to a newcomer: define terms before using them, one idea per paragraph."))),
                 ),

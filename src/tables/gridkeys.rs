@@ -2,7 +2,8 @@ use std::rc::Rc;
 
 use anyhow::anyhow;
 use gpui::{
-    App, ClipboardItem, Entity, KeyDownEvent, Pixels, Point, SharedString, TaskExt, Window, point,
+    App, Bounds, ClipboardItem, Entity, KeyDownEvent, Pixels, Point, SharedString, TaskExt, Window,
+    point,
 };
 
 use super::{
@@ -30,7 +31,7 @@ impl Metrics {
         let rem = window.rem_size();
         let (wide, tall) = (
             theme.grid_column().to_pixels(rem),
-            theme.table_row(Density::Compact).to_pixels(rem),
+            theme.touch_minimum(theme.table_row(Density::Compact).to_pixels(rem)),
         );
         Self {
             wide,
@@ -117,6 +118,8 @@ pub(crate) fn across(
     cx: &mut App,
 ) {
     cx.stop_propagation();
+    // Keyboard navigation ends any pending tap destination before moving its source.
+    sheet.update(cx, |sheet, _| sheet.touch = Default::default());
     if size.0 == 0 || size.1 == 0 {
         return;
     }
@@ -135,10 +138,25 @@ pub(crate) fn across(
 
 /// Scrolls just enough that the cursor shows, past the frozen rows and columns.
 pub(crate) fn reveal(sheet: &mut Sheet, metrics: Metrics, frozen: (usize, usize)) {
+    reveal_axes(sheet, metrics, frozen, (true, true));
+}
+
+fn reveal_axes(
+    sheet: &mut Sheet,
+    metrics: Metrics,
+    frozen: (usize, usize),
+    mut pending: (bool, bool),
+) -> (bool, bool) {
     let (row, col) = sheet.cursor;
     let room_x = sheet.bounds.size.width - metrics.label - metrics.frozen.x;
     let room_y = sheet.bounds.size.height - metrics.tall - metrics.frozen.y;
-    if col >= frozen.1 {
+    if col < frozen.1 {
+        pending.0 = false;
+    }
+    if row < frozen.0 {
+        pending.1 = false;
+    }
+    if pending.0 && room_x >= metrics.wide {
         let x = metrics.wide * col as f32 - metrics.frozen.x;
         sheet.offset.x = sheet
             .offset
@@ -146,8 +164,9 @@ pub(crate) fn reveal(sheet: &mut Sheet, metrics: Metrics, frozen: (usize, usize)
             .min(x)
             .max(x + metrics.wide - room_x)
             .max(Pixels::ZERO);
+        pending.0 = false;
     }
-    if row >= frozen.0 {
+    if pending.1 && room_y >= metrics.tall {
         let y = metrics.tall * row as f32 - metrics.frozen.y;
         sheet.offset.y = sheet
             .offset
@@ -155,6 +174,43 @@ pub(crate) fn reveal(sheet: &mut Sheet, metrics: Metrics, frozen: (usize, usize)
             .min(y)
             .max(y + metrics.tall - room_y)
             .max(Pixels::ZERO);
+        pending.1 = false;
+    }
+    pending
+}
+
+fn measured(
+    sheet: &mut Sheet,
+    bounds: Bounds<Pixels>,
+    metrics: Metrics,
+    frozen: (usize, usize),
+) -> bool {
+    let before = (sheet.bounds, sheet.offset);
+    sheet.bounds = bounds;
+    let pending = sheet.reveal_pending;
+    sheet.reveal_pending = reveal_axes(sheet, metrics, frozen, pending);
+    before != (sheet.bounds, sheet.offset)
+}
+
+/// Consume commit reveal once, after the current surface has been measured.
+pub(crate) fn measure(
+    state: &Entity<Sheet>,
+    bounds: Bounds<Pixels>,
+    metrics: Metrics,
+    frozen: (usize, usize),
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let changed = state.update(cx, |sheet, cx| {
+        let changed = measured(sheet, bounds, metrics, frozen);
+        if changed {
+            cx.notify();
+        }
+        changed
+    });
+    // Prepaint notifications alone do not schedule the newly revealed frame.
+    if changed {
+        window.request_animation_frame();
     }
 }
 
@@ -176,9 +232,11 @@ pub(crate) fn begin(
             if let Some(on_change) = &on_change {
                 on_change(&[(cell.0, cell.1, text.clone())], window, cx);
             }
-            moved.update(cx, |sheet, _| {
+            moved.update(cx, |sheet, cx| {
                 sheet.cursor.0 = (cell.0 + 1).min(rows.saturating_sub(1));
                 sheet.anchor = sheet.cursor;
+                sheet.reveal_pending = (true, true);
+                cx.notify();
             });
         }))
     });
@@ -273,15 +331,7 @@ pub(crate) fn keys(
                 cx,
             ),
             ("backspace" | "delete", false) => {
-                let ((top, left), (bottom, right)) = range(sheet.read(cx));
-                let cleared: Vec<_> = (top..=bottom)
-                    .flat_map(|row| {
-                        (left..=right).map(move |col| (row, col, SharedString::default()))
-                    })
-                    .collect();
-                if let Some(on_change) = &face.on_change {
-                    on_change(&cleared, window, cx);
-                }
+                clear(&sheet, &face.on_change, window, cx);
             }
             ("c", true) => cx.write_to_clipboard(ClipboardItem::new_string(copied(
                 &face.shown,
@@ -329,6 +379,22 @@ pub(crate) fn keys(
     }
 }
 
+/// Clears the selected rectangle in one owner callback.
+pub(crate) fn clear(
+    sheet: &Entity<Sheet>,
+    on_change: &Option<OnCells>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let ((top, left), (bottom, right)) = range(sheet.read(cx));
+    let edits: Vec<_> = (top..=bottom)
+        .flat_map(|row| (left..=right).map(move |col| (row, col, SharedString::default())))
+        .collect();
+    if let Some(on_change) = on_change {
+        on_change(&edits, window, cx);
+    }
+}
+
 /// Applies a fill: the range's runs carry on down, or across, to where the handle was dropped.
 pub(crate) fn fill(
     sheet: &Entity<Sheet>,
@@ -365,6 +431,9 @@ pub(crate) fn fill(
         on_change(&edits, window, cx);
     }
 }
+
+#[cfg(test)]
+mod reveal_tests;
 
 #[cfg(test)]
 mod tests {

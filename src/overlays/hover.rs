@@ -2,11 +2,17 @@ use std::{rc::Rc, time::Duration};
 
 use gpui::{
     AnyElement, App, Bounds, ElementId, Entity, HoverListenerMode, InteractiveElement, IntoElement,
-    ParentElement, Pixels, RenderOnce, StatefulInteractiveElement, Styled, Task, Window, canvas,
-    div,
+    MouseButton, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
+    Styled, Task, Window, canvas, div, prelude::*,
 };
 
-use crate::forms::{float_height, surface};
+use super::{Popover, popover::bounded};
+use crate::{
+    buttons::IconButton,
+    forms::{float_height, surface},
+    primitives::IconName,
+    theme::ActiveTheme,
+};
 
 /// How long the pointer rests on the trigger before the card opens.
 const OPEN: Duration = Duration::from_millis(500);
@@ -49,12 +55,14 @@ fn settle_after(state: &Entity<Hover>, after: Duration, window: &mut Window, cx:
     state.update(cx, |hover, _| hover._pending = Some(task));
 }
 
-/// A card that opens once the pointer rests on its trigger, and stays while the pointer is on either. It never takes focus.
+/// A desktop hover preview; touch mode adds a separate disclosure with popover focus and dismissal.
 #[derive(IntoElement)]
 pub struct HoverCard {
     id: ElementId,
     trigger: AnyElement,
     content: Content,
+    usable_bounds: Option<Bounds<Pixels>>,
+    touch_label: SharedString,
 }
 
 impl HoverCard {
@@ -67,13 +75,72 @@ impl HoverCard {
             id: id.into(),
             trigger: trigger.into_any_element(),
             content: Rc::new(move |window, cx| content(window, cx).into_any_element()),
+            usable_bounds: None,
+            touch_label: "Show details".into(),
         }
+    }
+
+    /// Limits placement and scrolling content to the host's logical usable rectangle.
+    /// If its frame leaves no content space, hides the card and cancels delayed opening.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
+    /// Accessible name for the separate touch disclosure; the trigger keeps its own action.
+    pub fn touch_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.touch_label = label.into();
+        self
     }
 }
 
 impl RenderOnce for HoverCard {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window.use_keyed_state((self.id.clone(), "hover"), cx, |_, _| Hover::default());
+        let touch = cx.theme().touch_mode;
+        let available = bounded::available(self.usable_bounds, touch, window);
+        if touch {
+            state.update(cx, |hover, _| {
+                hover._pending = None;
+                hover.shown = false;
+                hover.on_trigger = false;
+                hover.on_card = false;
+            });
+            let content = self.content;
+            let button_id = (self.id.clone(), "disclosure");
+            let disclosure = Popover::with_opener(
+                (self.id.clone(), "touch"),
+                move |toggle| {
+                    div()
+                        .id("disclosure-host")
+                        .debug_selector(|| "hover-card-disclosure".into())
+                        .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                        })
+                        .child(
+                            IconButton::new(button_id, IconName::Info)
+                                .tooltip(self.touch_label)
+                                .on_click(move |_, window, cx| {
+                                    cx.stop_propagation();
+                                    toggle(window, cx);
+                                }),
+                        )
+                },
+                move |_, window, cx| content(window, cx),
+            );
+            return div()
+                .id(self.id)
+                .flex()
+                .items_center()
+                .gap(cx.theme().touch_spacing())
+                .child(self.trigger)
+                .child(
+                    disclosure
+                        .when_some(available, |popover, bounds| popover.usable_bounds(bounds)),
+                );
+        }
+        let room = bounded::has_room(available, bounded::HOVER_PADDING, window);
         let (enter, measure) = (state.clone(), state.clone());
         let host = div()
             .id(self.id.clone())
@@ -81,6 +148,9 @@ impl RenderOnce for HoverCard {
             .child(self.trigger)
             .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
             .on_hover(move |hovered, window, cx| {
+                if !room {
+                    return;
+                }
                 enter.update(cx, |hover, _| hover.on_trigger = *hovered);
                 settle_after(&enter, if *hovered { OPEN } else { LINGER }, window, cx);
             })
@@ -102,14 +172,34 @@ impl RenderOnce for HoverCard {
                 .left_0()
                 .size_full(),
             );
+        if !room {
+            state.update(cx, |hover, _| {
+                hover._pending = None;
+                hover.shown = false;
+                hover.on_trigger = false;
+                hover.on_card = false;
+            });
+            return host;
+        }
         if !state.read(cx).shown {
             return host;
         }
         let (over, tall) = (state.clone(), state.clone());
         let card = surface((self.id.clone(), "card"), cx)
+            .debug_selector(|| "hover-card-panel".into())
             .relative()
             .occlude()
-            .p_4()
+            .p(bounded::HOVER_PADDING)
+            .map(|card| {
+                if let Some(bounds) = available {
+                    card.max_w(bounds.size.width)
+                        .max_h(bounds.size.height)
+                        .overflow_scroll()
+                        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                } else {
+                    card
+                }
+            })
             .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
             .on_hover(move |hovered, window, cx| {
                 over.update(cx, |hover, _| hover.on_card = *hovered);
@@ -135,6 +225,9 @@ impl RenderOnce for HoverCard {
                 .size_full(),
             );
         let (anchor, height) = (state.read(cx).host, state.read(cx).height);
+        if let Some(bounds) = available {
+            return host.child(bounded::place(self.id, anchor, bounds, card));
+        }
         host.child(float_height(
             self.id.clone(),
             anchor,

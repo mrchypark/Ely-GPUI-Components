@@ -192,8 +192,71 @@ fn an_exported_formula_is_black_outlines() {
 fn an_exported_formula_outlines_its_text_or_says_why() {
     let svg = formula_svg(r"\text{中文} + x", false).expect("a system font sets it");
     assert!(!svg.contains("<text"), "{svg}");
-    let why = formula_svg("\\text{\u{F0000}}", false).expect_err("no font");
-    assert!(why.to_string().contains("font"), "{why}");
+    // Keep RaTeX's text unembedded so host fallback cannot pre-outline the missing glyph.
+    let text_svg = |source: &str| {
+        let ast = parsed(source).expect("valid fixture TeX");
+        let options = LayoutOptions::default().with_style(MathStyle::Text);
+        let list = to_display_list(&layout(&ast, &options));
+        render_to_svg(
+            &list,
+            &SvgOptions {
+                embed_glyphs: false,
+                ..Default::default()
+            },
+        )
+    };
+    let mut db = usvg::fontdb::Database::new();
+    db.load_font_data(
+        include_bytes!("../../../assets/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf").to_vec(),
+    );
+    assert_eq!(db.len(), 1, "only the bundled face participates");
+    let face = db.faces().next().expect("bundled font").id;
+    let options = usvg::Options {
+        fontdb: Arc::new(db),
+        font_resolver: usvg::FontResolver {
+            select_font: Box::new(move |_, _| Some(face)),
+            select_fallback: usvg::FontResolver::default_fallback_selector(),
+        },
+        ..Default::default()
+    };
+    let good = crate::documents::flatten_fixture(&text_svg(r"\text{ABC}"), &options)
+        .expect("the same fixture outlines ASCII");
+    assert!(good.contains("<path") && !good.contains("<text"), "{good}");
+    let missing = text_svg("\\text{\u{F0000}}");
+    let xml = usvg::roxmltree::Document::parse(&missing).expect("RaTeX SVG");
+    assert!(
+        xml.descendants()
+            .filter(|n| n.has_tag_name("text"))
+            .any(|n| n
+                .descendants()
+                .any(|n| n.text().is_some_and(|s| s.contains('\u{F0000}')))),
+        "unsupported character must remain text before flattening: {missing}"
+    );
+    let tree = usvg::Tree::from_str(&missing, &options).expect("fixture shapes");
+    fn missing_glyphs(group: &usvg::Group) -> Vec<&usvg::layout::PositionedGlyph> {
+        let mut found = Vec::new();
+        for node in group.children() {
+            match node {
+                usvg::Node::Group(inner) => found.extend(missing_glyphs(inner)),
+                usvg::Node::Text(text) => found.extend(
+                    text.layouted()
+                        .iter()
+                        .flat_map(|span| &span.positioned_glyphs)
+                        .filter(|glyph| glyph.text.contains('\u{F0000}')),
+                ),
+                _ => {}
+            }
+        }
+        found
+    }
+    let glyphs = missing_glyphs(tree.root());
+    assert_eq!(glyphs.len(), 1, "unsupported character reaches shaping");
+    assert_eq!(glyphs[0].font, face);
+    assert_eq!(glyphs[0].id.0, 0, "the fixture face lacks U+F0000");
+    let why = crate::documents::flatten_fixture(&missing, &options)
+        .map_err(MathError::said)
+        .expect_err("missing glyph must reject export");
+    assert_eq!(why.to_string(), "no installed font has every letter here");
 }
 
 #[test]

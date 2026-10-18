@@ -74,11 +74,15 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
-        .child(anchored::popovers(window, cx))
-        .child(anchored::hover_card(cx))
-        .child(dialogs::dialogs(window, cx))
+        .child(anchored::popovers(window, cx, bounds))
+        .child(anchored::hover_card(cx, bounds))
+        .child(dialogs::dialogs(window, cx, bounds))
         .child(guides::lightbox(window, cx))
         .child(guides::tour(window, cx))
         .child(guides::toolbar(window, cx))

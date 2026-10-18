@@ -1,12 +1,14 @@
 use std::rc::Rc;
 
+mod touch;
+
 use gpui::{
     AnyElement, App, Bounds, Div, DragMoveEvent, ElementId, Entity, EntityId, FocusHandle,
     InteractiveElement, IntoElement, MouseButton, MouseMoveEvent, ParentElement, Pixels, Point,
     SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, point, prelude::*,
 };
 
-use super::gridkeys::{Metrics, across, begin, fill, fit, keys, land};
+use super::gridkeys::{Metrics, across, begin, fill, keys, land};
 use crate::{
     forms::{Editing, Input},
     primitives::{FocusNext, FocusPrev},
@@ -27,6 +29,9 @@ pub(crate) struct Merge {
 /// A grid's own state: the cursor and the corner its range reaches from, whether it edits, how far it has scrolled, its bounds, and where a fill would reach.
 #[derive(Default)]
 pub(crate) struct Sheet {
+    pub reveal_pending: (bool, bool),
+    pub touch: touch::Mode,
+    pub dimensions: (usize, usize),
     pub cursor: (usize, usize),
     pub anchor: (usize, usize),
     pub editing: bool,
@@ -70,21 +75,13 @@ pub(crate) fn grid(face: Face, base: Div, window: &mut Window, cx: &mut App) -> 
     let sheet: Entity<Sheet> =
         window.use_keyed_state((id.clone(), "sheet"), cx, |_, _| Sheet::default());
     let editor = window.use_keyed_state((id.clone(), "editor"), cx, |_, _| Editing::default());
-    let shrunk = sheet.update(cx, |sheet, _| {
-        sheet.rows = face.rows;
-        fit(sheet, (face.rows, face.cols))
-    });
-    if shrunk {
-        editor.update(cx, |editing, cx| editing.finish(true, window, cx));
-    }
-    if sheet.read(cx).editing && editor.read(cx).field().is_none() {
-        sheet.update(cx, |sheet, _| sheet.editing = false);
-        window.focus(&focus, cx);
-    }
+    let touch_mode = cx.theme().touch_mode;
+    touch::prepare(&face, &sheet, &editor, &focus, window, cx);
     let theme = cx.theme();
     let colors = theme.colors.clone();
     let rem = window.rem_size();
     let metrics = Metrics::new(&face, window, cx);
+    let toolbar = touch_mode.then(|| touch::toolbar(&face, &sheet, &editor, &focus, cx));
     let (rows, cols) = (face.rows, face.cols);
     let (offset, bounds, editing, fill_to) = {
         let sheet = sheet.read(cx);
@@ -156,6 +153,7 @@ pub(crate) fn grid(face: Face, base: Div, window: &mut Window, cx: &mut App) -> 
         };
         Some(
             div()
+                .debug_selector(move || format!("grid-cell-{row}-{col}"))
                 .absolute()
                 .left(x_of(col))
                 .top(y_of(row))
@@ -281,7 +279,7 @@ pub(crate) fn grid(face: Face, base: Div, window: &mut Window, cx: &mut App) -> 
             .border_1()
             .border_color(colors.fg_muted)
     });
-    let handle = (face.fills && !editing).then(|| {
+    let handle = (face.fills && !editing && !touch_mode).then(|| {
         let reach = theme.status_dot();
         div()
             .id((id.clone(), "fill"))
@@ -317,7 +315,14 @@ pub(crate) fn grid(face: Face, base: Div, window: &mut Window, cx: &mut App) -> 
     let keyed = keys(face, metrics, sheet.clone(), editor.clone());
     let focus_on_press = focus.clone();
     let text_size = theme.text_size(TextSize::Sm);
-    base.id(id.clone())
+    let (base, frame) = if touch_mode {
+        (div().flex_1().min_h_0().w_full(), Some(base))
+    } else {
+        (base, None)
+    };
+    let surface = base
+        .id(id.clone())
+        .debug_selector(|| "grid-surface".into())
         .track_focus(&focus)
         .relative()
         .overflow_hidden()
@@ -326,7 +331,15 @@ pub(crate) fn grid(face: Face, base: Div, window: &mut Window, cx: &mut App) -> 
         .bg(colors.bg)
         .border_1()
         .border_color(colors.border)
-        .on_key_down(keyed)
+        .on_key_down({
+            let sheet = sheet.clone();
+            move |event, window, cx| {
+                if touch_mode {
+                    touch::reset(&sheet, cx);
+                }
+                keyed(event, window, cx);
+            }
+        })
         .capture_action(move |_: &FocusNext, window, cx| {
             let (sheet, editor, merges) = &ahead;
             let size = (face_rows, face_cols);
@@ -350,21 +363,28 @@ pub(crate) fn grid(face: Face, base: Div, window: &mut Window, cx: &mut App) -> 
             )
         })
         .on_mouse_down(MouseButton::Left, move |event, window, cx| {
+            // Tapping the live input must not focus the grid and commit on blur.
+            if touch_mode && pressed.read(cx).editing {
+                return;
+            }
             let at = event.position - pressed.read(cx).bounds.origin;
             let Some(cell) = metrics.cell_at(at, pressed.read(cx).offset, (face_rows, face_cols))
             else {
                 return;
             };
             let cell = land(&merges, cell);
+            if touch_mode && touch::destination(&pressed, cell, &raw, &on_change, window, cx) {
+                return;
+            }
             window.focus(&focus_on_press, cx);
             pressed.update(cx, |sheet, cx| {
                 sheet.cursor = cell;
-                if !event.modifiers.shift {
+                if !event.modifiers.shift && !(touch_mode && sheet.touch == touch::Mode::Extend) {
                     sheet.anchor = cell;
                 }
                 cx.notify();
             });
-            if event.click_count == 2 {
+            if event.click_count == 2 && !touch_mode {
                 let text = raw(cell.0, cell.1).to_string();
                 begin(
                     &pressed,
@@ -378,7 +398,8 @@ pub(crate) fn grid(face: Face, base: Div, window: &mut Window, cx: &mut App) -> 
             }
         })
         .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
-            if event.pressed_button != Some(MouseButton::Left) || cx.has_active_drag() {
+            if touch_mode || event.pressed_button != Some(MouseButton::Left) || cx.has_active_drag()
+            {
                 return;
             }
             let at = event.position - moved.read(cx).bounds.origin;
@@ -452,17 +473,24 @@ pub(crate) fn grid(face: Face, base: Div, window: &mut Window, cx: &mut App) -> 
         })
         .child(
             canvas(
-                move |bounds, _, cx| {
-                    if measured.read(cx).bounds != bounds {
-                        measured.update(cx, |sheet, cx| {
-                            sheet.bounds = bounds;
-                            cx.notify();
-                        });
-                    }
+                move |bounds, window, cx| {
+                    super::gridkeys::measure(&measured, bounds, metrics, frozen, window, cx)
                 },
                 |_, _, _, _| {},
             )
             .absolute()
             .inset_0(),
-        )
+        );
+    if let Some(toolbar) = toolbar {
+        frame
+            .unwrap()
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .child(toolbar)
+            .child(surface)
+            .into_any_element()
+    } else {
+        surface.into_any_element()
+    }
 }

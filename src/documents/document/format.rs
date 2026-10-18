@@ -2,6 +2,68 @@
 
 mod clear;
 
+// Enabled only by the scaling test; fixed storage and no logging in timed work.
+#[cfg(test)]
+pub(super) mod timing {
+    use std::{cell::RefCell, time::Duration};
+    use web_time::Instant;
+
+    const LABELS: [&str; 10] = [
+        "walk",
+        "verbatim",
+        "find-style",
+        "rooms",
+        "find-room",
+        "crossed-before",
+        "merge",
+        "crossed-after",
+        "holes",
+        "output",
+    ];
+    struct Sample {
+        last: Instant,
+        phases: [Duration; 10],
+    }
+    thread_local! {
+        static SAMPLE: RefCell<Option<Sample>> = const { RefCell::new(None) };
+    }
+    pub fn enable() {
+        SAMPLE.with(|sample| {
+            *sample.borrow_mut() = Some(Sample {
+                last: Instant::now(),
+                phases: [Duration::ZERO; 10],
+            })
+        });
+    }
+    pub fn start() {
+        SAMPLE.with(|sample| {
+            if let Some(sample) = sample.borrow_mut().as_mut() {
+                sample.last = Instant::now();
+            }
+        });
+    }
+    pub fn mark(index: usize) {
+        SAMPLE.with(|sample| {
+            if let Some(sample) = sample.borrow_mut().as_mut() {
+                let now = Instant::now();
+                sample.phases[index] = now.duration_since(sample.last);
+                sample.last = now;
+            }
+        });
+    }
+    pub fn report(n: usize) {
+        SAMPLE.with(|sample| {
+            if let Some(sample) = sample.borrow_mut().take() {
+                eprintln!(
+                    "Strong phases n={n}: {:?}; sum={:?}",
+                    LABELS.into_iter().zip(sample.phases).collect::<Vec<_>>(),
+                    sample.phases.into_iter().sum::<Duration>()
+                );
+            }
+        });
+    }
+}
+
 use std::ops::Range;
 
 use markdown::mdast::Node;
@@ -264,6 +326,37 @@ pub(super) fn toggle(
     toggle_tree(text, &file_tree(text), selection, format)
 }
 
+/// Keep a whole direct text block only when no other block can touch the raw selection.
+/// Parsed root children are in source order; nested and ambiguous selections use the full tree.
+pub(super) fn collect_nodes<'a>(
+    root: &'a Node,
+    selection: &Range<usize>,
+    format: InlineFormat,
+) -> Vec<&'a Node> {
+    let scoped = if let Node::Root(root) = root
+        && format != InlineFormat::Clear
+        && selection.start <= selection.end
+    {
+        let children = &root.children;
+        let after = children.partition_point(|node| span(node).start <= selection.start);
+        after.checked_sub(1).and_then(|at| {
+            let child = &children[at];
+            (matches!(child, Node::Paragraph(_) | Node::Heading(_))
+                && selection.end <= span(child).end
+                && (at == 0 || span(&children[at - 1]).end < selection.start)
+                && children
+                    .get(at + 1)
+                    .is_none_or(|next| span(next).start > selection.end))
+            .then_some(child)
+        })
+    } else {
+        None
+    };
+    let mut nodes = Vec::new();
+    walk(scoped.unwrap_or(root), &mut nodes);
+    nodes
+}
+
 /// `toggle` on `root`, the tree `text` parses to.
 pub(super) fn toggle_tree(
     text: &str,
@@ -271,9 +364,24 @@ pub(super) fn toggle_tree(
     selection: Range<usize>,
     format: InlineFormat,
 ) -> Result<Change, EditRefusal> {
-    let mut nodes = Vec::new();
-    walk(root, &mut nodes);
+    #[cfg(test)]
+    timing::start();
+    let nodes = collect_nodes(root, &selection, format);
+    #[cfg(test)]
+    timing::mark(0);
+    toggle_nodes(text, nodes, selection, format)
+}
+
+// One formatting pipeline for scoped collection and the full-walk test oracle.
+pub(super) fn toggle_nodes(
+    text: &str,
+    nodes: Vec<&Node>,
+    selection: Range<usize>,
+    format: InlineFormat,
+) -> Result<Change, EditRefusal> {
     verbatim(&nodes, &selection, format)?;
+    #[cfg(test)]
+    timing::mark(1);
     if format == InlineFormat::Clear {
         return clear::clear(text, &nodes, selection);
     }
@@ -295,6 +403,8 @@ pub(super) fn toggle_tree(
     let found = (nodes.iter())
         .filter(|node| styled(format, node) && holds(node))
         .min_by_key(|node| span(node).len());
+    #[cfg(test)]
+    timing::mark(2);
     if let Some(node) = found {
         crossed(text, &nodes, &span(node), s, e, format)?;
         return Ok(unwrap(
@@ -306,10 +416,14 @@ pub(super) fn toggle_tree(
         .filter(|node| block(node))
         .map(|node| room(node, text))
         .collect();
+    #[cfg(test)]
+    timing::mark(3);
     let within = (rooms.iter())
         .filter(|range| range.start <= s && e <= range.end)
         .min_by_key(|range| range.len())
         .cloned();
+    #[cfg(test)]
+    timing::mark(4);
     let Some(within) = within else {
         if s != e {
             let touched = (rooms.iter()).any(|range| range.start <= e && s <= range.end);
@@ -441,6 +555,8 @@ fn wrap(
     format: InlineFormat,
 ) -> Result<Change, EditRefusal> {
     crossed(text, nodes, within, s, e, format)?;
+    #[cfg(test)]
+    timing::mark(5);
     if merges(format) {
         for node in nodes.iter().filter(|node| styled(format, node)) {
             let whole = span(node);
@@ -452,7 +568,11 @@ fn wrap(
                 (s, e) = (s.min(whole.start), e.max(whole.end));
             }
         }
+        #[cfg(test)]
+        timing::mark(6);
         crossed(text, nodes, within, s, e, format)?;
+        #[cfg(test)]
+        timing::mark(7);
     }
     let mut holes: Vec<Range<usize>> = (nodes.iter())
         .filter(|node| styled(format, node) && s <= span(node).start && span(node).end <= e)
@@ -460,6 +580,8 @@ fn wrap(
         .filter(|hole| !hole.is_empty())
         .collect();
     holes.sort_by_key(|hole| hole.start);
+    #[cfg(test)]
+    timing::mark(8);
     let inner = cut(text, s..e, &holes);
     let (open, close) = written(format, &inner);
     let at = s + open.len();
@@ -467,5 +589,8 @@ fn wrap(
         InlineFormat::Link | InlineFormat::Image => at + inner.len() + 2..at + inner.len() + 2,
         _ => at..at + inner.len(),
     };
-    Ok((vec![(s..e, format!("{open}{inner}{close}"))], selection))
+    let result = Ok((vec![(s..e, format!("{open}{inner}{close}"))], selection));
+    #[cfg(test)]
+    timing::mark(9);
+    result
 }

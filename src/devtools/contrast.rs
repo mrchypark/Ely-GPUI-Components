@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, FontWeight, Hsla, IntoElement, ParentElement, RenderOnce, Rgba, Styled, Window,
-    div,
+    App, Bounds, ElementId, FontWeight, Hsla, IntoElement, ParentElement, Pixels, RenderOnce, Rgba,
+    Styled, Window, div, prelude::*,
 };
 
 use crate::{
@@ -62,12 +62,19 @@ type OnColor = Rc<dyn Fn(Hsla, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct ColorContrastChecker {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     text: Hsla,
     background: Hsla,
     on_change: OnColors,
 }
 
 impl ColorContrastChecker {
+    /// Constrains color pickers to logical window bounds supplied by the host.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         text: impl Into<Hsla>,
@@ -78,6 +85,7 @@ impl ColorContrastChecker {
             id: id.into(),
             text: text.into(),
             background: background.into(),
+            usable_bounds: None,
             on_change: Rc::new(on_change),
         }
     }
@@ -98,11 +106,16 @@ impl RenderOnce for ColorContrastChecker {
                 .flex()
                 .items_center()
                 .gap_2()
-                .child(color_well(
-                    (self.id.clone(), name).into(),
-                    color,
-                    move |color, window, cx| set(color, window, cx),
-                ))
+                .child(
+                    color_well(
+                        (self.id.clone(), name).into(),
+                        color,
+                        move |color, window, cx| set(color, window, cx),
+                    )
+                    .when_some(self.usable_bounds, |well, bounds| {
+                        well.usable_bounds(bounds)
+                    }),
+                )
                 .child(div().text_size(theme.text_size(TextSize::Sm)).child(name))
         };
         let (fore, back) = (on_change.clone(), on_change);

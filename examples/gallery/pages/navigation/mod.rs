@@ -115,7 +115,11 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(tabs::tabs(window, cx))
         .child(tabs::editor_tabs(window, cx))
@@ -127,9 +131,9 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(places::history(window, cx))
         .child(places::contents(window, cx))
         .child(places::go_to_line(window, cx))
-        .child(palettes::command_palette(window, cx))
-        .child(palettes::quick_open(window, cx))
-        .child(palettes::quick_switcher(window, cx))
-        .child(palettes::search_palette(window, cx))
+        .child(palettes::command_palette(window, cx, bounds))
+        .child(palettes::quick_open(window, cx, bounds))
+        .child(palettes::quick_switcher(window, cx, bounds))
+        .child(palettes::search_palette(window, cx, bounds))
         .into_any_element()
 }

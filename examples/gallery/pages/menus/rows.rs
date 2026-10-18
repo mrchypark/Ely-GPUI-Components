@@ -33,9 +33,13 @@ pub(super) fn run(
     move |_, cx| set(&last, Some(name.into()), cx)
 }
 
-pub fn file_menu(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn file_menu(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let (last, caption) = ran("file-ran", window, cx);
-    let recent = Menu::new()
+    let recent = crate::ui::bounded_menu(Menu::new(), bounds)
         .item(
             MenuItem::new("roadmap.md")
                 .icon(IconName::FileText)
@@ -48,7 +52,7 @@ pub fn file_menu(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         )
         .separator()
         .item(MenuItem::new("Clear recent").on_click(run(&last, "clear recent")));
-    let menu = Menu::new()
+    let menu = crate::ui::bounded_menu(Menu::new(), bounds)
         .item(
             MenuItem::new("New file")
                 .icon(IconName::FilePlus)
@@ -98,7 +102,11 @@ pub fn file_menu(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
     ))
 }
 
-pub fn view_menu(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn view_menu(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let shown = keep("view-shown", || [true, false, true], window, cx);
     let density = keep("view-density", || 1usize, window, cx);
     let (now, dense) = (*shown.read(cx), *density.read(cx));
@@ -114,7 +122,7 @@ pub fn view_menu(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         let density = density.clone();
         move |_: &mut Window, cx: &mut App| set(&density, ix, cx)
     };
-    let menu = Menu::new()
+    let menu = crate::ui::bounded_menu(Menu::new(), bounds)
         .item(
             MenuItem::check("Sidebar", now[0])
                 .keys("secondary-b")
@@ -148,12 +156,16 @@ pub fn view_menu(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
     ))
 }
 
-pub fn hosts(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn hosts(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let (last, caption) = ran("hosts-ran", window, cx);
-    let merge = Menu::new()
+    let merge = crate::ui::bounded_menu(Menu::new(), bounds)
         .item(MenuItem::new("Squash and merge").on_click(run(&last, "squash and merge")))
         .item(MenuItem::new("Rebase and merge").on_click(run(&last, "rebase and merge")));
-    let more = Menu::new()
+    let more = crate::ui::bounded_menu(Menu::new(), bounds)
         .item(
             MenuItem::new("Rename")
                 .icon(IconName::Pencil)
@@ -176,7 +188,7 @@ pub fn hosts(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 .icon(IconName::Trash2)
                 .on_click(run(&last, "delete")),
         );
-    let share = Menu::new()
+    let share = crate::ui::bounded_menu(Menu::new(), bounds)
         .item(
             MenuItem::new("Copy link")
                 .icon(IconName::Link)
@@ -208,9 +220,13 @@ pub fn hosts(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-pub fn context(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn context(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let (last, caption) = ran("context-ran", window, cx);
-    let menu = Menu::new()
+    let menu = crate::ui::bounded_menu(Menu::new(), bounds)
         .buttons([
             MenuItem::new("Cut")
                 .icon(IconName::Scissors)
