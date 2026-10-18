@@ -1,4 +1,4 @@
-use std::{f32::consts::TAU, rc::Rc};
+use std::{cell::RefCell, f32::consts::TAU, rc::Rc};
 
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Bounds, ElementId, Entity, FontWeight,
@@ -8,11 +8,15 @@ use gpui::{
 use smallvec::SmallVec;
 
 use crate::{
+    buttons::{ActionSheet, Button},
     forms::{Pick, Run},
     motion,
     primitives::{Icon, IconName, give_back, raise, take_focus},
     theme::{ActiveTheme, Elevation, IconSize, TextSize},
 };
+
+#[cfg(all(test, feature = "test-support"))]
+mod touch_tests;
 
 /// One slice of a pie menu.
 #[derive(Clone)]
@@ -64,11 +68,12 @@ fn slice(
     Some((turn / wedge) as usize % count)
 }
 
-/// Its children, and a ring of choices that opens at the pointer on a right click. The pointer's direction marks one; a click runs it.
+/// A right-click ring on desktop, or a separate Actions button and action sheet in touch mode.
 #[derive(IntoElement)]
 pub struct PieMenu {
     id: ElementId,
     items: Vec<PieItem>,
+    usable_bounds: Option<Bounds<Pixels>>,
     children: SmallVec<[AnyElement; 2]>,
 }
 
@@ -79,8 +84,15 @@ impl PieMenu {
         Self {
             id: id.into(),
             items,
+            usable_bounds: None,
             children: SmallVec::new(),
         }
+    }
+
+    /// Bounds for the touch action sheet; the desktop ring keeps its window placement.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 }
 
@@ -102,6 +114,61 @@ fn show(state: &Entity<Pie>, at: Option<Point<Pixels>>, cx: &mut App) {
 
 impl RenderOnce for PieMenu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        if cx.theme().touch_mode {
+            let state = window.use_keyed_state((self.id.clone(), "touch"), cx, |_, _| false);
+            let open = *state.read(cx);
+            let opener = state.clone();
+            let region = div()
+                .id(self.id.clone())
+                .flex()
+                .flex_col()
+                .items_start()
+                .gap(cx.theme().touch_spacing())
+                .child(
+                    div()
+                        .flex_none()
+                        .debug_selector(|| "pie-touch-trigger".into())
+                        .child(
+                            Button::new((self.id.clone(), "actions"), "Actions").on_click(
+                                move |_, _, cx| {
+                                    log::info!("pie menu: touch actions opened");
+                                    opener.update(cx, |open, cx| {
+                                        *open = true;
+                                        cx.notify();
+                                    });
+                                },
+                            ),
+                        ),
+                )
+                .children(self.children);
+            if !open {
+                return region;
+            }
+            let selected = Rc::new(RefCell::new(None::<Run>));
+            let done = selected.clone();
+            let mut sheet = ActionSheet::new((self.id, "touch-sheet"), move |window, cx| {
+                log::info!("pie menu: touch actions closed");
+                state.update(cx, |open, cx| {
+                    *open = false;
+                    cx.notify();
+                });
+                // ActionSheet has returned focus; the action can now choose its destination.
+                let run = done.borrow_mut().take();
+                if let Some(run) = run {
+                    run(window, cx);
+                }
+            });
+            if let Some(bounds) = self.usable_bounds {
+                sheet = sheet.usable_bounds(bounds);
+            }
+            for item in self.items {
+                let selected = selected.clone();
+                sheet = sheet.action(item.label, move |_, _| {
+                    *selected.borrow_mut() = item.on_click.clone();
+                });
+            }
+            return region.child(sheet);
+        }
         let state = window.use_keyed_state((self.id.clone(), "pie"), cx, |_, _| Pie::default());
         let opener = state.clone();
         let region = div()
