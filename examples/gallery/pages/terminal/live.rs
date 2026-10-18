@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use {ely_gpui_component::terminal::Launch, std::path::PathBuf};
 
 use ely_gpui_component::{
     editor::{FindOptions, FindWidget},
@@ -6,7 +7,7 @@ use ely_gpui_component::{
     layout::{PaneGroup, PaneId},
     navigation::{EditorTab, EditorTabs},
     primitives::IconName,
-    terminal::{Launch, ShellChoice, ShellSelector, Terminal, TerminalToolbar},
+    terminal::{ShellChoice, ShellSelector, Terminal, TerminalToolbar},
     theme::{ActiveTheme, Radius},
 };
 use gpui::{
@@ -14,6 +15,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
+use super::mobile;
 use crate::{
     probe::probe,
     ui::{keep, set},
@@ -29,6 +31,7 @@ const SHELLS: [(&str, &str); 3] = [
 ];
 
 /// A shell with no startup files, its prompt the folder's name, in this repository.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn launch(shell: usize) -> Launch {
     let (name, program) = SHELLS[shell];
     let args = match name {
@@ -48,29 +51,40 @@ fn launch(shell: usize) -> Launch {
 }
 
 /// A pane group of shells, and the shell each pane holds.
-type Panes = (Entity<PaneGroup>, Entity<Vec<(PaneId, Entity<Terminal>)>>);
+type Sessions = Entity<Vec<(PaneId, Entity<Terminal>)>>;
+type Panes = (Entity<PaneGroup>, Sessions);
 
 /// Panes of `shell`, fresh for each `start`: a pick starts new shells even of the same kind.
-fn panes(shell: usize, start: usize, window: &mut Window, cx: &mut App) -> Panes {
+fn panes(shell: usize, start: usize, replay: bool, window: &mut Window, cx: &mut App) -> Panes {
     let sessions = window.use_keyed_state(("terminal-sessions", start), cx, |_, _| Vec::new());
     let held = sessions.clone();
     let group = window.use_keyed_state(("terminal-panes", start), cx, move |_, _| {
-        PaneGroup::new(move |pane, _, cx| session(&held, pane, shell, cx).into_any_element())
+        PaneGroup::new(move |pane, _, cx| {
+            session(&held, pane, shell, replay, cx).into_any_element()
+        })
     });
     (group, sessions)
 }
 
 /// The shell pane `pane` holds, started the first time the pane draws.
 fn session(
-    sessions: &Entity<Vec<(PaneId, Entity<Terminal>)>>,
+    sessions: &Sessions,
     pane: PaneId,
     shell: usize,
+    replay: bool,
     cx: &mut App,
 ) -> Entity<Terminal> {
     if let Some((_, terminal)) = sessions.read(cx).iter().find(|(id, _)| *id == pane) {
         return terminal.clone();
     }
-    let terminal = cx.new(|cx| Terminal::spawn(launch(shell), cx).expect("the shell starts"));
+    let terminal = cx.new(|cx| {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        if !replay {
+            return Terminal::spawn(launch(shell), cx).expect("the shell starts");
+        }
+        let _ = replay;
+        mobile::replay(shell, cx)
+    });
     sessions.update(cx, |all, _| all.push((pane, terminal.clone())));
     terminal
 }
@@ -86,31 +100,81 @@ fn field(key: &'static str, text: &str, window: &mut Window, cx: &mut App) -> En
 
 /// The shell and the build's output, in tabs.
 pub fn shell(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
-    let tab = keep("terminal-tab", || SharedString::from("shell"), window, cx);
-    let shell = keep("terminal-shell-choice", || (0usize, 0usize), window, cx);
-    let (now_tab, (now_shell, start)) = (tab.read(cx).clone(), *shell.read(cx));
-    let (group, sessions) = panes(now_shell, start, window, cx);
-    let build = window.use_keyed_state("terminal-build", cx, |_, cx| {
-        Terminal::replay(BUILD.as_bytes(), 92, 12, cx)
-    });
-    let query = field("terminal-find", "warning", window, cx);
-    let options = keep("terminal-options", FindOptions::default, window, cx);
-    let searched = keep(
-        "terminal-searched",
-        || None::<(String, FindOptions)>,
+    let state = Controls::new(
+        cfg!(any(target_os = "ios", target_os = "android")),
         window,
         cx,
     );
+    draw(&state, cx)
+}
+
+pub(super) struct Controls {
+    pub replay: bool,
+    pub tab: Entity<SharedString>,
+    pub shell: Entity<(usize, usize)>,
+    pub group: Entity<PaneGroup>,
+    pub sessions: Sessions,
+    pub build: Entity<Terminal>,
+    pub query: Entity<TextInput>,
+    pub options: Entity<FindOptions>,
+    searched: Entity<Option<(String, FindOptions)>>,
+    pub error: Entity<Option<SharedString>>,
+    pub notice: Entity<SharedString>,
+}
+
+impl Controls {
+    pub fn new(replay: bool, window: &mut Window, cx: &mut App) -> Self {
+        let shell = keep("terminal-shell-choice", || (0usize, 0usize), window, cx);
+        let (choice, start) = *shell.read(cx);
+        let (group, sessions) = panes(choice, start, replay, window, cx);
+        Self {
+            replay,
+            tab: keep("terminal-tab", || "shell".into(), window, cx),
+            shell,
+            group,
+            sessions,
+            build: window.use_keyed_state("terminal-build", cx, |_, cx| {
+                Terminal::replay(BUILD.as_bytes(), 92, 12, cx)
+            }),
+            query: field("terminal-find", "warning", window, cx),
+            options: keep("terminal-options", FindOptions::default, window, cx),
+            searched: keep("terminal-searched", || None, window, cx),
+            error: keep("terminal-find-error", || None, window, cx),
+            notice: keep(
+                "terminal-replay-notice",
+                || "Recorded output — no local shell".into(),
+                window,
+                cx,
+            ),
+        }
+    }
+}
+
+pub(super) fn draw(state: &Controls, cx: &mut App) -> impl IntoElement + use<> {
+    let Controls {
+        replay,
+        tab,
+        shell,
+        group,
+        sessions,
+        build,
+        query,
+        options,
+        searched,
+        error,
+        notice,
+    } = state;
+    let replay = *replay;
+    let (now_tab, (now_shell, start)) = (tab.read(cx).clone(), *shell.read(cx));
     let wanted = (query.read(cx).text().to_string(), *options.read(cx));
-    let error = keep("terminal-find-error", || None::<SharedString>, window, cx);
     if searched.read(cx).as_ref() != Some(&wanted) {
         let found = build.update(cx, |build, cx| build.find(&wanted.0, wanted.1, cx));
-        set(&error, found.err().map(SharedString::from), cx);
-        set(&searched, Some(wanted.clone()), cx);
+        set(error, found.err().map(SharedString::from), cx);
+        set(searched, Some(wanted.clone()), cx);
     }
     let (total, current) = build.read(cx).matches();
     let focused = group.read(cx).focused();
-    let active = session(&sessions, focused, now_shell, cx);
+    let active = session(sessions, focused, now_shell, replay, cx);
     let (pick, choose, splitter, clearer, stopper) = (
         tab.clone(),
         shell.clone(),
@@ -121,12 +185,28 @@ pub fn shell(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let shells = ShellSelector::new(
         "terminal-shells",
         SHELLS.map(|(name, program)| ShellChoice {
-            name: name.into(),
+            name: if replay {
+                format!("{name} replay").into()
+            } else {
+                name.into()
+            },
             program: program.into(),
         }),
     )
     .default_shell(now_shell)
-    .on_pick(move |ix, _, cx| set(&choose, (ix, start + 1), cx));
+    .on_pick({
+        let notice = notice.clone();
+        move |ix, _, cx| {
+            set(&choose, (ix, start + 1), cx);
+            if replay {
+                set(
+                    &notice,
+                    "Recorded output reloaded — no local shell".into(),
+                    cx,
+                );
+            }
+        }
+    });
     let on_shell = now_tab.as_ref() == "shell";
     let exit = active
         .read(cx)
@@ -134,20 +214,60 @@ pub fn shell(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         .and_then(|status| status.code());
     let toolbar = TerminalToolbar::new(
         "terminal-toolbar",
-        format!("{} — Ely-GPUI-Components", SHELLS[now_shell].0),
+        if replay {
+            "Replay".to_string()
+        } else {
+            format!("{} — Ely-GPUI-Components", SHELLS[now_shell].0)
+        },
         exit,
     )
-    .shells(shells)
     .on_split(move |_, cx| {
         splitter.update(cx, |group, cx| {
             let pane = group.focused();
-            group.split(pane, Axis::Horizontal, cx);
+            group.split(
+                pane,
+                if replay {
+                    Axis::Vertical
+                } else {
+                    Axis::Horizontal
+                },
+                cx,
+            );
         })
     })
     .on_clear(move |_, cx| clearer.update(cx, |terminal, cx| terminal.clear(cx)))
-    .on_stop(move |_, cx| stopper.update(cx, |terminal, _| terminal.write(&b"\x03"[..])));
+    .on_stop({
+        let notice = notice.clone();
+        move |_, cx| {
+            if replay {
+                set(&notice, "Recorded output: no process to stop.".into(), cx);
+            } else {
+                stopper.update(cx, |terminal, _| terminal.write(&b"\x03"[..]));
+            }
+        }
+    });
+    let toolbar = if replay {
+        div()
+            .w_full()
+            .child(
+                div().flex().child(
+                    div()
+                        .flex_none()
+                        .debug_selector(|| "terminal-replay-selector".into())
+                        .child(shells),
+                ),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "terminal-replay-toolbar".into())
+                    .child(toolbar),
+            )
+            .into_any_element()
+    } else {
+        toolbar.shells(shells).into_any_element()
+    };
     let (step, flip) = (build.clone(), options.clone());
-    let find = FindWidget::new("terminal-find-widget", &query, current, total)
+    let find = FindWidget::new("terminal-find-widget", query, current, total)
         .options(*options.read(cx))
         .on_options(move |next, _, cx| set(&flip, next, cx))
         .on_step(move |forward, _, cx| step.update(cx, |build, cx| build.step(forward, cx)));
@@ -155,39 +275,82 @@ pub fn shell(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         Some(message) => find.error(message),
         None => find,
     };
-    let theme = cx.theme();
-    div().child(
-        div()
-            .w(px(840.))
-            .rounded(theme.radius(Radius::Md))
-            .border_1()
-            .border_color(theme.colors.border)
-            .overflow_hidden()
-            .child(probe(
-                "terminal-tabs",
-                div().w(px(838.)).child(
-                    EditorTabs::new(
-                        "terminal-tabs",
-                        [
-                            EditorTab::new("shell", SHELLS[now_shell].0).icon(IconName::Terminal),
-                            EditorTab::new("build", "cargo run").icon(IconName::FileText),
-                        ],
-                    )
-                    .selected(now_tab.clone())
-                    .on_select(move |id, _, cx| set(&pick, id.clone(), cx)),
-                ),
-            ))
-            .children(on_shell.then_some(toolbar))
-            .child(probe(
-                "terminal",
-                div().w(px(838.)).h(px(300.)).relative().map(|body| {
-                    if on_shell {
-                        body.child(group)
-                    } else {
-                        body.child(build)
-                            .child(div().absolute().top_1().right_4().child(find))
-                    }
-                }),
-            )),
+    let tabs = EditorTabs::new(
+        "terminal-tabs",
+        [
+            EditorTab::new(
+                "shell",
+                if replay {
+                    "Replay"
+                } else {
+                    SHELLS[now_shell].0
+                },
+            )
+            .icon(IconName::Terminal),
+            EditorTab::new("build", if replay { "Build replay" } else { "cargo run" })
+                .icon(IconName::FileText),
+        ],
     )
+    .selected(now_tab.clone())
+    .on_select(move |id, _, cx| set(&pick, id.clone(), cx));
+    let theme = cx.theme();
+    let frame = div()
+        .debug_selector(|| "terminal-composition".into())
+        .rounded(theme.radius(Radius::Md))
+        .border_1()
+        .border_color(theme.colors.border)
+        .overflow_hidden();
+    if replay {
+        return frame
+            .w_full()
+            .min_w_0()
+            .child(
+                div()
+                    .w_full()
+                    .debug_selector(|| "terminal-replay-tabs".into())
+                    .child(tabs),
+            )
+            .children(on_shell.then_some(toolbar))
+            .child(
+                div()
+                    .debug_selector(|| "terminal-replay-notice".into())
+                    .child(notice.read(cx).clone()),
+            )
+            .when(!on_shell, |el| {
+                el.child("Swipe search controls horizontally if needed.")
+                    .child(mobile::scroll(
+                        "terminal-replay-find",
+                        find.into_any_element(),
+                    ))
+            })
+            .child(
+                div()
+                    .w_full()
+                    .h(px(300.))
+                    .debug_selector(|| "terminal-replay-grid".into())
+                    .map(|body| {
+                        if on_shell {
+                            body.child(group.clone())
+                        } else {
+                            body.child(build.clone())
+                        }
+                    }),
+            )
+            .child(mobile::targets(notice));
+    }
+    frame
+        .w(px(840.))
+        .child(probe("terminal-tabs", div().w(px(838.)).child(tabs)))
+        .children(on_shell.then_some(toolbar))
+        .child(probe(
+            "terminal",
+            div().w(px(838.)).h(px(300.)).relative().map(|body| {
+                if on_shell {
+                    body.child(group.clone())
+                } else {
+                    body.child(build.clone())
+                        .child(div().absolute().top_1().right_4().child(find))
+                }
+            }),
+        ))
 }

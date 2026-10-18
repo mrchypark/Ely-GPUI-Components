@@ -107,6 +107,7 @@ pub const ALL: &[Page] = &[
 
 pub use i18n::install as install_i18n;
 pub use interaction::bind_keys;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub use shell::{open_about, open_managed};
 
 pub fn find(slug: &str) -> Option<usize> {

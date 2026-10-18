@@ -133,7 +133,9 @@ impl IntoElement for Section {
 /// A gallery picture: a file, or a web address.
 pub fn resource(path: impl Into<SharedString>) -> Resource {
     let path = path.into();
-    if cfg!(target_family = "wasm") {
+    if path.starts_with("gallery-assets/") {
+        Resource::Embedded(path)
+    } else if cfg!(target_family = "wasm") {
         Resource::Uri(path.into())
     } else {
         Resource::Path(std::path::Path::new(path.as_ref()).into())

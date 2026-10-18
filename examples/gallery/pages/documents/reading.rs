@@ -61,7 +61,7 @@ fn pages(paths: &[&'static str], width: f32, height: f32) -> Rc<Vec<DocPage>> {
         paths
             .iter()
             .map(|path| DocPage {
-                source: (*path).into(),
+                source: crate::assets::file(path),
                 width,
                 height,
             })

@@ -1,6 +1,63 @@
 # Mobile UI support (implementation preview)
 
-## Current validation (2026-10-17)
+## Current validation (2026-10-18)
+
+Latest verified core overlay commits are app-compatible `09702cf` and registry
+upstream `8563bc6`. The buttons/overlays/menus host suites passed respectively
+12/39/47 for app and 20/39/65 for upstream, all exit 0. Evidence is
+`frozen-batch-20261018-104222-48546-results.txt` and its six suite logs.
+This includes bounded Popover/HoverCard behavior and the no-room correction;
+it does not certify all overlay components or native input.
+
+Earlier core commits `7e146ac` and `c8fe0a5` retain the separate
+forms/lists/navigation evidence below; those suites were not rerun by this
+documentation update. Host execution is recorded in task-local
+`outputs/mobile-gallery-simulator-20261017/provenance/`:
+
+| Source line | forms:: | lists:: | navigation:: |
+| --- | --- | --- | --- |
+| App-compatible | 144 PASS | 39 PASS | 35 PASS |
+| Registry upstream | 147 PASS | 42 PASS | 35 PASS |
+
+All six runs exited 0. Evidence:
+`host-owned-fixed-20261018-101757-32699-results.txt`, the six matching suite
+logs, and `host-owned-fixed-20261018-101757-32699-integrity.txt`. Source hashes
+matched the six-suite snapshot and dependency pins stayed unchanged. These are
+filtered host-suite totals, not counts of components or native acceptance.
+They include overlapping and endpoint RangeSlider drags, form edge/disabled
+behavior, visible Tabs context and EditorTabs close controls, Sortable move
+controls, and swipe cancellation/parent containment.
+
+Both galleries passed 10 host tests each in
+`gallery-retry-20261018-105023-50471-ely-runtime.log` and
+`gallery-retry-20261018-105023-50471-ely-upstream-runtime.log`; the matching
+results file records build and runtime exit 0 for each. Each navigation test
+draws all 44 registered pages at 390×844 logical pixels. Coverage also includes
+catalog/assets, wheel scrolling of catalog and specimen with a stationary
+header, four terminal replay tests, and fixture cleanup tests. Both cleanup
+logs confirm automatic fixture removal without manual deletion.
+This retry supersedes the earlier gallery failure in the frozen-batch run.
+These are host checks, not 44 component certifications or visual/interaction
+acceptance of every demo. Terminal replay does not certify a native PTY or shell.
+
+The old native binary demonstrated only a catalog-to-buttons touch transition
+and immediate render. It does not contain the newly verified core snapshot.
+No new native trace PASS is established by this update. These documentation
+edits are excluded from the current frozen native build snapshot.
+
+Compound wrapper and gallery propagation of per-window safe-area/keyboard
+`usable_bounds` remains unimplemented. Direct overlay bounds support and host
+tests do not supply this wiring automatically. TooltipTrigger/HelpTooltip
+touch-only disclosure also remains follow-up work; bounds must not be stored
+globally in Theme.
+
+The full component inventory and S0–S7 acceptance scope remain in
+[component coverage](mobile-component-coverage.md). Export declaration groups
+include models, helpers, functions and cfg-specific names; they are not
+component counts. Native IME, rotation, multitouch, accessibility, lifecycle,
+performance, OS services and category-wide acceptance remain separate work.
+
+## Historical focused menu validation (2026-10-17)
 
 The app-compatible Git GPUI branch passed 42 focused menu tests; the registry
 upstream branch passed 60. These are separate runs, not full-suite certification.
@@ -126,7 +183,7 @@ pan, zoom or commit twice. No such native suppression adapter is supplied here.
 
 | Area | Implemented surface | Still requires integration/runtime evidence |
 | --- | --- | --- |
-| Buttons | Existing theme controls in wrapping toolbar | Touch target sizes, accessibility, OS tap synthesis |
+| Buttons | Opt-in touch_mode for supported targets; see usage below | Native sizing, accessibility and OS tap synthesis beyond prior menu evidence |
 | Input | Real focus reveal with changing usable bounds | Native IME, caret/selection, floating keyboard |
 | List/scroll | Existing scroll container; focus reveal helper | Inertia, nested scrolling, capture outside bounds |
 | Dialog | Opt-in usable bounds; existing focus policy | Keyboard and focus return on a real device |
@@ -201,3 +258,33 @@ retained here and in task-local logs. `work/team-run.json` records team evaluati
 A reusable POSIX verification pipeline with a disk-capacity gate is a follow-up
 candidate only; no new skill was installed. The Python session evaluator was not
 run under the user's scripting policy.
+## Opt-in touch sizing
+
+After Ely initialization, enable the policy with
+`Theme::update(cx, |theme| theme.touch_mode = true)` using
+`ely_gpui_component::theme::Theme`. The default is `false`; setting it back to
+`false` restores the existing desktop sizing policy. ControlSize and Density
+values themselves are unchanged.
+
+Supported targets are Button (including ButtonGroup/SplitButton reuse), IconButton,
+ConfirmButton, CopyButton, ToggleButton/ToggleGroup, SegmentedControl options and
+QuickAction rows. Touch mode applies a minimum 48 logical pixels in each axis;
+ActionBar and ToggleGroup use 8 logical pixels between independent controls.
+Joined button/segment controls retain their joined presentation. Decorative
+separators are excluded. Toggle minimum widths preserve larger sizes resolved
+from the current window rem size, rather than replacing them with 48 pixels.
+
+Custom controls can apply `theme.touch_target(element)` before their custom
+minimum constraints. This helper replaces existing style minima; it does not
+merge arbitrary rem/percentage constraints. Resolve an existing minimum to logical
+pixels and pass it through `theme.touch_minimum(minimum)` when preserving it.
+
+The app-compatible button suite passed 6 tests after the large-rem toggle fix;
+independent review found no remaining blocker. The upstream buttons filter passed
+14 tests (6 core button tests plus 8 menu-button tests), exit 0; the app run also
+exited 0. These are separate suite totals, not extra tests to add again.
+This is host evidence only: no new native
+or simulator touch-sizing acceptance is claimed. Selected forms, list gestures
+and navigation controls now have the host evidence recorded above; remaining
+controls and native behavior still need migration or validation. Enabling
+touch_mode is not whole-library mobile certification.
