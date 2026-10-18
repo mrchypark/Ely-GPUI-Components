@@ -42,7 +42,7 @@ fn attachments() -> Vec<Attachment> {
             key: "olive".into(),
             name: "atrium-olive.jpg".into(),
             bytes: 184_000,
-            preview: Some(asset!("atrium-olive.jpg").into()),
+            preview: Some(crate::assets::file(asset!("atrium-olive.jpg")).into()),
             progress: None,
         },
         Attachment {

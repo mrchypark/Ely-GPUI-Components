@@ -53,7 +53,7 @@ pub fn rich(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .flex_col()
             .gap_4()
             .child(MarkdownRenderer::new("chat-rich", RICH))
-            .child(ImageMessage::new("chat-diagram", asset!("flow.svg"), 560.0, 160.0).caption("Drawn by the host from a diagram's source")),
+            .child(ImageMessage::new("chat-diagram", crate::assets::file(asset!("flow.svg")), 560.0, 160.0).caption("Drawn by the host from a diagram's source")),
     )
 }
 
@@ -94,7 +94,7 @@ pub fn media(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .flex()
                         .flex_col()
                         .gap_4()
-                        .child(ImageMessage::new("chat-image", asset!("atrium.jpg"), 960.0, 640.0).caption("The atrium at noon"))
+                        .child(ImageMessage::new("chat-image", crate::assets::file(asset!("atrium.jpg")), 960.0, 640.0).caption("The atrium at noon"))
                         .child(FileMessage::new("chat-file", "lift-notes.pdf", 482_000).on_download(|_, _| log::info!("gallery: download file")))
                         .child(
                             AudioMessage::new("chat-audio", peaks, Duration::from_secs(42))
@@ -115,8 +115,8 @@ pub fn media(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .flex()
                         .flex_col()
                         .gap_3()
-                        .child(ImageMessage::new("chat-narrow-image", asset!("atrium-stair.jpg"), 600.0, 400.0).caption("In a narrow column, in its own shape"))
-                        .child(VideoMessage::new("chat-narrow-video", asset!("dunes-sun.jpg"), 600.0, 400.0, Duration::from_secs(31)))
+                        .child(ImageMessage::new("chat-narrow-image", crate::assets::file(asset!("atrium-stair.jpg")), 600.0, 400.0).caption("In a narrow column, in its own shape"))
+                        .child(VideoMessage::new("chat-narrow-video", crate::assets::file(asset!("dunes-sun.jpg")), 600.0, 400.0, Duration::from_secs(31)))
                         .child(FileMessage::new("chat-narrow-file", "a-long-name-for-the-lift-notes.pdf", 482_000)),
                 ),
             )
@@ -129,18 +129,18 @@ pub fn media(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .child(ImageGrid::new(
                         "chat-grid",
                         [
-                            asset!("dunes.jpg"),
-                            asset!("atrium-stair.jpg"),
-                            asset!("dunes-sun.jpg"),
-                            asset!("atrium-olive.jpg"),
-                            asset!("dunes-grass.jpg"),
+                            crate::assets::file(asset!("dunes.jpg")),
+                            crate::assets::file(asset!("atrium-stair.jpg")),
+                            crate::assets::file(asset!("dunes-sun.jpg")),
+                            crate::assets::file(asset!("atrium-olive.jpg")),
+                            crate::assets::file(asset!("dunes-grass.jpg")),
                         ],
                     ))
-                    .child(VideoMessage::new("chat-video", asset!("dunes.jpg"), 960.0, 640.0, Duration::from_secs(84)).on_toggle(|next, _, _| log::info!("gallery: video playing {next}")))
+                    .child(VideoMessage::new("chat-video", crate::assets::file(asset!("dunes.jpg")), 960.0, 640.0, Duration::from_secs(84)).on_toggle(|next, _, _| log::info!("gallery: video playing {next}")))
                     .child(
                         LinkPreviewCard::new("chat-link", "example.com", "Color, in light and dark")
                             .description("How one accent reads the same on paper and on charcoal.")
-                            .picture(asset!("dunes-square.jpg"))
+                            .picture(crate::assets::file(asset!("dunes-square.jpg")))
                             .on_open(|_, _| log::info!("gallery: open link")),
                     ),
             )

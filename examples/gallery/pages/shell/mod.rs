@@ -1,14 +1,18 @@
 mod bars;
 mod chrome;
 mod columns;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod status;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod system;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod windows;
 
 use gpui::{AnyElement, App, IntoElement, ParentElement, Window, div};
 
 use super::Page;
 use crate::step::Step;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub use windows::{open_about, open_managed};
 
 pub const PAGE: Page = Page {
@@ -100,6 +104,7 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn render(window: &mut Window, cx: &mut App) -> AnyElement {
     div()
         .child(chrome::title_bar(cx))
@@ -126,5 +131,17 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(status::crash_reporter(cx))
         .child(status::offline(window, cx))
         .child(status::zoom(cx))
+        .into_any_element()
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+    div()
+        .child("Desktop window management, tray and Dock demos are unavailable on mobile.")
+        .child(columns::column_shell(cx))
+        .child(bars::toolbar(cx))
+        .child(bars::status_bar(cx))
+        .child(bars::activity_bar(window, cx))
+        .child(bars::tab_bar(window, cx))
         .into_any_element()
 }

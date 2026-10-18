@@ -14,16 +14,15 @@ use crate::{
 
 pub fn menu_bar(cx: &mut App) -> impl IntoElement + use<> {
     let menus = match cx.get_menus() {
-        Some(menus) => menus,
-        None if cfg!(target_family = "wasm") => crate::app_menus()
+        Some(menus) if !menus.is_empty() => menus,
+        _ => crate::app_menus()
             .into_iter()
             .map(gpui::Menu::owned)
             .collect(),
-        None => panic!("the gallery sets its menus in main"),
     };
     section(
         "MenuBar Menu",
-        "The app's own menus, the ones cx.set_menus gave the system, drawn in the window. Picking a row dispatches its action.",
+        "The app's menu model drawn in the window, with or without a system menu bar. Picking a row dispatches its action.",
         cx,
     )
     .child(specimen(

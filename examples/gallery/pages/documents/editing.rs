@@ -118,7 +118,7 @@ fn kinds() -> Vec<BlockData> {
         block(
             BlockKind::Image(Media {
                 width: 0.7,
-                ..Media::new(ATRIUM)
+                ..Media::new(crate::assets::file(ATRIUM))
             }),
             &["The atrium at noon"],
         ),
