@@ -1,3 +1,5 @@
+mod note_bounds;
+
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{

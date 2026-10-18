@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, Bounds, ElementId, FocusHandle, FontWeight,
+    Animation, AnimationExt, AnyElement, App, Bounds, ElementId, Entity, FocusHandle, FontWeight,
     InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement, Styled, Window, anchored, div, point, prelude::*,
+    StatefulInteractiveElement, Styled, WeakEntity, Window, anchored, div, point, prelude::*,
 };
 use smallvec::SmallVec;
 
@@ -11,15 +11,37 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     forms::{Enter, Run},
     i18n, motion,
-    primitives::{Backdrop, FocusScope, IconName, give_back, raise, take_focus},
+    primitives::{Backdrop, FocusScope, IconName, Takeover, give_back, raise, take_focus},
     theme::{ActiveTheme, Elevation, Radius, TextSize},
 };
+
+use super::popover::bounded;
+
+#[derive(Default)]
+struct Visibility {
+    takeover: Option<WeakEntity<Takeover>>,
+    suppressed: bool,
+}
+
+fn visibility(id: &ElementId, window: &mut Window, cx: &mut App) -> Entity<Visibility> {
+    window.use_keyed_state((id.clone(), "visibility"), cx, |_, _| Visibility::default())
+}
+
+// Match the card's p_6 and border; share clipping and no-content-space policy with popovers.
+fn has_room(bounds: Option<Bounds<Pixels>>, window: &Window) -> bool {
+    bounded::has_room(
+        bounded::available(bounds, false, window),
+        gpui::rems(1.5),
+        window,
+    )
+}
 
 /// A dialog's way out: it hands focus back, then runs the owner's close.
 pub type Close = Rc<dyn Fn(&mut Window, &mut App)>;
 
 type Action = Box<dyn FnOnce(Close) -> AnyElement>;
 type OnEnter = Box<dyn FnOnce(Close) -> Run>;
+type OnShow = Box<dyn FnOnce(&mut Window, &mut App)>;
 
 /// A card over a scrim: a title, a line of detail, the owner's content and a row of actions. Escape closes it, Tab stays inside, and focus returns on every close.
 #[derive(IntoElement)]
@@ -30,6 +52,7 @@ pub struct Dialog {
     body: SmallVec<[AnyElement; 2]>,
     actions: SmallVec<[Action; 2]>,
     enter: Option<OnEnter>,
+    on_show: Option<OnShow>,
     scrim_closes: bool,
     fullscreen: bool,
     usable_bounds: Option<Bounds<Pixels>>,
@@ -51,6 +74,7 @@ impl Dialog {
             body: SmallVec::new(),
             actions: SmallVec::new(),
             enter: None,
+            on_show: None,
             scrim_closes: true,
             fullscreen: false,
             usable_bounds: None,
@@ -77,6 +101,12 @@ impl Dialog {
         self
     }
 
+    /// Prepares wrapper state only after the shared visibility guard accepts this render.
+    pub(super) fn on_show(mut self, prepare: impl FnOnce(&mut Window, &mut App) + 'static) -> Self {
+        self.on_show = Some(Box::new(prepare));
+        self
+    }
+
     /// Fills the window below its title bar, under a bar with the title and a close button.
     pub fn fullscreen(mut self) -> Self {
         self.fullscreen = true;
@@ -84,6 +114,7 @@ impl Dialog {
     }
 
     /// Uses logical window bounds supplied by the host, including keyboard avoidance.
+    /// No content space closes once and returns focus; remove before explicitly reopening.
     pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
         self.usable_bounds = Some(bounds);
         self
@@ -109,8 +140,29 @@ impl ParentElement for Dialog {
 }
 
 impl RenderOnce for Dialog {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        self.usable_bounds = bounded::available(self.usable_bounds, false, window);
+        let visibility = visibility(&self.id, window, cx);
+        if visibility.read(cx).suppressed {
+            return div().into_any_element();
+        }
+        if !has_room(self.usable_bounds, window) {
+            let takeover = visibility.update(cx, |state, _| {
+                state.suppressed = true;
+                state.takeover.take()
+            });
+            if let Some(takeover) = takeover.and_then(|takeover| takeover.upgrade()) {
+                give_back(&takeover, window, cx);
+            }
+            // The owner may still be rendering; do not re-enter its entity update here.
+            window.defer(cx, move |window, cx| (self.on_close)(window, cx));
+            return div().into_any_element();
+        }
+        if let Some(prepare) = self.on_show.take() {
+            prepare(window, cx);
+        }
         let takeover = take_focus((self.id.clone(), "takeover"), window, cx);
+        visibility.update(cx, |state, _| state.takeover = Some(takeover.downgrade()));
         let focus = takeover.read(cx).focus.clone();
         if let Some(first) = &self.first
             && focus.is_focused(window)

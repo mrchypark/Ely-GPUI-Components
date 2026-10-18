@@ -40,6 +40,7 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
         .items_center()
         .gap_2()
         .h(theme.control_height(ControlSize::Md))
+        .map(|row| theme.touch_target(row))
         .px_2()
         .rounded(theme.radius(Radius::Md))
         .text_color(fg)

@@ -1,4 +1,5 @@
 use ely_gpui_component::calendar::{AgendaView, Answer, Attendee, AttendeeList, EventPopover};
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::{here, plan, quiet};
@@ -43,7 +44,11 @@ pub fn agenda(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-pub fn details(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn details(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let (zone, _) = here();
     let events = plan(window, cx);
     let review = events
@@ -73,7 +78,7 @@ pub fn details(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .flex_col()
                     .gap_3()
                     .child(
-                        EventPopover::new("calendar-popover", review)
+                        EventPopover::new("calendar-popover", review).when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                             .zone(zone)
                             .attendees(guests())
                             .on_edit(move |key, _, cx| {

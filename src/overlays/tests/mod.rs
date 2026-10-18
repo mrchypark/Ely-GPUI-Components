@@ -7,6 +7,7 @@ use gpui::{
     point, px,
 };
 
+mod dialogs_bounds;
 mod guides;
 mod touch;
 

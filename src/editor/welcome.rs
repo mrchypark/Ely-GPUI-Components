@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, ElementId, FontWeight, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
-    prelude::*,
+    AnyElement, App, Bounds, ElementId, FontWeight, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, prelude::*,
 };
 
 use crate::{
@@ -185,12 +185,19 @@ type OnClose = Rc<dyn Fn(&mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct ProjectSwitcher {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     projects: Vec<Project>,
     on_open: Option<OnIndex>,
     on_close: OnClose,
 }
 
 impl ProjectSwitcher {
+    /// Current usable rectangle in logical window coordinates.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     /// Render it while open; `on_close` runs on Escape, a click outside, or a pick.
     pub fn new(
         id: impl Into<ElementId>,
@@ -202,6 +209,7 @@ impl ProjectSwitcher {
             projects: projects.into_iter().collect(),
             on_open: None,
             on_close: Rc::new(on_close),
+            usable_bounds: None,
         }
     }
 
@@ -272,6 +280,7 @@ impl RenderOnce for ProjectSwitcher {
         });
         Palette {
             id: self.id,
+            usable_bounds: self.usable_bounds,
             input,
             groups: vec![Group {
                 title: None,
@@ -463,33 +472,4 @@ impl RenderOnce for WelcomePage {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_a_name_match_marks_the_name() {
-        let project = Project {
-            name: "中文".into(),
-            path: "foo".into(),
-            branch: None,
-            opened: "now".into(),
-            pinned: false,
-        };
-        assert_eq!(fit("oo", &project).map(|(_, hits)| hits), Some(Vec::new()));
-        assert!(fit("zz", &project).is_none());
-    }
-
-    #[test]
-    fn pinned_projects_lead_and_keep_their_places() {
-        let project = |name: &str, pinned: bool| Project {
-            name: name.to_string().into(),
-            path: "~".into(),
-            branch: None,
-            opened: "now".into(),
-            pinned,
-        };
-        let projects = [project("a", false), project("b", true), project("c", false)];
-        let order: Vec<usize> = ordered(&projects).into_iter().map(|(ix, _)| ix).collect();
-        assert_eq!(order, [1, 0, 2]);
-    }
-}
+mod tests;

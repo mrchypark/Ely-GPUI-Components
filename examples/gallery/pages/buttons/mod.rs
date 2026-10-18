@@ -71,7 +71,11 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(basics::basics(cx))
         .child(actions::later(cx))
@@ -83,7 +87,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(actions::small_buttons(cx))
         .child(actions::action_bar(cx))
         .child(actions::bulk(window, cx))
-        .child(actions::action_sheet(window, cx))
+        .child(actions::action_sheet(window, cx, bounds))
         .child(actions::quick_actions(cx))
         .into_any_element()
 }

@@ -255,3 +255,14 @@ pub fn noise(seed: u64) -> impl FnMut() -> f64 {
         (state >> 33) as f64 / (1u64 << 31) as f64
     }
 }
+
+/// Forward the owning window's area into a menu model, including empty areas.
+pub fn bounded_menu(
+    menu: ely_gpui_component::menus::Menu,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> ely_gpui_component::menus::Menu {
+    match bounds {
+        Some(area) => menu.usable_bounds(area),
+        None => menu,
+    }
+}

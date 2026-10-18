@@ -41,19 +41,23 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(code::editor(window, cx))
         .child(code::looks(window, cx))
         .child(code::changes(window, cx))
         .child(intel::hints(window, cx))
-        .child(intel::navigate(window, cx))
+        .child(intel::navigate(window, cx, bounds))
         .child(search::find(window, cx))
         .child(search::panel(window, cx))
         .child(panels::problems_and_output(window, cx))
         .child(panels::console_and_extensions(window, cx))
         .child(settings::settings_and_keys(window, cx))
-        .child(start::start(window, cx))
+        .child(start::start(window, cx, bounds))
         .child(status::status(window, cx))
         .into_any_element()
 }

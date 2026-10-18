@@ -1,15 +1,17 @@
 use std::{rc::Rc, time::Duration};
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, AnyView, App, AppContext, Context, Div, ElementId,
-    HoverListenerMode, InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Task, Window, anchored, div,
-    point, prelude::*,
+    Animation, AnimationExt, AnyElement, AnyView, App, AppContext, Bounds, Context, Div, ElementId,
+    HoverListenerMode, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point,
+    Render, RenderOnce, SharedString, Size, StatefulInteractiveElement, Styled, Task, Window,
+    anchored, div, point, prelude::*, rems,
 };
 
 use super::{Icon, IconName, raise};
 use crate::{
+    buttons::IconButton,
     motion,
+    overlays::{HoverCard, Popover, tooltip_available, tooltip_has_room, tooltip_place},
     theme::{ActiveTheme, Elevation, IconSize, Radius, TextSize},
 };
 
@@ -17,10 +19,9 @@ type Content = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 
 const DELAY: Duration = Duration::from_millis(400);
 
-fn surface(content: AnyElement, cx: &App) -> impl IntoElement + use<> {
+fn body(content: AnyElement, cx: &App) -> Div {
     let theme = cx.theme();
-    let rise = motion::NUDGE;
-    let body = div()
+    div()
         .max_w(theme.tooltip_max_width())
         .px_2()
         .py_1()
@@ -29,8 +30,12 @@ fn surface(content: AnyElement, cx: &App) -> impl IntoElement + use<> {
         .text_color(theme.colors.tooltip_fg)
         .text_size(theme.text_size(TextSize::Sm))
         .shadow(theme.elevation(Elevation::Floating))
-        .child(content);
-    body.with_animation(
+        .child(content)
+}
+
+fn surface(content: AnyElement, cx: &App) -> impl IntoElement + use<> {
+    let rise = motion::NUDGE;
+    body(content, cx).with_animation(
         "tooltip-in",
         Animation::new(motion::duration(motion::FAST, cx)).with_easing(motion::ease_out_cubic),
         move |body, t| body.opacity(t).mt(rise * (1.0 - t)),
@@ -100,6 +105,8 @@ pub struct TooltipTrigger {
     content: Content,
     delay: Duration,
     follow: bool,
+    usable_bounds: Option<Bounds<Pixels>>,
+    touch_label: SharedString,
 }
 
 impl TooltipTrigger {
@@ -114,6 +121,8 @@ impl TooltipTrigger {
             content: Rc::new(content),
             delay: DELAY,
             follow: false,
+            usable_bounds: None,
+            touch_label: "Show tooltip".into(),
         }
     }
 
@@ -126,11 +135,41 @@ impl TooltipTrigger {
         self.follow = true;
         self
     }
+
+    /// Host-provided logical window rectangle; an empty rectangle suppresses the tip.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
+    /// Name of the separate touch disclosure. The wrapped primary action is preserved.
+    pub fn touch_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.touch_label = label.into();
+        self
+    }
 }
 
 impl RenderOnce for TooltipTrigger {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window.use_keyed_state(self.id.clone(), cx, |_, _| TriggerState::default());
+        let touch = cx.theme().touch_mode;
+        let available = tooltip_available(self.usable_bounds, touch, window);
+        let room = tooltip_has_room(available, rems(0.5), window);
+        if touch || !room {
+            state.update(cx, |trigger, _| {
+                trigger.visible = false;
+                trigger._pending = None;
+            });
+        }
+        if touch {
+            let content = self.content;
+            return HoverCard::new(self.id, self.child, move |window, cx| content(window, cx))
+                .touch_label(self.touch_label)
+                .when_some(self.usable_bounds, |card, bounds| {
+                    card.usable_bounds(bounds)
+                })
+                .into_any_element();
+        }
         let (visible, mouse) = {
             let read = state.read(cx);
             (read.visible, read.mouse)
@@ -145,7 +184,7 @@ impl RenderOnce for TooltipTrigger {
             .child(self.child)
             .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
             .on_hover(move |hovered, window, cx| {
-                if !*hovered {
+                if !*hovered || !room {
                     hover.update(cx, hide);
                     return;
                 }
@@ -176,16 +215,34 @@ impl RenderOnce for TooltipTrigger {
             })
             .on_any_mouse_down(move |_, _, cx| press.update(cx, hide))
             .when(visible, |trigger| {
-                let body = content(window, cx);
+                let content = content(window, cx);
                 let below = cx.theme().cursor_offset().to_pixels(window.rem_size());
+                if let Some(area) = available {
+                    return trigger.child(tooltip_place(
+                        (id.clone(), "raised").into(),
+                        Bounds::new(mouse + point(Pixels::ZERO, below), Size::default()),
+                        area,
+                        body(content, cx)
+                            .id("bounded-tooltip")
+                            .debug_selector(|| "bounded-tooltip".into())
+                            .max_w(
+                                area.size.width.min(
+                                    cx.theme().tooltip_max_width().to_pixels(window.rem_size()),
+                                ),
+                            )
+                            .max_h(area.size.height)
+                            .overflow_scroll(),
+                    ));
+                }
                 trigger.child(raise(
                     (id, "raised"),
                     anchored()
                         .position(mouse + point(Pixels::ZERO, below))
                         .snap_to_window()
-                        .child(surface(body, cx)),
+                        .child(surface(content, cx)),
                 ))
             })
+            .into_any_element()
     }
 }
 
@@ -195,11 +252,13 @@ fn hide(trigger: &mut TriggerState, cx: &mut Context<TriggerState>) {
     cx.notify();
 }
 
-/// A help mark, ?, whose tip shows on hover.
+/// A desktop help tip, or a single named touch disclosure with popover dismissal.
 #[derive(IntoElement)]
 pub struct HelpTooltip {
     id: ElementId,
     text: SharedString,
+    usable_bounds: Option<Bounds<Pixels>>,
+    touch_label: SharedString,
 }
 
 impl HelpTooltip {
@@ -207,20 +266,70 @@ impl HelpTooltip {
         Self {
             id: id.into(),
             text: text.into(),
+            usable_bounds: None,
+            touch_label: "Help".into(),
         }
+    }
+
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
+    pub fn touch_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.touch_label = label.into();
+        self
     }
 }
 
 impl RenderOnce for HelpTooltip {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        div()
-            .id(self.id)
-            .flex_none()
-            .child(
-                Icon::new(IconName::CircleHelp)
-                    .size(IconSize::Xs)
-                    .color(cx.theme().colors.fg_subtle),
+        if cx.theme().touch_mode {
+            let id = self.id.clone();
+            let popover = Popover::with_opener(
+                self.id,
+                move |toggle| {
+                    div()
+                        .id("help-disclosure-host")
+                        .debug_selector(|| "help-tooltip-disclosure".into())
+                        .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                        })
+                        .child(
+                            IconButton::new((id, "help-button"), IconName::CircleHelp)
+                                .tooltip(self.touch_label)
+                                .on_click(move |_, window, cx| {
+                                    cx.stop_propagation();
+                                    toggle(window, cx);
+                                }),
+                        )
+                },
+                move |_, _, _| self.text.clone(),
             )
-            .tooltip(Tooltip::text(self.text))
+            .when_some(self.usable_bounds, |popover, bounds| {
+                popover.usable_bounds(bounds)
+            });
+            // A flex item keeps the popover host at its button's intrinsic width
+            // even when HelpTooltip is placed in a full-width block.
+            return div().flex().items_start().child(popover).into_any_element();
+        }
+        let mark = div().id(self.id.clone()).flex_none().child(
+            Icon::new(IconName::CircleHelp)
+                .size(IconSize::Xs)
+                .color(cx.theme().colors.fg_subtle),
+        );
+        if let Some(bounds) = self.usable_bounds {
+            TooltipTrigger::new(self.id, mark, move |_, _| {
+                self.text.clone().into_any_element()
+            })
+            .usable_bounds(bounds)
+            .into_any_element()
+        } else {
+            mark.tooltip(Tooltip::text(self.text)).into_any_element()
+        }
     }
 }
+
+#[cfg(all(test, feature = "test-support"))]
+mod tests;

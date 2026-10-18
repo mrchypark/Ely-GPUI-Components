@@ -18,7 +18,12 @@ struct Layers {
 }
 
 impl Render for Layers {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Hosts with safe-area or keyboard occlusion pass their computed usable area here.
+        let available = gpui::Bounds::new(
+            gpui::point(gpui::px(0.), gpui::px(0.)),
+            window.viewport_size(),
+        );
         let theme = cx.theme();
         let (opener, closer) = (cx.entity(), cx.entity());
         let toaster = self.toaster.clone();
@@ -29,6 +34,7 @@ impl Render for Layers {
                     cx.notify();
                 })
             })
+            .usable_bounds(available)
             .detail("It leaves the trash after 30 days.")
             .action(|close| {
                 Button::new("cancel", "Cancel").on_click(move |_, window, cx| close(window, cx))
@@ -57,9 +63,12 @@ impl Render for Layers {
                 div()
                     .flex()
                     .gap_2()
-                    .child(Popover::new("details", "Details", |_, _| {
-                        div().p_3().child("Size 4 KB · Edited today")
-                    }))
+                    .child(
+                        Popover::new("details", "Details", |_, _| {
+                            div().p_3().child("Size 4 KB · Edited today")
+                        })
+                        .usable_bounds(available),
+                    )
                     .child(
                         Button::new("delete-open", "Delete…").on_click(move |_, _, cx| {
                             opener.update(cx, |layers, cx| {

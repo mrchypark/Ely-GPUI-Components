@@ -8,17 +8,13 @@ use crate::primitives::raise;
 pub(in crate::overlays) const POPOVER_PADDING: Rems = rems(0.75);
 pub(in crate::overlays) const HOVER_PADDING: Rems = rems(1.);
 
-pub(in crate::overlays) fn has_room(
-    area: Option<Bounds<Pixels>>,
-    padding: Rems,
-    window: &Window,
-) -> bool {
+pub(crate) fn has_room(area: Option<Bounds<Pixels>>, padding: Rems, window: &Window) -> bool {
     // Both surfaces use a one-pixel border; reserve a positive content viewport.
     let frame = padding.to_pixels(window.rem_size()) * 2. + px(2.);
     area.is_none_or(|area| area.size.width > frame && area.size.height > frame)
 }
 
-pub(in crate::overlays) fn available(
+pub(crate) fn available(
     supplied: Option<Bounds<Pixels>>,
     touch: bool,
     window: &Window,
@@ -39,7 +35,7 @@ pub(in crate::overlays) fn available(
         })
 }
 
-pub(in crate::overlays) fn place(
+pub(crate) fn place(
     id: ElementId,
     anchor: Bounds<Pixels>,
     area: Bounds<Pixels>,

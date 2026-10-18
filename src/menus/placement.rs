@@ -102,7 +102,7 @@ pub(super) fn root(
     cx: &gpui::App,
 ) -> gpui::AnyElement {
     use super::menu::Spot;
-    use crate::{motion, primitives::raise};
+    use crate::{motion, primitives::raise, theme::{ActiveTheme, ControlSize}};
     use gpui::{AnimationExt, IntoElement, ParentElement, Styled};
     let from = match spot {
         Spot::Under => anchor.bottom_left(),
@@ -117,6 +117,15 @@ pub(super) fn root(
         .into_any_element();
     }
     match spot {
+        Spot::Under if cx.theme().touch_mode => {
+            let theme = cx.theme();
+            let rem = window.rem_size();
+            let row = theme.touch_minimum(theme.control_height(ControlSize::Md).to_pixels(rem));
+            let height = (row * (menu.entries.len() + 1) as f32)
+                .min(theme.list_max_height().to_pixels(rem))
+                .min((window.viewport_size().height - theme.window_margin() * 2.0).max(Pixels::ZERO));
+            crate::forms::float_height((id.clone(), "panel"), anchor, height, content, window, cx)
+        }
         Spot::Under => crate::forms::float(
             (id.clone(), "panel"),
             anchor,

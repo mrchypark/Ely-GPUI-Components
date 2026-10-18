@@ -52,7 +52,7 @@ pub struct Page {
     pub slug: &'static str,
     pub title: &'static str,
     pub summary: &'static str,
-    pub render: fn(&mut Window, &mut App) -> AnyElement,
+    pub render: fn(&mut Window, &mut App, Option<gpui::Bounds<gpui::Pixels>>) -> AnyElement,
     /// Interactions shot after the static pages.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub script: &'static [Step],

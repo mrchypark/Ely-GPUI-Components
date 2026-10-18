@@ -10,10 +10,10 @@ use super::{open, opened, press, text};
 use crate::documents::{
     DocumentEvent, EditRefusal, InlineFormat, LARGEST_READ, MarkdownDocument, MarkdownMode,
     document::{
-        format::{toggle, toggle_tree},
+        format::{collect_nodes, toggle, toggle_nodes, toggle_tree},
         visual,
     },
-    markdown::file_tree,
+    markdown::{file_tree, walk},
 };
 
 /// `marked` toggled: `‸` is the caret, `⟨…⟩` the selection.
@@ -45,6 +45,128 @@ fn toggled(marked: &str, format: InlineFormat) -> Result<String, EditRefusal> {
 
 fn ok(marked: &str, format: InlineFormat) -> String {
     toggled(marked, format).expect("toggled")
+}
+
+#[test]
+fn scoped_formats_match_full_walk_for_marks_refusals_and_fallbacks() {
+    use InlineFormat::*;
+    for marked in [
+        "before\n\na **b‸old** z\n\nafter",
+        "before\n\na **⟨b** c⟩\n\nafter",
+        "before\n\na *⟨*b** c⟩\n\nafter",
+        "before\n\n[a](ht‸tps://x)\n\nafter",
+        "before\n\n[a ⟨b](u) c⟩\n\nafter",
+        "before\n\nx `co‸de` y\n\nafter",
+        "before\n\na $x‸$ b\n\nafter",
+        "before\n\n<u>a <em>b‸c</em> d</u>\n\nafter",
+        "before\n\n![c‸at](x.png)\n\nafter",
+        "before\n\n[ca‸t][ref]\n\n[ref]: /target",
+        "before\n\n## hé⟨llo⟩\n\nafter",
+        "before\n\nalpha ‸\n\nafter",
+        "‸alpha\n\nafter",
+        "before\n\nalpha‸",
+        "a\n‸\nb",
+        "⟨alpha\n\nbeta⟩",
+        "> wo‸rd\n\nafter",
+        "- wo‸rd\n\nafter",
+        "| h |\n| - |\n| ‸ |",
+        "---\nti‸tle: a\n---\n\nbody",
+        "```\nco‸de\n```",
+        "$$\nx‸\n$$",
+        "<div>\nx‸\n</div>",
+        "⟨**a**\n\n*b*⟩",
+        "a‸ [^n]\n\n[^n]: note",
+        r"a‸ <https://x/\*>",
+    ] {
+        let selection = match marked.find('‸') {
+            Some(at) => at..at,
+            None => marked.find('⟨').unwrap()..marked.find('⟩').unwrap() - '⟨'.len_utf8(),
+        };
+        let text: String = marked.chars().filter(|ch| !"‸⟨⟩".contains(*ch)).collect();
+        let root = file_tree(&text);
+        for format in [
+            Strong, Emphasis, Code, Strike, Underline, Link, Image, Clear,
+        ] {
+            let mut full = Vec::new();
+            walk(&root, &mut full);
+            assert_eq!(
+                toggle_tree(&text, &root, selection.clone(), format),
+                toggle_nodes(&text, full, selection.clone(), format),
+                "{marked:?}: {format:?}",
+            );
+        }
+    }
+}
+
+#[test]
+fn small_direct_selections_collect_only_their_block_and_keep_global_offsets() {
+    use InlineFormat::*;
+    let text = "a\n\n".repeat(2049);
+    let root = file_tree(&text);
+    for index in [0, 1024, 2048] {
+        let start = index * 3;
+        for format in [Strong, Emphasis, Code, Strike, Underline, Link, Image] {
+            assert_eq!(collect_nodes(&root, &(start..start + 1), format).len(), 2);
+        }
+        assert_eq!(
+            toggle_tree(&text, &root, start..start + 1, Strong).unwrap(),
+            (
+                vec![(start..start + 1, "**a**".into())],
+                start + 2..start + 3
+            ),
+        );
+    }
+    let text = "before\n\n## héllo\n\nafter";
+    let root = file_tree(text);
+    let start = text.find("hé").unwrap();
+    assert_eq!(collect_nodes(&root, &(start..start + 3), Strong).len(), 2);
+    assert_eq!(
+        toggle_tree(text, &root, start..start + 3, Strong).unwrap(),
+        (
+            vec![(start..start + 3, "**hé**".into())],
+            start + 2..start + 5
+        ),
+    );
+}
+
+#[test]
+fn clear_cross_block_and_nested_selections_keep_full_collection() {
+    use InlineFormat::*;
+    for (text, selection, format) in [
+        ("a\n\nb", 0..1, Clear),
+        ("a\n\nb", 0..4, Strong),
+        ("a\n\nb", 2..2, Strong),
+        ("> word\n\nafter", 3..4, Strong),
+        ("- word\n\nafter", 3..4, Strong),
+        ("| h |\n| - |\n| a |", 14..15, Strong),
+    ] {
+        let root = file_tree(text);
+        let mut full = Vec::new();
+        walk(&root, &mut full);
+        let scoped = collect_nodes(&root, &selection, format);
+        assert_eq!(scoped.len(), full.len());
+        assert!(scoped.iter().zip(full).all(|(a, b)| std::ptr::eq(*a, b)));
+    }
+}
+
+#[test]
+fn adjacent_endpoint_ambiguity_keeps_full_collection() {
+    // Only collection is exercised with ambiguous metadata, never the formatter.
+    for previous in [true, false] {
+        let mut root = file_tree("a\n\nb\n\nc");
+        let children = root.children_mut().unwrap();
+        if previous {
+            children[0].position_mut().unwrap().end.offset = 3;
+        } else {
+            children[2].position_mut().unwrap().start.offset = 4;
+        }
+        let mut full = Vec::new();
+        walk(&root, &mut full);
+        assert_eq!(
+            collect_nodes(&root, &(3..4), InlineFormat::Strong).len(),
+            full.len()
+        );
+    }
 }
 
 #[test]
@@ -327,26 +449,42 @@ fn clear_keeps_an_autolink_backslash() {
 }
 
 /// The walk past the parse, on `n` then `4n` repeats.
-fn linear(unit: &str, run: impl Fn(&str, &Node)) {
+fn linear(
+    label: &str,
+    unit: &str,
+    run: impl Fn(&str, &Node),
+) -> (std::time::Duration, std::time::Duration) {
     let time = |n: usize| {
         let text = unit.repeat(n);
         let root = file_tree(&text);
+        if label == "Strong" {
+            super::super::format::timing::enable();
+        }
         let start = Instant::now();
         run(&text, &root);
-        start.elapsed()
+        let elapsed = start.elapsed();
+        if label == "Strong" {
+            super::super::format::timing::report(n);
+        }
+        elapsed
     };
     let (small, large) = (time(4000), time(16000));
-    assert!(large < small * 8, "{small:?} then {large:?}");
+    eprintln!("{label} post-parse: n=4000 {small:?}; n=16000 {large:?}");
+    (small, large)
 }
 
 #[test]
 fn many_paragraphs_format_in_linear_time() {
-    linear("a\n\n", |text, root| {
+    let strong = linear("Strong", "a\n\n", |text, root| {
         toggle_tree(text, root, 0..1, InlineFormat::Strong).expect("toggled");
     });
-    linear("**a**\n\n", |text, root| {
+    let clear = linear("Clear", "**a**\n\n", |text, root| {
         toggle_tree(text, root, 0..text.len(), InlineFormat::Clear).expect("cleared");
     });
+    // Collect both diagnostic pairs before either unchanged scaling assertion can fail.
+    for (label, (small, large)) in [("Strong", strong), ("Clear", clear)] {
+        assert!(large < small * 8, "{label}: {small:?} then {large:?}");
+    }
 }
 
 #[gpui::test]

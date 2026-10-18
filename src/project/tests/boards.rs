@@ -1,3 +1,5 @@
+mod labels_bounds;
+
 use gpui::{
     AnyElement, Entity, IntoElement, Modifiers, MouseButton, ParentElement, SharedString, Styled,
     TestAppContext, point, px,

@@ -134,7 +134,11 @@ pub(crate) fn options() -> usvg::Options<'static> {
 
 /// `svg` with markers and text as paths any reader draws.
 pub(crate) fn flatten(svg: &str) -> Result<String, SharedString> {
-    let tree = usvg::Tree::from_data(svg.as_bytes(), &options())
+    flatten_with_options(svg, &options())
+}
+
+fn flatten_with_options(svg: &str, options: &usvg::Options<'_>) -> Result<String, SharedString> {
+    let tree = usvg::Tree::from_data(svg.as_bytes(), options)
         .map_err(|error| SharedString::from(format!("{error}")))?;
     // A letter without a font vanishes: say so.
     let (mut kept, mut lost) = (0, 0);
@@ -145,6 +149,14 @@ pub(crate) fn flatten(svg: &str) -> Result<String, SharedString> {
         return Err("no installed font has every letter here".into());
     }
     Ok(tree.to_string(&usvg::WriteOptions::default()))
+}
+
+#[cfg(test)]
+pub(crate) fn flatten_fixture(
+    svg: &str,
+    options: &usvg::Options<'_>,
+) -> Result<String, SharedString> {
+    flatten_with_options(svg, options)
 }
 
 /// The `<text>` elements holding words.
@@ -334,8 +346,72 @@ mod tests {
 
     #[test]
     fn a_letter_no_font_has_is_an_error() {
-        let why = diagram_svg("flowchart LR\n  A[ABC \u{F0000}] --> B").expect_err("no glyph");
-        assert!(why.contains("font"), "{why}");
+        let mut db = usvg::fontdb::Database::new();
+        db.load_font_data(
+            include_bytes!("../../assets/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf").to_vec(),
+        );
+        assert_eq!(db.len(), 1, "the fixture contains only the bundled face");
+        let face = db.faces().next().expect("bundled font").id;
+        let options = usvg::Options {
+            fontdb: Arc::new(db),
+            font_resolver: usvg::FontResolver {
+                select_font: Box::new(move |_, _| Some(face)),
+                select_fallback: usvg::FontResolver::default_fallback_selector(),
+            },
+            ..Default::default()
+        };
+        // Private-use characters may exist in system fonts; this fixture has none.
+        let probe = usvg::Tree::from_str(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"40\"><text x=\"0\" y=\"20\">\u{F0000}</text></svg>",
+            &options,
+        ).expect("probe parses");
+        let glyphs = target_glyphs(probe.root());
+        assert_eq!(glyphs.len(), 1, "the missing character must reach shaping");
+        assert_eq!(glyphs[0].font, face);
+        assert_eq!(glyphs[0].id.0, 0, "bundled face must lack U+F0000");
+        let good = svg(&chart("flowchart LR\n  A[ABC] --> B", false)).expect("draws");
+        assert!(
+            flatten_with_options(&good, &options).is_ok(),
+            "ordinary letters export with this fixture"
+        );
+        let missing = svg(&chart("flowchart LR\n  A[ABC \u{F0000}] --> B", false)).expect("draws");
+        let result = flatten_with_options(&missing, &options);
+        assert!(result.is_err(), "missing glyph must reject export");
+        let why = result.err().unwrap();
+        assert_eq!(why.as_ref(), "no installed font has every letter here");
+    }
+
+    fn target_glyphs(group: &usvg::Group) -> Vec<&usvg::layout::PositionedGlyph> {
+        let mut found = Vec::new();
+        for node in group.children() {
+            match node {
+                usvg::Node::Group(inner) => found.extend(target_glyphs(inner)),
+                usvg::Node::Text(text) => found.extend(
+                    text.layouted()
+                        .iter()
+                        .flat_map(|span| &span.positioned_glyphs)
+                        .filter(|glyph| glyph.text.contains('\u{F0000}')),
+                ),
+                _ => {}
+            }
+        }
+        found
+    }
+
+    #[test]
+    #[ignore = "host font diagnostic; run explicitly with --nocapture"]
+    fn report_host_private_use_glyph() {
+        let source = svg(&chart("flowchart LR\n  A[ABC \u{F0000}] --> B", false)).expect("draws");
+        let tree = usvg::Tree::from_str(&source, &options()).expect("parses");
+        let glyphs = target_glyphs(tree.root());
+        assert!(!glyphs.is_empty(), "U+F0000 must reach shaping");
+        for glyph in glyphs {
+            let face = tree.fontdb().face(glyph.font).expect("selected face");
+            eprintln!(
+                "U+F0000: glyph={} postscript={} families={:?}",
+                glyph.id.0, face.post_script_name, face.families
+            );
+        }
     }
 
     #[test]

@@ -8,6 +8,7 @@ use gpui::{
 
 use super::{FileIcon, OnEntry};
 use crate::{
+    buttons::Button,
     forms::OnValue,
     layout::{columns_for, seeded::use_seeded},
     lists::DirEntry,
@@ -15,6 +16,9 @@ use crate::{
     theme::{ActiveTheme, IconSize, Radius, TextSize},
     typography::{LEADING, MiddleEllipsis},
 };
+
+#[cfg(all(test, feature = "test-support"))]
+mod touch_tests;
 
 /// The tile a key moves to from `at` in `count` tiles laid `columns` a row: across by one, up and down by a row, Home and End to the ends; down from over a short last row lands on its last tile.
 pub(crate) fn stepped(at: usize, count: usize, columns: usize, key: &str) -> Option<usize> {
@@ -31,7 +35,8 @@ pub(crate) fn stepped(at: usize, count: usize, columns: usize, key: &str) -> Opt
     }
 }
 
-/// Files and folders as tiles, in the order given: a large icon over the name in two lines at most. A press picks a tile and a double press opens it; with focus the arrows move by tile and by row, Home and End go to the ends, and Enter opens.
+/// Files and folders as tiles. A press selects; touch mode supplies Open for the selection.
+/// Desktop double press and Enter open; arrows, Home and End move the selection.
 #[derive(IntoElement)]
 pub struct FileGrid {
     id: ElementId,
@@ -100,6 +105,8 @@ impl RenderOnce for FileGrid {
             .as_ref()
             .and_then(|name| entries.iter().position(|entry| entry.name() == name));
         let theme = cx.theme();
+        let touch = theme.touch_mode;
+        let can_open = self.on_open.is_some();
         let colors = &theme.colors;
         let rem = window.rem_size();
         let (tile, gap) = (theme.files().tile, rems(0.5));
@@ -133,10 +140,25 @@ impl RenderOnce for FileGrid {
                 }
             })
         };
+        let open_button = touch.then(|| {
+            let open = open.clone();
+            div().flex().justify_center().child(
+                Button::new((self.id.clone(), "open"), "Open")
+                    .debug_selector(|| "file-grid-open".into())
+                    .disabled(at.is_none() || !can_open)
+                    .on_click(move |_, window, cx| {
+                        cx.stop_propagation();
+                        if let Some(at) = at {
+                            open(at, window, cx);
+                        }
+                    }),
+            )
+        });
         let tiles = entries.iter().enumerate().map(|(ix, entry)| {
             let (pick, open) = (pick.clone(), open.clone());
             div()
                 .id((self.id.clone(), format!("tile-{ix}")))
+                .debug_selector(move || format!("file-grid-tile-{ix}"))
                 .flex_none()
                 .w(tile)
                 .flex()
@@ -165,14 +187,14 @@ impl RenderOnce for FileGrid {
                 )
                 .on_click(move |event, window, cx| {
                     pick(ix, window, cx);
-                    if event.click_count() == 2 {
+                    if !touch && event.click_count() == 2 {
                         open(ix, window, cx);
                     }
                 })
         });
         let tiles: Vec<_> = tiles.collect();
         let measured = width.clone();
-        div()
+        let grid = div()
             .id(self.id)
             .debug_selector(|| "file-grid".into())
             .relative()
@@ -226,7 +248,18 @@ impl RenderOnce for FileGrid {
                     cx.stop_propagation();
                     pick(to, window, cx);
                 }
-            })
+            });
+        if let Some(open_button) = open_button {
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(open_button)
+                .child(grid)
+                .into_any_element()
+        } else {
+            grid.into_any_element()
+        }
     }
 }
 

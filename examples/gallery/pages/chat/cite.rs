@@ -2,6 +2,7 @@ use ely_gpui_component::chat::{
     CitationBadge, DocumentChunkPreview, SearchProgress, Source, SourceList, StepState,
     WebResultCard,
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::{probe::probe, ui::section};
@@ -37,10 +38,15 @@ fn sources() -> Vec<Source> {
     .collect()
 }
 
-pub fn citations(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn citations(
+    _: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let all = sources();
     let cite = |ix: usize| {
         CitationBadge::new(("chat-cite", ix), ix + 1, all[ix].clone())
+            .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
             .on_open(move |_, _| log::info!("gallery: open source {ix}"))
     };
     section(

@@ -1,3 +1,4 @@
+use gpui::prelude::FluentBuilder as _;
 use std::rc::Rc;
 
 use ely_gpui_component::{
@@ -80,7 +81,11 @@ fn field(
     })
 }
 
-pub fn reading(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn reading(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let scroll = keep("read-scroll", ScrollHandle::new, window, cx)
         .read(cx)
         .clone();
@@ -178,7 +183,7 @@ pub fn reading(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(probe(
                 "read-viewer",
                 div().w(px(840.)).h(px(520.)).child(
-                    DocumentViewer::new("read-viewer", "on-lift.pdf", pages(&PAGES, 612.0, 792.0))
+                    DocumentViewer::new("read-viewer", "on-lift.pdf", pages(&PAGES, 612.0, 792.0)).when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                         .zoom(now_zoom, move |next, _, cx| set(&zoom, next, cx))
                         .thumbnails()
                         .find(find, hits, now_hit)
@@ -198,7 +203,7 @@ pub fn reading(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             )
             .child(
                 div().w(px(760.)).h(px(420.)).child(
-                    DocumentViewer::new("read-slides", "release.pptx", pages(&SLIDES, 960.0, 540.0))
+                    DocumentViewer::new("read-slides", "release.pptx", pages(&SLIDES, 960.0, 540.0)).when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                         .zoom(now_slide_zoom, move |next, _, cx| set(&slide_zoom, next, cx)),
                 ),
             ),
@@ -229,9 +234,9 @@ pub fn reading(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                             .flex_wrap()
                             .items_baseline()
                             .child("A ")
-                            .child(TooltipTerm::new("read-lift", "lift", "How far a color is blended toward white, from none to all of it."))
+                            .child(TooltipTerm::new("read-lift", "lift", "How far a color is blended toward white, from none to all of it.").when_some(bounds, |overlay, area| overlay.usable_bounds(area)))
                             .child(" blends in gamma space")
-                            .child(Footnote::new("read-note", 1, "Where a small step moves the eye as much as a large one moves the meter."))
+                            .child(Footnote::new("read-note", 1, "Where a small step moves the eye as much as a large one moves the meter.").when_some(bounds, |overlay, area| overlay.usable_bounds(area)))
                             .child(", so each step reads as even."),
                     )
                     .child(Glossary::new([
