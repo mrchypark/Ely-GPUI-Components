@@ -8,6 +8,7 @@ use gpui::{
 
 use super::{Input, InputEvent, TextInput};
 use crate::{
+    buttons::Button,
     primitives::{FocusRing, Icon, IconName, tab_stop},
     theme::{ActiveTheme, ControlSize, IconSize, Radius},
     typography::Ellipsis,
@@ -21,6 +22,21 @@ pub(crate) struct Editing {
     field: Option<(Entity<TextInput>, Subscription)>,
     pub on_commit: Option<OnCommit>,
     back: Option<FocusHandle>,
+}
+
+fn finish_inline(state: &Entity<Editing>, cancel: bool, window: &mut Window, cx: &mut App) {
+    state.update(cx, |editing, cx| {
+        if editing.field.is_none() {
+            return;
+        }
+        let before = window.focused(cx);
+        editing.finish(cancel, window, cx);
+        if window.focused(cx).is_none() || window.focused(cx) == before {
+            editing.give_back(window, cx);
+        } else {
+            editing.back = None;
+        }
+    });
 }
 
 impl Editing {
@@ -87,7 +103,7 @@ impl Editing {
     }
 }
 
-/// Text that becomes a field when clicked. Enter or leaving keeps; Escape reverts.
+/// Text that becomes a field when clicked. Enter or leaving keeps; Escape reverts. Touch adds Done and Cancel.
 #[derive(IntoElement)]
 pub struct InlineEdit {
     id: ElementId,
@@ -125,29 +141,42 @@ impl RenderOnce for InlineEdit {
         let state = window.use_keyed_state(self.id.clone(), cx, |_, _| Editing::default());
         let focus = tab_stop((self.id.clone(), "focus").into(), true, window, cx);
         state.update(cx, |editing, _| editing.on_commit = self.on_commit.clone());
+        let touch = cx.theme().touch_mode;
         if let Some(field) = state.read(cx).field() {
             let (escape, enter) = (state.clone(), state.clone());
             return div()
-                .id(self.id)
+                .id(self.id.clone())
+                .when(touch, |editor| editor.flex().flex_col().min_w_0().gap_1())
                 .on_key_down(move |event, window, cx| {
                     if event.keystroke.key == "escape" {
                         cx.stop_propagation();
-                        escape.update(cx, |editing, cx| {
-                            editing.finish(true, window, cx);
-                            editing.give_back(window, cx);
-                        });
+                        finish_inline(&escape, true, window, cx);
                     }
                 })
                 .on_key_up(move |event, window, cx| {
                     if event.keystroke.key == "enter" {
                         cx.stop_propagation();
-                        enter.update(cx, |editing, cx| {
-                            editing.finish(false, window, cx);
-                            editing.give_back(window, cx);
-                        });
+                        finish_inline(&enter, false, window, cx);
                     }
                 })
                 .child(Input::new(&field).size(ControlSize::Sm))
+                .when(touch, |editor| {
+                    editor.child(
+                        div().flex().flex_wrap().gap_1().children(
+                            [("done", "Done", false), ("cancel", "Cancel", true)]
+                                .into_iter()
+                                .map(|(action, label, cancel)| {
+                                    let state = state.clone();
+                                    Button::new((self.id.clone(), action), label)
+                                        .debug_selector(move || format!("inline-edit-{action}"))
+                                        .on_click(move |_, window, cx| {
+                                            cx.stop_propagation();
+                                            finish_inline(&state, cancel, window, cx);
+                                        })
+                                }),
+                        ),
+                    )
+                })
                 .into_any_element();
         }
         let theme = cx.theme();
@@ -166,11 +195,13 @@ impl RenderOnce for InlineEdit {
             }));
         div()
             .id(self.id)
+            .debug_selector(|| "inline-edit-opener".into())
             .group(group.clone())
             .flex()
             .items_center()
             .gap_2()
             .h(theme.control_height(ControlSize::Sm))
+            .map(|opener| theme.touch_target(opener))
             .px(theme.control_padding(ControlSize::Sm))
             .rounded(theme.radius(Radius::Md))
             .border_1()
@@ -190,8 +221,11 @@ impl RenderOnce for InlineEdit {
             .child(
                 div()
                     .flex_none()
-                    .invisible()
-                    .group_hover(group, |style| style.visible())
+                    .when(!touch, |pencil| {
+                        pencil
+                            .invisible()
+                            .group_hover(group, |style| style.visible())
+                    })
                     .child(
                         Icon::new(IconName::Pencil)
                             .size(IconSize::Xs)
@@ -201,3 +235,6 @@ impl RenderOnce for InlineEdit {
             .into_any_element()
     }
 }
+
+#[cfg(all(test, feature = "test-support"))]
+mod tests;

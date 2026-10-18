@@ -227,7 +227,11 @@ pub fn bulk(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
 }
 
-pub fn action_sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn action_sheet(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let open = window.use_keyed_state("sheet-shown", cx, |_, _| false);
     let shown = *open.read(cx);
     let (show, hide) = (open.clone(), open);
@@ -255,6 +259,7 @@ pub fn action_sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use
                     cx.notify();
                 })
             })
+            .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
             .title("dunes.jpg")
             .message("Taken at dusk. 4.2 MB.")
             .action("Set as wallpaper", |_, _| log::info!("gallery: wallpaper"))

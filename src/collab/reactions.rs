@@ -58,16 +58,24 @@ pub fn toggled(reactions: &[Reaction], emoji: &str) -> Vec<Reaction> {
 /// Picks an emoji to react with: a few most used, then every one.
 #[derive(IntoElement)]
 pub struct ReactionPicker {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     on_pick: OnValue,
 }
 
 impl ReactionPicker {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         on_pick: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             on_pick: Rc::new(on_pick),
         }
@@ -105,6 +113,9 @@ impl RenderOnce for ReactionPicker {
                     }),
                 )
         })
+        .when_some(self.usable_bounds, |overlay, bounds| {
+            overlay.usable_bounds(bounds)
+        })
         .icon(IconName::SmilePlus)
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Sm)
@@ -114,14 +125,22 @@ impl RenderOnce for ReactionPicker {
 /// Reactions under a comment: each emoji with its count, yours outlined; a press toggles yours, and the picker adds another.
 #[derive(IntoElement)]
 pub struct Reactions {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     reactions: Vec<Reaction>,
     on_toggle: Option<OnValue>,
 }
 
 impl Reactions {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, reactions: impl IntoIterator<Item = Reaction>) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             reactions: reactions.into_iter().collect(),
             on_toggle: None,
@@ -185,6 +204,9 @@ impl RenderOnce for Reactions {
             .children(self.on_toggle.map(|toggle| {
                 ReactionPicker::new((self.id.clone(), "add"), move |emoji, window, cx| {
                     toggle(emoji, window, cx)
+                })
+                .when_some(self.usable_bounds, |overlay, bounds| {
+                    overlay.usable_bounds(bounds)
                 })
             }))
     }

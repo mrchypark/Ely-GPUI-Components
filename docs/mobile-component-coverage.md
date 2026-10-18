@@ -4,9 +4,9 @@
 
 ## 소스와 두 라인의 차이
 
-이 문서는 **app-compatible Git GPUI 1a28cff 라인**의 실제 export를 열거한다. registry 라인과 독립된 목록이다. `forms::TextInputOwner`와 `Menu::on_open_change`가 이 라인에 존재한다. 메뉴는 일반 항목·즉시 hover·기존 오른쪽 열기 방식이다. `init`의 Tab 키 바인딩은 context None이다. forms/owner/IME는 다른 담당자의 영역이며 여기서는 수정하지 않는다.
+이 문서는 **app-compatible Git GPUI 1a28cff 라인**의 export를 열거한다. registry 라인과 독립된 목록이다. `Menu::on_open_change`가 이 라인에 존재한다. 로컬 checkout의 `forms::TextInputOwner`와 `TextInput::input_owner_observer`는 다른 담당자가 소유한 미공개 IME 통합 변경이며, 이번 공개 후보의 API에 포함되지 않는다. 아래 text export 행은 이 제외를 반영한다. 메뉴는 일반 항목·즉시 hover·기존 오른쪽 열기 방식이다. `init`의 Tab 키 바인딩은 context None이다. forms/owner/IME 소스는 여기서 수정하지 않는다.
 
-최초 inventory 관찰 HEAD: `27fcea58d5ea0a8adb5994f4cdef551a0bf94e56`. 현재 검증된 core overlay 커밋은 이 라인의 `09702cf`이며, 두 라인의 실행 범위는 아래에 구분한다. Gallery의 추가 소스 변경과 문서는 core 실행 증거와 별도로 관리한다. 이번 문서 변경은 현재 native 빌드 snapshot에 포함되지 않는다.
+최초 inventory 관찰 HEAD: `27fcea58d5ea0a8adb5994f4cdef551a0bf94e56`. 과거 host 검증 snapshot의 core overlay 커밋은 이 라인의 `09702cf`이며, 두 라인의 실행 범위는 아래에 구분한다. Gallery의 추가 소스 변경과 문서는 core 실행 증거와 별도로 관리한다. 이번 문서 변경은 현재 native 빌드 snapshot에 포함되지 않는다.
 
 기준: [src/lib.rs](../src/lib.rs), 각 `src/<category>/mod.rs`, [gallery registry ALL](../examples/gallery/pages/mod.rs). Gallery의 `data`는 공개 모듈 `data_display`에 대응한다. 아래 API 목록은 이 checkout에서 추출했다. `motion::curve::*` 및 공개 typography 하위 모듈은 별도 펼침 목록으로 포함한다. 연관 builder 메서드 전체의 API reference를 대체하지는 않는다.
 
@@ -19,10 +19,11 @@
 - 정확한 이전 실행 범위: task-local `outputs/ely-menu-device-20261016/{result,evidence-review}.md`. 13번 단발 관찰은 원인 미규명으로 보존한다. repo의 [mobile-support](mobile-support.md)에도 요약이 있다.
 - E-CORE-HOST (2026-10-18): app `7e146ac`의 forms/lists/navigation은 각각 144/39/35 PASS, registry `c8fe0a5`는 147/42/35 PASS다. 여섯 실행은 모두 exit 0이며, 테스트 중 소스 해시와 dependency pin이 유지됐다. 이는 필터별 host 테스트 수이며 컴포넌트 수나 category 전체의 native PASS가 아니다.
 - E-OVERLAY-HOST (2026-10-18): 최신 core overlay 커밋은 app `09702cf`, registry `8563bc6`다. buttons/overlays/menus는 app 12/39/47 PASS, registry 20/39/65 PASS이며 여섯 실행 모두 exit 0이다. Popover/HoverCard의 bounds·scroll·touch disclosure 및 공간 부족 시 panel을 만들거나 focus를 가져가지 않는 회귀 범위를 포함한다. 앞선 E-CORE-HOST는 별도 snapshot의 기록이며 이번 문서 갱신에서 재실행하지 않았다.
-- E-GALLERY-HOST: app과 upstream gallery의 host 테스트가 각각 10개 PASS했다. 각 navigation 테스트는 등록된 44개 페이지를 모두 390×844 logical pixels에서 그린다. catalog/assets, header를 고정한 catalog·specimen wheel scroll, terminal replay 4개, fixture cleanup도 검사한다. 양쪽 cleanup 로그는 수동 삭제 없이 fixture가 자동 제거됐음을 확인한다. 이는 각 페이지의 모든 demo·상태·터치 동작이나 실제 PTY/shell을 검증한 결과가 아니다.
-- E-NATIVE-LIMITED: 이전 native 바이너리에서 catalog를 터치해 buttons로 이동한 직후 화면이 그려진 것만 확인했다. 새 core snapshot의 native 수용 결과가 아니며, 새 native trace PASS는 아직 없다. 양쪽 gallery의 host PASS를 native 결과로 전이하지 않는다.
+- E-GALLERY-HOST: 기록된 retry snapshot에서 app과 upstream gallery의 host 테스트가 각각 10개 PASS했다. 각 navigation 테스트는 등록된 44개 페이지를 모두 390×844 logical pixels에서 그린다. catalog/assets, header를 고정한 catalog·specimen wheel scroll, terminal replay 4개, fixture cleanup도 검사한다. 양쪽 cleanup 로그는 수동 삭제 없이 fixture가 자동 제거됐음을 확인한다. 이는 각 페이지의 모든 demo·상태·터치 동작이나 실제 PTY/shell을 검증한 결과가 아니다.
+- E-NATIVE-LIMITED: 초기 바이너리의 catalog→buttons tap/즉시 render와 후속 trace 바이너리의 terminal tap 관측을 구분한다. 후자는 gallery `f98d000` 내용이며 새 propagation/tooltip/dialog/MenuBar/table 코드를 포함하지 않는다. ANSI replay, selector reload/menu와 zsh 선택, Clear, Stop의 no-process 안내, 검색 previous, tab 왕복 시 상태 유지, 세로 split과 기존 빈 pane 유지만 관측했다. 로컬 PTY/shell·IME·모든 terminal 동작의 PASS가 아니다. Trace drag는 Started/Ended만 수신하고 accepted Moved가 없었으므로 정상 finger scroll 수용 증거도 아니다. 근거는 task-local `outputs/mobile-component-progress-20261017.md`의 native trace runtime 및 terminal native tap evidence 항목이다.
 - 현재 증거 경로는 task-local `outputs/mobile-gallery-simulator-20261017/provenance/`다. 이전 core는 `host-owned-fixed-20261018-101757-32699-results.txt`, 같은 prefix의 여섯 suite 로그와 `-integrity.txt`를 참조한다. 최신 overlay는 `frozen-batch-20261018-104222-48546-results.txt`와 여섯 suite 로그를 참조한다. Gallery는 `gallery-retry-20261018-105023-50471`의 양쪽 runtime/results/cleanup 로그를 참조하며, 이 재실행 결과가 이전 frozen-batch의 gallery 실패 기록을 대체한다. 저장소에 이 산출물이 포함된다는 뜻은 아니다.
-- 미구현 범위: compound wrapper와 gallery 호출부가 창별 safe-area/keyboard `usable_bounds`를 전달하는 연결은 아직 없다. 직접 overlay의 bounds 테스트가 이를 대신하지 않는다. Theme 전역에 bounds를 넣지 않으며, TooltipTrigger/HelpTooltip의 touch-only disclosure도 후속 작업으로 남긴다.
+- E-SOURCE-FROZEN: compound wrapper의 창별 bounds 전달, gallery의 명시적 bounds 인자, TooltipTrigger/HelpTooltip 및 FormLabel/FormField, Dialog wrapper와 no-room 보정, MenuBar bounds, DataGrid/Spreadsheet touch 조작은 소스 구현·동결 단계다. 새 테스트는 작성됐으며 진행 중인 배치의 compile/runtime 성공을 이 문서에서 선언하지 않는다. 앞선 E-CORE-HOST/E-OVERLAY-HOST/E-GALLERY-HOST 수치는 명시된 과거 snapshot의 결과다.
+- 최신 소스 근거는 task-local `outputs/mobile-compound-overlay-handoff-20261018.md`, `mobile-wrapper-interaction-tests-handoff-20261018.md`, `tooltip-form-bounds-freeze-20261018.md`, `dialogs-usable-bounds-20261018.md`, `gallery-overlay-bounds-handoff-20261018.md`, `gallery-menubar-bounds-handoff-20261018.md`, `tables-touch-freeze-20261018.md`다(모두 outputs 아래). 후속 MenuBar handoff가 이전 gallery handoff의 setter 미구현 설명을 대체한다. Theme/global geometry는 추가하지 않았으며 native host 전달과 새 코드의 실행 수용은 별도 검증으로 남는다.
 - 아래 category는 위의 좁은 실행 범위를 제외하면 컴포넌트별 simulator/device 수용 증거가 없다. 소스 테스트 anchor 자체는 PASS가 아니며, native IME, rotation, multitouch, GPS/BLE, 접근성, 성능 또는 iOS 전체 지원을 주장하지 않는다.
 
 ## 공통 simulator 수용 시나리오
@@ -41,7 +42,7 @@
 ## 다음 구현 우선순위
 
 1. Buttons와 일부 forms/lists/navigation에 연결된 touch 정책 및 host 회귀 결과를 기준으로, 아직 적용하지 않은 export를 개별 점검하고 S1/S7의 native 동작을 검증한다. 테마 숫자나 일부 host PASS를 전체 완료로 보지 않는다.
-2. `buttons::ActionSheet`는 이미 있다. 새 타입 생성 대신 safe-area/keyboard 크기 제한과 긴 action 목록 스크롤을 점검한다. `Popover`, `HoverCard`, `Tooltip`, `PieMenu`에는 hover 대체와 popup bounds 계약을 확인한다. Menu의 구현을 자동 상속한다고 가정하지 않는다.
+2. 기존 ActionSheet/Popover/HoverCard/PieMenu와 새 compound/Tooltip/MenuBar 연결을 실제 호출부에서 검증한다. 소스 구현과 새 테스트 작성은 native 수용 완료가 아니다. Native Tooltip body factory는 소비자의 touch disclosure를 자동 생성하지 않는다.
 3. 기존 `Tabs`, `NavItem`, `Sidebar`, `MasterDetail`을 compact 배치로 조합한다. 별도 BottomNavigation API는 현재 계획이며 기존 export로 오인하지 않는다.
 4. forms/editor/documents와 목록의 선택·키보드·scroll arbitration을 검증한다. `SwipeableListItem`의 기존 two-finger swipe 설명은 한 손가락 native 지원 보장이 아니다.
 5. desktop shell/PTY/drag-resize 기능은 아래 대체 UX로 분리한다. 실제 OS 서비스 연결을 Ely 내부에 추가하지 않는다.
@@ -643,6 +644,8 @@ E-CORE-HOST에서 이 라인의 forms 필터가 통과했다. 선택한 Checkbox
 
 상태: 입력/선택 UI 존재, native IME 및 각 compound form 검증 없음. S0/S1/S2/S3/S4/S7. keyboard-only shortcut/scrub에 버튼 또는 직접 입력 대안; 업로드·인증·전송은 host 서비스이며 fixture action만 사용.
 
+FormField→FormLabel의 창별 bounds 전달과 이름 있는 touch help는 소스 동결 상태이며 새 테스트 실행 결과는 아직 기록하지 않는다.
+
 | 실제 공개 API (원문 export) | 선언 위치 |
 | --- | --- |
 | `pub use avatar::AvatarUpload;` | `mod.rs:48` |
@@ -684,7 +687,7 @@ E-CORE-HOST에서 이 라인의 forms 필터가 통과했다. 선택한 Checkbox
 | `pub use structure::{ DirtyIndicator, Form, FormError, FormField, FormLabel, FormSection, InlineForm, };` | `mod.rs:111` |
 | `pub use switch::Switch;` | `mod.rs:114` |
 | `pub use tags::TagInput;` | `mod.rs:115` |
-| `pub use text::{Highlight, History, InputEvent, TextInput, TextInputOwner};` | `mod.rs:119` |
+| `pub use text::{Highlight, History, InputEvent, TextInput};` | 공개 후보 기준. 로컬 `mod.rs:119`의 추가 `TextInputOwner` export는 미공개 IME 통합 변경으로 제외 |
 | `pub use transfer::TransferList;` | `mod.rs:120` |
 | `pub use unit::UnitInput;` | `mod.rs:121` |
 | `pub use upload::{Upload, UploadList, UploadState};` | `mod.rs:122` |
@@ -963,7 +966,9 @@ Gallery catalog source (각 파일의 모든 demo가 검증 대상):
 
 공개 경계: [src/menus/mod.rs](../src/menus/mod.rs).
 
-상태: bounds/scroll/wheel containment 구현, 위 라인별 E-MENU만 실행 증거. MenuBar/PieMenu/context/searchable 전체 native 검증은 남음. S0/S1/S2/S4/S7; context/right-click/hover 의존 기능에는 visible trigger 또는 기존 ActionSheet 대체가 필요.
+상태: bounds/scroll/wheel containment 구현, 해당 과거 snapshot의 실행 증거. MenuBar/PieMenu/context/searchable 전체 native 검증은 남음. S0/S1/S2/S4/S7; context/right-click/hover 의존 기능에는 visible trigger 또는 기존 ActionSheet 대체가 필요.
+
+MenuBar의 매 render bounds 전달, root/submenu 제약과 no-room guard 및 gallery 연결은 소스 동결 상태다. 새 테스트 실행은 별도이며 기존 실행 증거는 E-MENU/E-OVERLAY-HOST의 과거 snapshot에 한정된다.
 
 | 실제 공개 API (원문 export) | 선언 위치 |
 | --- | --- |
@@ -1141,7 +1146,9 @@ Gallery catalog source (각 파일의 모든 demo가 검증 대상):
 
 공개 경계: [src/overlays/mod.rs](../src/overlays/mod.rs).
 
-상태: geometry helper·Sheet/Dialog bounds와 Sheet focus/scroll 구현; E-LAYOUT 외 컴포넌트별 native 증거 없음. S0/S2/S3/S4/S7. Dock/resize/floating desktop 배치는 compact single-pane + navigation/Sheet로 대체; HoverCard/Peek는 tap 접근 제공 여부 확인.
+상태: geometry helper·Sheet/Dialog bounds와 Sheet focus/scroll 구현; E-LAYOUT 외 컴포넌트별 native 증거 없음. S0/S2/S3/S4/S7. Dock/resize/floating desktop 배치는 compact single-pane + navigation/Sheet로 대체; HoverCard의 touch disclosure는 구현됐으며 실제 호출부와 Peek의 tap 접근은 별도 검증.
+
+Compound wrapper/gallery bounds 전달과 Dialog no-room 보정은 새 소스 동결 상태다. Dialog는 공간이 없으면 focus/content/Enter를 억제하고 닫힘을 유지하며 제거 후 명시적으로 다시 열어야 한다. 새 테스트와 native 검증은 별도다.
 
 | 실제 공개 API (원문 export) | 선언 위치 |
 | --- | --- |
@@ -1167,6 +1174,8 @@ Gallery catalog source (각 파일의 모든 demo가 검증 대상):
 공개 경계: [src/primitives/mod.rs](../src/primitives/mod.rs).
 
 상태: 기존 UI와 테마 API 존재; 모바일 hit 영역·접근성 전수 검증 없음. S0/S1/S4/S7. ActionSheet 기존 구현 재사용, Tooltip에 필수 action을 숨기지 않고 visible label/설명으로 대체. Theme/enum은 소비 위젯에서 검증.
+
+TooltipTrigger는 primary child action을 유지하는 별도 이름 있는 touch disclosure를, HelpTooltip은 하나의 이름 있는 help 버튼을 구현했다. Bounds 전달과 no-room 처리도 소스 동결 상태이며 새 테스트 실행 결과는 아직 기록하지 않는다. Native Tooltip body factory만으로 모든 소비자에 touch 접근이 생기지는 않는다.
 
 | 실제 공개 API (원문 export) | 선언 위치 |
 | --- | --- |
@@ -1310,6 +1319,8 @@ Gallery catalog source (각 파일의 모든 demo가 검증 대상):
 
 상태: 목록/virtualization/selection UI 존재, mobile scroll·drag·cell edit 증거 없음. S0/S1/S2/S3/S5/S7. 넓은 표는 column 선택/세부 화면, drag reorder는 명시적 이동 action 대안. 읽기전용 표시와 편집 가능 상태를 별도 검증.
 
+DataGrid/Spreadsheet의 touch Edit/Done/Cancel, Extend/End range, Clear와 Spreadsheet Fill destination/cancel은 소스 동결 상태다. 편집은 callback으로 제어하며 empty/read-only mutation은 비활성화한다. 새 테스트는 작성됐지만 실행 결과는 아직 기록하지 않는다. DataTable/TreeTable 및 전체 표의 native 검증은 남는다.
+
 | 실제 공개 API (원문 export) | 선언 위치 |
 | --- | --- |
 | `pub use builders::{FilterBuilder, SortBuilder};` | `mod.rs:21` |
@@ -1336,6 +1347,8 @@ Gallery catalog source (각 파일의 모든 demo가 검증 대상):
 공개 경계: [src/terminal/mod.rs](../src/terminal/mod.rs).
 
 상태: dense desktop 작업 UI와 데이터 모델 존재; mobile 편집/hover/shortcut/PTY 계약 미검증. S0/S2/S3/S4/S6/S7. command palette/visible action과 single-pane detail 대안; terminal PTY·process·debug 실행은 OS backend 지원 없으면 명시적 미지원/원격 서비스로 분리.
+
+Replay fixture와 조작 UI는 구현됐다. E-GALLERY-HOST는 과거 host snapshot이며 E-NATIVE-LIMITED의 gallery f98d000 바이너리에서는 제한된 terminal tap만 관측했다. 새 코드의 native 포함·검증이나 정상 finger scroll, IME, 실제 local PTY/shell, 전체 terminal 조작의 PASS가 아니다.
 
 | 실제 공개 API (원문 export) | 선언 위치 |
 | --- | --- |
@@ -1559,4 +1572,4 @@ E-CORE-HOST에는 form 가장자리 tap의 callback 1회 및 disabled 무반응,
 
 Tabs의 visible context와 EditorTabs의 close는 selection으로 전파되지 않는지 검사한다. Sortable의 up/down은 경계에서 비활성화되고 callback을 한 번만 호출하며 drag를 시작하지 않는지 검사한다. SwipeableListItem은 첫 delta, cancel/end, 부모 scroll containment를 검사한다. 이 결과는 나머지 form·navigation·list 컴포넌트나 모든 native 입력 경로의 PASS를 뜻하지 않는다.
 
-전체 export 목록과 S0–S7 계획은 그대로 유효하다. 양쪽 gallery의 host draw·wheel·terminal replay·cleanup, 이전 native 바이너리의 제한된 즉시 render, 아직 PASS가 없는 새 native trace는 각각 별도 증거 수준으로 유지한다. Wrapper의 창별 bounds 전달은 미구현이며 category 전체나 모든 모바일 동작의 PASS를 선언하지 않는다.
+전체 export 목록과 미완료 S0–S7 계획은 그대로 유효하다. 과거 snapshot의 양쪽 gallery host draw·wheel·terminal replay·cleanup, 이전 native 바이너리의 제한된 tap 관측, 새 소스 구현과 실행 대기 테스트를 각각 구분한다. Wrapper/gallery의 창별 bounds 전달은 소스상 구현됐지만 최신 native 바이너리에 포함됐거나 실행 검증됐다고 주장하지 않는다. Category 전체나 모든 모바일 동작의 PASS를 선언하지 않는다.

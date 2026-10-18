@@ -11,7 +11,8 @@ use ely_gpui_component::{
     typography::Caption,
 };
 use gpui::{
-    App, ClipboardItem, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems,
+    App, ClipboardItem, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    prelude::FluentBuilder, px, rems,
 };
 
 use crate::{
@@ -99,7 +100,11 @@ pub(super) fn order_columns() -> [Column; 7] {
     ]
 }
 
-pub fn orders(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn orders(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let search = window.use_keyed_state("orders-search", cx, TextInput::new);
     let query = search.read(cx).text().to_string();
     let picked = keep("orders-picked", Vec::<SharedString>::new, window, cx);
@@ -147,7 +152,15 @@ pub fn orders(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         .map(|column| (column.key().clone(), column.title().clone()))
         .collect();
     let theme = cx.theme();
+    let toolbar_width = if theme.touch_mode {
+        bounds
+            .map(|bounds| bounds.size.width)
+            .unwrap_or(window.viewport_size().width)
+    } else {
+        px(900.)
+    };
     let toolbar = TableToolbar::new("orders-tools")
+        .when_some(bounds, |toolbar, bounds| toolbar.usable_bounds(bounds))
         .search(&search)
         .filter(now_rules.len(), {
             let panel = panel.clone();
@@ -196,12 +209,18 @@ pub fn orders(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             )
     });
     let store = picked.clone();
+    let note = "Press a header to sort, Shift to add it to the sort. The toolbar searches, opens the filter and sort builders, hides columns, sets the density and copies the rows as CSV. Boxes select; Shift takes a range. Growth is tinted by where it sits; the footer sums and averages what the filters keep.";
+    let note = if cx.theme().touch_mode {
+        format!("{note} Touch rows stay at least 48 pixels high; density options may look identical.")
+    } else {
+        note.to_owned()
+    };
     section(
         "DataTable / TableToolbar / FilterBuilder / SortBuilder / ColumnVisibility / CellRenderer / RowSelection / TableDensity / AggregationFooter / ConditionalFormatting",
-        "Press a header to sort, Shift to add it to the sort. The toolbar searches, opens the filter and sort builders, hides columns, sets the density and copies the rows as CSV. Boxes select; Shift takes a range. Growth is tinted by where it sits; the footer sums and averages what the filters keep.",
+        note,
         cx,
     )
-    .child(div().pb_3().child(probe("orders-tools", div().w(px(900.)).child(toolbar))))
+    .child(div().pb_3().child(probe("orders-tools", div().w(toolbar_width).child(toolbar))))
     .children(builders.map(|panel| div().w(px(900.)).child(panel)))
     .child(probe(
         "orders",

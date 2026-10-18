@@ -4,6 +4,7 @@ use ely_gpui_component::{
     theme::{ActiveTheme, Radius},
     typography::Caption,
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use super::rows::{ran, run};
@@ -12,7 +13,10 @@ use crate::{
     ui::{section, specimen},
 };
 
-pub fn menu_bar(cx: &mut App) -> impl IntoElement + use<> {
+pub fn menu_bar(
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let menus = match cx.get_menus() {
         Some(menus) if !menus.is_empty() => menus,
         _ => crate::app_menus()
@@ -27,7 +31,7 @@ pub fn menu_bar(cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(specimen(
         "hover moves between menus while one is open",
-        probe("menubar", MenuBar::new("app-bar", menus)),
+        probe("menubar", MenuBar::new("app-bar", menus).when_some(bounds, |bar, area| bar.usable_bounds(area))),
         cx,
     ))
 }
@@ -54,11 +58,16 @@ const PLACES: [(&str, IconName); 8] = [
     ("Trash", IconName::Trash2),
 ];
 
-pub fn searchable(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn searchable(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let (last, caption) = ran("move-ran", window, cx);
-    let menu = PLACES.into_iter().fold(Menu::new(), |menu, (name, icon)| {
-        menu.item(MenuItem::new(name).icon(icon).on_click(run(&last, name)))
-    });
+    let menu = PLACES.into_iter().fold(
+        crate::ui::bounded_menu(Menu::new(), bounds),
+        |menu, (name, icon)| menu.item(MenuItem::new(name).icon(icon).on_click(run(&last, name))),
+    );
     section(
         "SearchableMenu",
         "A filter field heads the menu. Typing narrows the rows, best first, and marks the letters that matched.",
@@ -76,7 +85,11 @@ pub fn searchable(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
     ))
 }
 
-pub fn pie(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn pie(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let (last, caption) = ran("pie-ran", window, cx);
     let items = [
         (IconName::Copy, "Copy"),
@@ -97,7 +110,7 @@ pub fn pie(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         caption,
         probe(
             "pie-area",
-            PieMenu::new("pie", items).child(
+            PieMenu::new("pie", items).when_some(bounds, |overlay, area| overlay.usable_bounds(area)).child(
                 div()
                     .flex()
                     .items_center()

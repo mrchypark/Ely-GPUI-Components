@@ -2,7 +2,7 @@
 
 ## Current validation (2026-10-18)
 
-Latest verified core overlay commits are app-compatible `09702cf` and registry
+Historical verified core overlay commits are app-compatible `09702cf` and registry
 upstream `8563bc6`. The buttons/overlays/menus host suites passed respectively
 12/39/47 for app and 20/39/65 for upstream, all exit 0. Evidence is
 `frozen-batch-20261018-104222-48546-results.txt` and its six suite logs.
@@ -28,7 +28,7 @@ They include overlapping and endpoint RangeSlider drags, form edge/disabled
 behavior, visible Tabs context and EditorTabs close controls, Sortable move
 controls, and swipe cancellation/parent containment.
 
-Both galleries passed 10 host tests each in
+At the recorded retry snapshot, both galleries passed 10 host tests each in
 `gallery-retry-20261018-105023-50471-ely-runtime.log` and
 `gallery-retry-20261018-105023-50471-ely-upstream-runtime.log`; the matching
 results file records build and runtime exit 0 for each. Each navigation test
@@ -40,16 +40,58 @@ This retry supersedes the earlier gallery failure in the frozen-batch run.
 These are host checks, not 44 component certifications or visual/interaction
 acceptance of every demo. Terminal replay does not certify a native PTY or shell.
 
-The old native binary demonstrated only a catalog-to-buttons touch transition
-and immediate render. It does not contain the newly verified core snapshot.
-No new native trace PASS is established by this update. These documentation
-edits are excluded from the current frozen native build snapshot.
+Native evidence is snapshot-specific. An earlier binary demonstrated the
+catalog-to-buttons tap and immediate render. The later installed trace binary,
+with gallery content at `f98d000`, demonstrated ANSI replay, selector reload/menu
+and zsh selection, Clear, Stop's no-process feedback, previous search result,
+retained replay state across tabs, and a vertical split retaining the cleared
+first pane. These are limited terminal tap observations recorded in task-local
+`outputs/mobile-component-progress-20261017.md` under “terminal native tap
+evidence”; they do not certify scrolling, IME, local shell/PTY or all terminal
+controls. The trace drag recorded Started/Ended without an accepted Moved event;
+normal finger scrolling remains unverified. That installed binary predates the
+new propagation, tooltip, dialog, MenuBar and table changes below. Neither build/
+sign success nor these older taps validates the current source batch.
 
-Compound wrapper and gallery propagation of per-window safe-area/keyboard
-`usable_bounds` remains unimplemented. Direct overlay bounds support and host
-tests do not supply this wiring automatically. TooltipTrigger/HelpTooltip
-touch-only disclosure also remains follow-up work; bounds must not be stored
-globally in Theme.
+## Frozen source implementation; execution pending
+
+The following is source status from the frozen owner handoffs. New tests are
+authored; this document records no successful compile/runtime result for the
+ongoing batch. Historical totals above must not be applied to these changes.
+
+- Sixteen compound wrappers now accept per-render, per-window `usable_bounds`,
+  including nested comment/reaction routes. PageCover/PageIcon tools are visible
+  in touch mode; HoverCard disclosures have contextual labels and preserve
+  primary actions. CommentMarker has no reaction callback API, so its inner
+  reaction picker is not a reachable route.
+- TooltipTrigger preserves its child action and adds a separate named touch
+  disclosure. HelpTooltip uses one named help button; FormField forwards through
+  FormLabel. Explicit desktop bounds use constrained content. Native Tooltip
+  body factories do not automatically make all tooltip consumers touch-accessible.
+- Alert/Confirm/Prompt forward bounds. The subsequent Dialog no-room correction
+  suppresses focus/content/Enter handling, restores held focus and latches closure;
+  a still-mounted suppressed dialog requires removal before explicit reopening.
+  Source review is not execution evidence.
+- Gallery render functions carry optional window bounds through the affected
+  fixtures; mobile supplies Some(available), desktop None, and empty stays Some.
+  MenuBar now forwards to root/submenus with live geometry and a no-room guard.
+  No Theme/global geometry was introduced. Native host delivery remains a separate
+  integration validation; authored adapter tests do not establish runtime acceptance.
+- DataGrid/Spreadsheet source now provides touch Edit/Done/Cancel, Extend/End range
+  and Clear; Spreadsheet adds Fill destination/cancel. Mutation remains controlled
+  by callbacks; empty/read-only cases disable mutation. This is a scoped source
+  implementation, not acceptance of DataTable, TreeTable, every table export or IME.
+
+Task-local references: `outputs/mobile-compound-overlay-handoff-20261018.md`,
+`outputs/mobile-wrapper-interaction-tests-handoff-20261018.md`,
+`outputs/tooltip-form-bounds-freeze-20261018.md`,
+`outputs/dialogs-usable-bounds-20261018.md`,
+`outputs/gallery-overlay-bounds-handoff-20261018.md`,
+`outputs/gallery-menubar-bounds-handoff-20261018.md`, and
+`outputs/tables-touch-freeze-20261018.md`. The later MenuBar handoff supersedes
+the earlier gallery handoff's missing-setter statement. These artifacts are
+workspace evidence, not files distributed with the library. Documentation edits
+do not change the frozen native snapshot.
 
 The full component inventory and S0–S7 acceptance scope remain in
 [component coverage](mobile-component-coverage.md). Export declaration groups

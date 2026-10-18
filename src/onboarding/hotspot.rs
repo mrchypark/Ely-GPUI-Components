@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::{
     App, ElementId, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
 use crate::{
@@ -53,6 +53,7 @@ impl RenderOnce for Dot {
 /// A dot that calls out something new, with rings that widen from it; a press or Enter opens a tip beside it with a title, a line and Got it. Under reduced motion no ring shows.
 #[derive(IntoElement)]
 pub struct Hotspot {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     title: SharedString,
     body: SharedString,
@@ -60,6 +61,12 @@ pub struct Hotspot {
 }
 
 impl Hotspot {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         title: impl Into<SharedString>,
@@ -67,6 +74,7 @@ impl Hotspot {
         on_dismiss: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             title: title.into(),
             body: body.into(),
@@ -114,5 +122,8 @@ impl RenderOnce for Hotspot {
                     )
             },
         )
+        .when_some(self.usable_bounds, |overlay, bounds| {
+            overlay.usable_bounds(bounds)
+        })
     }
 }

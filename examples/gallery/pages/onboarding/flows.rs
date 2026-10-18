@@ -115,7 +115,11 @@ struct Seen {
     highlight: bool,
 }
 
-pub fn highlights(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn highlights(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let state = keep("onboarding-seen", Seen::default, window, cx);
     let (spot_seen, card_seen) = (state.read(cx).hotspot, state.read(cx).highlight);
     let [spot, card, reset] = [(); 3].map(|_| state.clone());
@@ -126,15 +130,18 @@ pub fn highlights(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
         .relative()
         .child(tool("onboarding-pin", IconName::Pin))
         .when(!spot_seen, |pin| {
-            pin.child(div().absolute().top_neg_1p5().right_neg_1p5().child(probe(
-                "onboarding-hotspot",
-                Hotspot::new(
+            pin.child(
+                div().absolute().top_neg_1p5().right_neg_1p5().child(probe(
                     "onboarding-hotspot",
-                    "Pin a view",
-                    "Keep the views you use most one press away.",
-                    move |_, cx| change(&spot, cx, |seen| seen.hotspot = true),
-                ),
-            )))
+                    Hotspot::new(
+                        "onboarding-hotspot",
+                        "Pin a view",
+                        "Keep the views you use most one press away.",
+                        move |_, cx| change(&spot, cx, |seen| seen.hotspot = true),
+                    )
+                    .when_some(bounds, |overlay, area| overlay.usable_bounds(area)),
+                )),
+            )
         });
     let toolbar = div()
         .flex()

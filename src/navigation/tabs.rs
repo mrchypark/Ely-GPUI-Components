@@ -165,6 +165,7 @@ impl RenderOnce for Tabs {
                 let value = tab.value.clone();
                 div()
                     .id(("tab", ix))
+                    .debug_selector(|| format!("tabs-{}-tab-{ix}", self.id))
                     .role(Role::Tab)
                     .aria_selected(on)
                     .aria_label(tab.label.clone())
@@ -175,6 +176,9 @@ impl RenderOnce for Tabs {
                     .h(theme.control_height(ControlSize::Md))
                     .map(|item| theme.touch_target(item))
                     .px_3()
+                    .when(theme.touch_mode && axis == Axis::Horizontal, |item| {
+                        item.flex_1().px_1()
+                    })
                     .rounded(theme.radius(Radius::Md))
                     .border_1()
                     .border_color(if focused && on {
@@ -212,7 +216,15 @@ impl RenderOnce for Tabs {
                     .when_some(tab.icon, |item, icon| {
                         item.child(Icon::new(icon).size(IconSize::Sm).color(fg))
                     })
-                    .child(tab.label.clone())
+                    .child(if theme.touch_mode && axis == Axis::Horizontal {
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(crate::typography::Ellipsis::new(tab.label.clone()))
+                            .into_any_element()
+                    } else {
+                        tab.label.clone().into_any_element()
+                    })
                     .when_some(touch_context, |item, context| {
                         let value = tab.value.clone();
                         let selector = value.clone();
@@ -246,11 +258,15 @@ impl RenderOnce for Tabs {
         let (keys, key_pick) = (tabs.clone(), pick.clone());
         let strip = div()
             .id((self.id.clone(), "strip"))
+            .debug_selector(|| format!("tabs-{}-strip", self.id))
             .role(Role::TabList)
             .track_focus(&focus)
             .relative()
             .flex()
             .when(axis == Axis::Vertical, |strip| strip.flex_col())
+            .when(theme.touch_mode && axis == Axis::Horizontal, |strip| {
+                strip.w_full().min_w_0()
+            })
             .gap_1()
             .border_color(colors.border)
             .map(|strip| match placement {
@@ -296,7 +312,11 @@ impl RenderOnce for Tabs {
                 move |panel, t| if turn == 0 { panel } else { panel.opacity(t) },
             )
         });
-        let frame = div().id(self.id).flex().gap_4();
+        let frame = div()
+            .id(self.id)
+            .flex()
+            .gap_4()
+            .when(theme.touch_mode, |frame| frame.min_w_0());
         match placement {
             TabPlacement::Top => frame.flex_col().child(strip).children(panel),
             TabPlacement::Bottom => frame.flex_col().children(panel).child(strip),

@@ -7,12 +7,18 @@ macro_rules! asset {
 }
 
 pub mod assets;
+#[cfg(all(test, not(target_family = "wasm")))]
+mod caller_tests;
 #[path = "../gallery/menu_model.rs"]
 mod menu_model;
 #[path = "../gallery/pages/mod.rs"]
 pub mod pages;
+#[cfg(all(test, not(target_family = "wasm")))]
+mod phone_width_tests;
 #[path = "../gallery/probe.rs"]
 pub mod probe;
+#[cfg(all(test, not(target_family = "wasm")))]
+mod reading_width_tests;
 #[path = "../gallery/step.rs"]
 pub mod step;
 #[path = "../gallery/ui.rs"]
@@ -34,6 +40,194 @@ mod view {
                 window.refresh();
                 window.draw(cx).clear(cx);
             });
+        }
+
+        // Existing story selection exposes actual fixtures; geometry stays per-window.
+        #[gpui::test]
+        fn gallery_popover_and_event_details_follow_insets_and_live_shrink(
+            cx: &mut TestAppContext,
+        ) {
+            use ely_gpui_component::{layout::ViewportInsets, theme::Theme};
+            let _files = crate::assets::prepare_test_files();
+            cx.update(|cx| {
+                ely_gpui_component::init_for_tests(cx);
+                crate::init(cx);
+                Theme::update(cx, |theme| theme.reduced_motion = true);
+            });
+            let (view, cx) = cx.add_window_view(MobileGallery::new);
+            cx.simulate_resize(size(px(390.), px(844.)));
+            let safe = ViewportInsets {
+                top: px(44.),
+                right: px(36.),
+                bottom: px(34.),
+                left: px(24.),
+            };
+            let normal = Bounds::new(point(px(24.), px(44.)), size(px(330.), px(766.)));
+            let settle = |cx: &mut VisualTestContext| {
+                for _ in 0..3 {
+                    draw(cx);
+                }
+            };
+            let contained = |cx: &mut VisualTestContext, area: Bounds<Pixels>| {
+                let panel = cx
+                    .debug_bounds("popover-panel")
+                    .expect("gallery overlay opened");
+                assert!(panel.size.width > px(0.) && panel.size.height > px(0.));
+                assert!(
+                    panel.left() >= area.left() - px(0.5),
+                    "{panel:?} outside {area:?}"
+                );
+                assert!(
+                    panel.top() >= area.top() - px(0.5),
+                    "{panel:?} outside {area:?}"
+                );
+                assert!(
+                    panel.right() <= area.right() + px(0.5),
+                    "{panel:?} outside {area:?}"
+                );
+                assert!(
+                    panel.bottom() <= area.bottom() + px(0.5),
+                    "{panel:?} outside {area:?}"
+                );
+                panel
+            };
+            for (page, story, target) in [
+                ("overlays", "Popover / DropdownPanel / InlinePopup", "share"),
+                (
+                    "calendar",
+                    "EventPopover / AttendeeList",
+                    "calendar-popover",
+                ),
+            ] {
+                view.update(cx, |view, cx| {
+                    assert!(view.select_story(page, story, cx));
+                    view.set_insets(safe, px(0.), cx);
+                });
+                settle(cx);
+                let trigger = cx.update(|_, cx| crate::probe::Probes::get(target, cx).unwrap());
+                // The event probe also encloses attendees; its chip is at the leading edge.
+                let position = trigger.origin + point(px(24.), px(12.));
+                assert!(
+                    cx.debug_bounds("gallery-content")
+                        .unwrap()
+                        .contains(&position)
+                );
+                cx.simulate_click(position, Modifiers::none());
+                settle(cx);
+                let first = contained(cx, normal);
+
+                let narrowed = ViewportInsets {
+                    right: px(140.),
+                    ..safe
+                };
+                view.update(cx, |view, cx| view.set_insets(narrowed, px(650.), cx));
+                settle(cx);
+                // Keyboard occlusion includes the bottom safe area; do not add it twice.
+                let small = Bounds::new(point(px(24.), px(44.)), size(px(226.), px(150.)));
+                let shrunk = contained(cx, small);
+                assert!(
+                    shrunk.size.height < first.size.height,
+                    "open content did not shrink"
+                );
+
+                view.update(cx, |view, cx| view.set_insets(narrowed, px(844.), cx));
+                settle(cx);
+                assert!(
+                    cx.debug_bounds("popover-panel").is_none(),
+                    "zero-area overlay stayed open"
+                );
+                view.update(cx, |view, cx| view.set_insets(safe, px(0.), cx));
+                settle(cx);
+                assert!(
+                    cx.debug_bounds("popover-panel").is_none(),
+                    "restoring space reopened it"
+                );
+                let trigger = cx.update(|_, cx| crate::probe::Probes::get(target, cx).unwrap());
+                cx.simulate_click(trigger.origin + point(px(24.), px(12.)), Modifiers::none());
+                settle(cx);
+                contained(cx, normal);
+                cx.simulate_keystrokes("escape");
+                settle(cx);
+                assert!(cx.debug_bounds("popover-panel").is_none());
+            }
+        }
+
+        #[gpui::test]
+        fn gallery_menu_bar_obeys_insets_shrink_and_no_room(cx: &mut TestAppContext) {
+            use ely_gpui_component::{
+                layout::ViewportInsets,
+                theme::{ActiveTheme, Mode, Theme},
+            };
+            let _files = crate::assets::prepare_test_files();
+            cx.update(|cx| {
+                ely_gpui_component::init_for_tests(cx);
+                crate::init(cx);
+                Theme::update(cx, |theme| theme.reduced_motion = true);
+                Theme::set_mode_now(Mode::Light, cx);
+            });
+            let (view, cx) = cx.add_window_view(MobileGallery::new);
+            cx.simulate_resize(size(px(390.), px(844.)));
+            let safe = ViewportInsets {
+                top: px(44.),
+                right: px(36.),
+                bottom: px(34.),
+                left: px(24.),
+            };
+            let settle = |cx: &mut VisualTestContext| {
+                for _ in 0..3 {
+                    draw(cx);
+                }
+            };
+            let open = |cx: &mut VisualTestContext| {
+                let title = cx.debug_bounds("menu-bar-title-0").unwrap();
+                cx.simulate_click(title.center(), Modifiers::none());
+            };
+            let contained = |cx: &mut VisualTestContext, area: Bounds<Pixels>| {
+                let panel = cx
+                    .debug_bounds("menu-panel-0")
+                    .expect("actual gallery menu opened");
+                assert!(panel.size.width > px(0.) && panel.size.height > px(0.));
+                assert!(panel.left() >= area.left() && panel.right() <= area.right());
+                assert!(panel.top() >= area.top() && panel.bottom() <= area.bottom());
+                panel
+            };
+            view.update(cx, |view, cx| {
+                assert!(view.select_story("menus", "MenuBar Menu", cx));
+                view.set_insets(safe, px(0.), cx);
+            });
+            settle(cx);
+            open(cx);
+            settle(cx);
+            let first = contained(
+                cx,
+                Bounds::new(point(px(24.), px(44.)), size(px(330.), px(766.))),
+            );
+            let narrow = ViewportInsets {
+                right: px(206.),
+                ..safe
+            };
+            view.update(cx, |view, cx| view.set_insets(narrow, px(650.), cx));
+            settle(cx);
+            let shrunk = contained(
+                cx,
+                Bounds::new(point(px(24.), px(44.)), size(px(160.), px(150.))),
+            );
+            assert!(shrunk.size.width < first.size.width);
+            view.update(cx, |view, cx| view.set_insets(narrow, px(844.), cx));
+            settle(cx);
+            assert!(cx.debug_bounds("menu-panel-0").is_none());
+            view.update(cx, |view, cx| view.set_insets(safe, px(0.), cx));
+            settle(cx);
+            assert!(cx.debug_bounds("menu-panel-0").is_none());
+            open(cx);
+            settle(cx);
+            let dark = cx
+                .debug_bounds("menu-row-Dark")
+                .expect("shared menu action");
+            cx.simulate_click(dark.center(), Modifiers::none());
+            settle(cx);
+            assert!(cx.update(|_, cx| cx.theme().is_dark()));
+            assert!(cx.debug_bounds("menu-panel-0").is_none());
         }
 
         fn header_bounds(cx: &mut VisualTestContext) -> [Bounds<Pixels>; 4] {

@@ -2,17 +2,35 @@ use ely_gpui_component::{
     forms::Choice,
     navigation::{EditorTab, EditorTabs, TabPlacement, Tabs},
     primitives::IconName,
+    theme::ActiveTheme,
     typography::Paragraph,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    App, Div, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
+};
 
 use crate::{
-    probe::probe,
+    probe::{probe, probe_sized},
     ui::{keep, section, set, specimen, specimens},
 };
 
-fn panel(text: &'static str) -> impl IntoElement {
-    div().py_2().child(Paragraph::new(text))
+fn panel(text: &'static str, selector: &'static str) -> impl IntoElement {
+    div()
+        .min_w_0()
+        .py_2()
+        .debug_selector(move || selector.into())
+        .child(Paragraph::new(text))
+}
+
+fn tab_frame(cx: &App) -> Div {
+    div()
+        .w(px(420.0))
+        .when(cx.theme().touch_mode, |view| view.w_full().min_w_0())
+}
+
+fn tab_specimen(caption: &'static str, body: impl IntoElement, cx: &App) -> Div {
+    specimen(caption, body, cx).when(cx.theme().touch_mode, |view| view.w_full().min_w_0())
 }
 
 pub fn tabs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
@@ -36,63 +54,91 @@ pub fn tabs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(
         specimens()
-            .child(specimen(
+            .when(cx.theme().touch_mode, |view| view.w_full().min_w_0())
+            .child(tab_specimen(
                 "top",
-                probe(
+                probe_sized(
                     "tabs-top",
-                    div().w(px(420.0)).child(
-                        Tabs::new(
-                            "tabs-top",
-                            [
-                                Choice::new("overview", "Overview"),
-                                Choice::new("activity", "Activity").note("12"),
-                                Choice::new("settings", "Settings"),
-                                Choice::new("archived", "Archived").disabled(),
-                            ],
-                            top_now,
-                        )
-                        .panel(panel(top_panel))
-                        .on_change(move |next, _, cx| set(&top, next.clone(), cx)),
-                    ),
+                    tab_frame(cx)
+                        .debug_selector(|| "gallery-tabs-top".into())
+                        .child(
+                            Tabs::new(
+                                "tabs-top",
+                                [
+                                    Choice::new("overview", "Overview"),
+                                    Choice::new("activity", "Activity").note("12"),
+                                    Choice::new("settings", "Settings"),
+                                    Choice::new("archived", "Archived").disabled(),
+                                ],
+                                top_now.clone(),
+                            )
+                            .panel(
+                                div()
+                                    .debug_selector(move || {
+                                        format!("gallery-tabs-selected-{top_now}")
+                                    })
+                                    .child(panel(top_panel, "gallery-tabs-top-body")),
+                            )
+                            .on_change(move |next, _, cx| set(&top, next.clone(), cx)),
+                        ),
+                    cx.theme().touch_mode,
                 ),
                 cx,
             ))
-            .child(specimen(
+            .child(tab_specimen(
                 "left",
-                div().w(px(420.0)).child(
-                    Tabs::new(
-                        "tabs-left",
-                        [
-                            Choice::new("general", "General").icon(IconName::Settings),
-                            Choice::new("appearance", "Appearance").icon(IconName::Palette),
-                            Choice::new("keys", "Keyboard").icon(IconName::Keyboard),
-                        ],
-                        left_now,
-                    )
-                    .placement(TabPlacement::Left)
-                    .panel(panel(
-                        "Settings for this section sit here, beside their tab.",
-                    ))
-                    .on_change(move |next, _, cx| set(&left, next.clone(), cx)),
-                ),
+                tab_frame(cx)
+                    .debug_selector(|| "gallery-tabs-left".into())
+                    .child(
+                        Tabs::new(
+                            "tabs-left",
+                            [
+                                Choice::new("general", "General").icon(IconName::Settings),
+                                Choice::new("appearance", "Appearance").icon(IconName::Palette),
+                                Choice::new("keys", "Keyboard").icon(IconName::Keyboard),
+                            ],
+                            left_now.clone(),
+                        )
+                        .placement(TabPlacement::Left)
+                        .panel(
+                            div()
+                                .debug_selector(move || format!("gallery-tabs-selected-{left_now}"))
+                                .child(panel(
+                                    "Settings for this section sit here, beside their tab.",
+                                    "gallery-tabs-left-body",
+                                )),
+                        )
+                        .on_change(move |next, _, cx| set(&left, next.clone(), cx)),
+                    ),
                 cx,
             ))
-            .child(specimen(
+            .child(tab_specimen(
                 "bottom",
-                div().w(px(420.0)).child(
-                    Tabs::new(
-                        "tabs-bottom",
-                        [
-                            Choice::new("console", "Console"),
-                            Choice::new("output", "Output"),
-                            Choice::new("problems", "Problems").note("3"),
-                        ],
-                        bottom_now,
-                    )
-                    .placement(TabPlacement::Bottom)
-                    .panel(panel("Logs stream above their tabs, as a panel dock does."))
-                    .on_change(move |next, _, cx| set(&bottom, next.clone(), cx)),
-                ),
+                tab_frame(cx)
+                    .debug_selector(|| "gallery-tabs-bottom".into())
+                    .child(
+                        Tabs::new(
+                            "tabs-bottom",
+                            [
+                                Choice::new("console", "Console"),
+                                Choice::new("output", "Output"),
+                                Choice::new("problems", "Problems").note("3"),
+                            ],
+                            bottom_now.clone(),
+                        )
+                        .placement(TabPlacement::Bottom)
+                        .panel(
+                            div()
+                                .debug_selector(move || {
+                                    format!("gallery-tabs-selected-{bottom_now}")
+                                })
+                                .child(panel(
+                                    "Logs stream above their tabs, as a panel dock does.",
+                                    "gallery-tabs-bottom-body",
+                                )),
+                        )
+                        .on_change(move |next, _, cx| set(&bottom, next.clone(), cx)),
+                    ),
                 cx,
             )),
     )

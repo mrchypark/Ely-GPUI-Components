@@ -113,6 +113,7 @@ impl RenderOnce for PromptEnhancer {
         let colors = theme.colors.clone();
         let enhance = self.on_enhance.map(|enhance| {
             Button::new((self.id.clone(), "enhance"), "Enhance")
+                .debug_selector(|| format!("prompt-enhancer-{}-enhance", self.id))
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .icon(IconName::Sparkles)

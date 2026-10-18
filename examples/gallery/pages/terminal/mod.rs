@@ -72,10 +72,14 @@ fn live(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     }
 }
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(live(window, cx))
-        .child(blocks::blocks(window, cx))
+        .child(blocks::blocks(window, cx, bounds))
         .child(blocks::ansi(cx))
         .child(panels::logs(window, cx))
         .child(panels::process_list(window, cx))

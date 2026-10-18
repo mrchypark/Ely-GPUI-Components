@@ -355,6 +355,34 @@ impl RenderOnce for TitleBar {
         if self.platform.is_none() {
             route_close(&self.id, self.on_close.clone(), window, cx);
         }
+        if cx.theme().touch_mode {
+            let theme = cx.theme();
+            return div()
+                .id(self.id)
+                .debug_selector(|| "titlebar-touch".into())
+                .flex()
+                .flex_none()
+                .flex_wrap()
+                .items_center()
+                .gap_2()
+                .px_3()
+                .min_h(theme.touch_minimum(theme.titlebar_height().to_pixels(window.rem_size())))
+                .bg(theme.colors.bg)
+                .border_b_1()
+                .border_color(theme.colors.border)
+                .children(self.leading)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(theme.text_size(TextSize::Sm))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.colors.fg_muted)
+                        .debug_selector(|| "titlebar-title".into())
+                        .children(self.title.map(Ellipsis::new)),
+                )
+                .children(self.actions);
+        }
         let bar = drag_region(self.id, window, cx);
         let (system, style) = controls_style(self.platform, cx);
         let theme = cx.theme();

@@ -1,6 +1,12 @@
 mod bars;
 mod chrome;
 mod columns;
+#[cfg(any(test, target_os = "ios", target_os = "android"))]
+mod mobile;
+#[cfg(any(test, target_os = "ios", target_os = "android"))]
+mod mobile_headers;
+#[cfg(all(test, feature = "test-support", not(target_family = "wasm")))]
+mod mobile_tests;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod status;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -105,7 +111,11 @@ const SCRIPT: &[Step] = &[
 ];
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(chrome::title_bar(cx))
         .child(columns::column_shell(cx))
@@ -123,7 +133,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(system::dock(cx))
         .child(system::notification(cx))
         .child(windows::window_manager(cx))
-        .child(windows::window_switcher(window, cx))
+        .child(windows::window_switcher(window, cx, bounds))
         .child(windows::quick_launcher(cx))
         .child(windows::mini_windows(cx))
         .child(status::update_banner(cx))
@@ -135,13 +145,10 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
-    div()
-        .child("Desktop window management, tray and Dock demos are unavailable on mobile.")
-        .child(columns::column_shell(cx))
-        .child(bars::toolbar(cx))
-        .child(bars::status_bar(cx))
-        .child(bars::activity_bar(window, cx))
-        .child(bars::tab_bar(window, cx))
-        .into_any_element()
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
+    mobile::render(window, cx, bounds)
 }

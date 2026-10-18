@@ -1,3 +1,4 @@
+use gpui::prelude::FluentBuilder as _;
 use std::rc::Rc;
 
 use ely_gpui_component::{
@@ -131,7 +132,11 @@ fn versions(now: Timestamp) -> Vec<Version> {
     ]
 }
 
-pub fn knowledge(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn knowledge(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let favorites = keep(
         "know-favorites",
         || {
@@ -290,7 +295,7 @@ pub fn knowledge(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
                     .overflow_hidden()
                     .children(now_cover.map(|source| {
                         let cover = cover.clone();
-                        PageCover::new("know-cover", source).choices(COVERS, move |next, _, cx| set(&cover, next, cx))
+                        PageCover::new("know-cover", source).when_some(bounds, |overlay, area| overlay.usable_bounds(area)).choices(COVERS, move |next, _, cx| set(&cover, next, cx))
                     }))
                     .child(
                         div()
@@ -299,7 +304,7 @@ pub fn knowledge(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
                             .gap_3()
                             .px_8()
                             .pb_6()
-                            .child(div().mt_neg_8().child(PageIcon::new("know-icon", now_icon).on_change(move |next, _, cx| set(&icon, next.clone(), cx))))
+                            .child(div().mt_neg_8().child(PageIcon::new("know-icon", now_icon).when_some(bounds, |overlay, area| overlay.usable_bounds(area)).on_change(move |next, _, cx| set(&icon, next.clone(), cx))))
                             .child(div().text_size(theme.text_size(TextSize::Xxl)).font_weight(FontWeight::SEMIBOLD).child("Lift"))
                             .child(
                                 PropertyGrid::new("know-properties").group(

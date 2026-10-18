@@ -4,6 +4,77 @@ use gpui::{
 };
 
 use super::setup;
+
+struct HelpBounds {
+    bounds: gpui::Bounds<gpui::Pixels>,
+    field: bool,
+}
+
+impl Render for HelpBounds {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        if self.field {
+            FormField::new("help-field", "Email")
+                .help("Email help ".repeat(200))
+                .usable_bounds(self.bounds)
+                .child(Button::new("input-placeholder", "Control"))
+                .into_any_element()
+        } else {
+            crate::forms::FormLabel::new("help-label", "Email")
+                .help("Email help ".repeat(200))
+                .usable_bounds(self.bounds)
+                .into_any_element()
+        }
+    }
+}
+
+#[gpui::test]
+fn label_and_field_forward_current_bounds_to_no_hover_help(cx: &mut TestAppContext) {
+    use crate::theme::Theme;
+    use gpui::{Bounds, Modifiers, MouseButton, point, size};
+    setup(cx);
+    cx.update(|cx| {
+        Theme::update(cx, |theme| {
+            theme.touch_mode = true;
+            theme.reduced_motion = true;
+        })
+    });
+    let area = Bounds::new(point(px(25.), px(70.)), size(px(200.), px(160.)));
+    let (view, cx) = cx.add_window_view(|_, _| HelpBounds {
+        bounds: area,
+        field: false,
+    });
+    cx.simulate_resize(size(px(320.), px(500.)));
+    for field in [false, true] {
+        view.update(cx, |view, cx| {
+            view.field = field;
+            view.bounds = area;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let target = cx.debug_bounds("help-tooltip-disclosure").unwrap();
+        assert!(target.size.width >= px(48.) && target.size.height >= px(48.));
+        cx.simulate_mouse_down(target.center(), MouseButton::Left, Modifiers::none());
+        cx.simulate_mouse_up(target.center(), MouseButton::Left, Modifiers::none());
+        cx.run_until_parked();
+        let panel = cx
+            .debug_bounds("popover-panel")
+            .expect("help opened without hover");
+        assert!(panel.left() >= area.left() && panel.top() >= area.top());
+        assert!(panel.right() <= area.right() && panel.bottom() <= area.bottom());
+        view.update(cx, |view, cx| {
+            view.bounds = Bounds::new(area.origin, size(px(0.), px(0.)));
+            cx.notify();
+        });
+        cx.run_until_parked();
+        assert!(
+            cx.debug_bounds("popover-panel").is_none(),
+            "current bounds reached help"
+        );
+    }
+}
+
 use crate::{
     buttons::Button,
     forms::{

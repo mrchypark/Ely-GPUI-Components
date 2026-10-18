@@ -20,14 +20,22 @@ const RAISE: f32 = 0.4;
 /// A note's mark in running text, a small number; resting the pointer on it shows the note.
 #[derive(IntoElement)]
 pub struct Footnote {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     number: usize,
     note: SharedString,
 }
 
 impl Footnote {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, number: usize, note: impl Into<SharedString>) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             number,
             note: note.into(),
@@ -51,24 +59,36 @@ impl RenderOnce for Footnote {
                 .child(format!("{number}")),
             move |_, _| div().max_w(prose).child(format!("{number}. {note}")),
         )
+        .touch_label(format!("Footnote {number}"))
+        .when_some(self.usable_bounds, |overlay, bounds| {
+            overlay.usable_bounds(bounds)
+        })
     }
 }
 
 /// A term whose meaning is a rest of the pointer away: underlined in dashes, its definition in a card.
 #[derive(IntoElement)]
 pub struct TooltipTerm {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     term: SharedString,
     meaning: SharedString,
 }
 
 impl TooltipTerm {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         term: impl Into<SharedString>,
         meaning: impl Into<SharedString>,
     ) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             term: term.into(),
             meaning: meaning.into(),
@@ -79,6 +99,7 @@ impl TooltipTerm {
 impl RenderOnce for TooltipTerm {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+        let touch_label = format!("Definition: {}", self.term);
         let (term, meaning, prose) = (self.term.clone(), self.meaning, theme.prose_width());
         HoverCard::new(
             self.id,
@@ -101,6 +122,10 @@ impl RenderOnce for TooltipTerm {
                     )
             },
         )
+        .touch_label(touch_label)
+        .when_some(self.usable_bounds, |overlay, bounds| {
+            overlay.usable_bounds(bounds)
+        })
     }
 }
 

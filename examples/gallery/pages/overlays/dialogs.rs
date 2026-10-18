@@ -39,7 +39,11 @@ fn opener(
     )
 }
 
-pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn dialogs(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let open = keep("overlay-open", || None::<Open>, window, cx);
     let said = keep("overlay-said", || None::<SharedString>, window, cx);
     let (name, email, rename) = {
@@ -74,6 +78,7 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         let (saved, confirmed, renamed) = (said.clone(), said.clone(), said.clone());
         match which {
             Open::Profile => Dialog::new("profile", "Edit profile", shut.clone())
+                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                 .detail("How others see you across the workspace.")
                 .child(
                     div()
@@ -104,6 +109,7 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 "Sign in again to keep your changes. Nothing you wrote is lost.",
                 shut.clone(),
             )
+            .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
             .label("Sign in")
             .into_any_element(),
             Open::Confirm => ConfirmDialog::new(
@@ -112,11 +118,13 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 "Its pages, files and history go with it. This cannot be undone.",
                 shut.clone(),
             )
+            .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
             .confirm("Delete project")
             .destructive()
             .on_confirm(move |_, cx| set(&confirmed, Some("project deleted".into()), cx))
             .into_any_element(),
             Open::Prompt => PromptDialog::new("rename", "Rename", &rename, shut.clone())
+                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                 .label("New name")
                 .submit("Rename")
                 .check(|text| match text.trim() {
@@ -129,6 +137,7 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 })
                 .into_any_element(),
             Open::Fullscreen => Dialog::new("notes", "Release notes", shut.clone())
+                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                 .detail("Version 0.9 · September 2026")
                 .fullscreen()
                 .child(

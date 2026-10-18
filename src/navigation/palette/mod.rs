@@ -1,20 +1,28 @@
 mod kinds;
 mod launcher;
+mod search;
 #[cfg(all(test, feature = "test-support"))]
 mod tests;
+#[cfg(all(test, feature = "test-support"))]
+mod touch_tests;
+#[cfg(all(test, feature = "test-support"))]
+mod wrapper_tests;
 
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ElementId, Entity, FontWeight, HighlightStyle,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Point, Role, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, StyledText, Window, div, prelude::*,
+    Animation, AnimationExt, AnyElement, App, Bounds, ElementId, Entity, FontWeight,
+    HighlightStyle, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point,
+    Role, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, StyledText, WeakEntity,
+    Window, div, prelude::*,
 };
 
 use crate::{
+    buttons::IconButton,
     forms::{Down, Enter, OnValue, Pick, Run, TextInput, Up},
     motion,
-    primitives::{Backdrop, FocusScope, Icon, IconName, give_back, take_focus},
+    overlays::{tooltip_available, tooltip_has_room},
+    primitives::{Backdrop, FocusScope, Icon, IconName, Takeover, give_back, take_focus},
     theme::{ActiveTheme, ControlSize, Elevation, IconSize, Radius, TextSize},
 };
 
@@ -139,6 +147,7 @@ pub(crate) fn query_field(
 /// A query field over grouped rows. Arrows move, Enter or a click picks, Escape closes.
 pub(crate) struct Palette {
     pub id: ElementId,
+    pub usable_bounds: Option<Bounds<Pixels>>,
     pub input: Entity<TextInput>,
     pub groups: Vec<Group>,
     /// The row marked whenever the query changes.
@@ -149,10 +158,46 @@ pub(crate) struct Palette {
     pub on_close: Run,
 }
 
+#[derive(Default)]
+struct Visibility {
+    suppressed: bool,
+    takeover: Option<WeakEntity<Takeover>>,
+}
+
 impl Palette {
     /// Over a scrim; a click on it closes. Tab stays inside, and focus returns on every close.
     pub(crate) fn overlay(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        self.usable_bounds = tooltip_available(self.usable_bounds, cx.theme().touch_mode, window);
+        let visible = window.use_keyed_state((self.id.clone(), "visibility"), cx, |_, _| {
+            Visibility::default()
+        });
+        if visible.read(cx).suppressed {
+            return div().into_any_element();
+        }
+        // Keep the query, Close, and at least one complete result reachable.
+        let row_height = cx.theme().touch_minimum(
+            cx.theme()
+                .control_height(ControlSize::Lg)
+                .to_pixels(window.rem_size()),
+        );
+        let header = row_height + gpui::rems(2.5).to_pixels(window.rem_size()) + gpui::px(2.);
+        let room = tooltip_has_room(self.usable_bounds, gpui::rems(1.), window)
+            && self.usable_bounds.is_none_or(|area| {
+                area.size.height >= header + row_height && area.size.width > header * 2.
+            });
+        if !room {
+            let previous = visible.update(cx, |state, _| {
+                state.suppressed = true;
+                state.takeover.take()
+            });
+            if let Some(previous) = previous.and_then(|weak| weak.upgrade()) {
+                give_back(&previous, window, cx);
+            }
+            window.defer(cx, move |window, cx| (self.on_close)(window, cx));
+            return div().into_any_element();
+        }
         let takeover = take_focus((self.id.clone(), "takeover"), window, cx);
+        visible.update(cx, |state, _| state.takeover = Some(takeover.downgrade()));
         let scope = takeover.read(cx).focus.clone();
         if scope.is_focused(window) {
             window.focus(&self.input.read(cx).focus().clone(), cx);
@@ -164,8 +209,12 @@ impl Palette {
         });
         self.on_close = close.clone();
         Backdrop::new((self.id.clone(), "scrim"))
+            .when_some(self.usable_bounds, |backdrop, area| {
+                backdrop.content_bounds(area)
+            })
             .on_dismiss(move |window, cx| close(window, cx))
             .child(FocusScope::new(&scope).trap().child(self.card(window, cx)))
+            .into_any_element()
     }
 
     /// The card alone, as in a window of its own.
@@ -230,6 +279,7 @@ impl Palette {
             })
         };
         let theme = cx.theme();
+        let touch = theme.touch_mode;
         let colors = &theme.colors;
         let mut children: Vec<AnyElement> = Vec::with_capacity(slot);
         let mut ix = 0;
@@ -249,9 +299,11 @@ impl Palette {
             }
             for row in group.rows {
                 let (here, pick, hover) = (ix, pick.clone(), cursor.clone());
+                let completed = pick.clone();
                 children.push(
                     div()
                         .id(("row", ix))
+                        .debug_selector(move || format!("palette-row-{here}"))
                         .role(Role::ListBoxOption)
                         .aria_selected(ix == at)
                         .aria_label(row.name.clone())
@@ -259,7 +311,11 @@ impl Palette {
                         .flex_none()
                         .items_center()
                         .gap_3()
-                        .h(theme.control_height(ControlSize::Lg))
+                        .h(theme.touch_minimum(
+                            theme
+                                .control_height(ControlSize::Lg)
+                                .to_pixels(window.rem_size()),
+                        ))
                         .px_2()
                         .rounded(theme.radius(Radius::Md))
                         .when(ix == at, |row| row.bg(colors.hover))
@@ -275,7 +331,15 @@ impl Palette {
                         .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                             window.prevent_default();
                             cx.stop_propagation();
-                            pick(here, window, cx);
+                            if !touch {
+                                pick(here, window, cx);
+                            }
+                        })
+                        .when(touch, |row| {
+                            row.on_click(move |_, window, cx| {
+                                cx.stop_propagation();
+                                completed(here, window, cx);
+                            })
                         })
                         .when_some(row.icon, |line, icon| {
                             line.child(Icon::new(icon).size(IconSize::Sm).color(colors.fg_muted))
@@ -309,6 +373,7 @@ impl Palette {
                 ix += 1;
             }
         }
+        let dismiss = self.on_close.clone();
         let (up, down, escape) = (go.clone(), go, self.on_close);
         let (enter, chosen) = (pick, cursor.clone());
         let card = div()
@@ -318,6 +383,17 @@ impl Palette {
             .flex_col()
             .w(theme.palette_size().width)
             .h(theme.palette_size().height)
+            .when_some(self.usable_bounds, |card, area| {
+                card.w(area
+                    .size
+                    .width
+                    .min(theme.palette_size().width.to_pixels(window.rem_size())))
+                    .h(area
+                        .size
+                        .height
+                        .min(theme.palette_size().height.to_pixels(window.rem_size())))
+                    .overflow_hidden()
+            })
             .rounded(theme.radius(Radius::Xl))
             .bg(colors.overlay)
             .border_1()
@@ -361,7 +437,20 @@ impl Palette {
                             .size(IconSize::Sm)
                             .color(colors.fg_subtle),
                     )
-                    .child(div().flex_1().min_w_0().child(self.input.clone())),
+                    .child(div().flex_1().min_w_0().child(self.input.clone()))
+                    .when(touch, |header| {
+                        header.child(
+                            div().flex().flex_none().child(
+                                IconButton::new((self.id.clone(), "close"), IconName::X)
+                                    .debug_selector(|| "palette-close".into())
+                                    .tooltip("Close palette")
+                                    .on_click(move |_, window, cx| {
+                                        cx.stop_propagation();
+                                        dismiss(window, cx);
+                                    }),
+                            ),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -387,11 +476,18 @@ impl Palette {
                         )
                     }),
             );
-        // Padding grows the box the scrim centers.
-        div().child(card).with_animation(
-            (self.id, "in"),
-            Animation::new(motion::duration(motion::BASE, cx)).with_easing(motion::ease_out_cubic),
-            |card, t| card.opacity(t).pt(motion::NUDGE * (1.0 - t)),
-        )
+        if self.usable_bounds.is_some() {
+            return card.into_any_element();
+        }
+        // Padding grows the box the scrim centers only on the unbounded desktop path.
+        div()
+            .child(card)
+            .with_animation(
+                (self.id, "in"),
+                Animation::new(motion::duration(motion::BASE, cx))
+                    .with_easing(motion::ease_out_cubic),
+                |card, t| card.opacity(t).pt(motion::NUDGE * (1.0 - t)),
+            )
+            .into_any_element()
     }
 }

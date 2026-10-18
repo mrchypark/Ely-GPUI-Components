@@ -2,6 +2,7 @@ use std::{collections::HashMap, rc::Rc};
 
 use ely_gpui_component::{
     tables::{Aggregate, Cell, Column, DataGrid, PivotTable, Spreadsheet, TreeRow, TreeTable},
+    theme::ActiveTheme,
     typography::Caption,
 };
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems};
@@ -47,7 +48,7 @@ pub fn data_grid(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
                     set(&store, next, cx)
                 })
                 .w(px(386.))
-                .h(px(150.)),
+                .h(px(if cx.theme().touch_mode { 320. } else { 150. })),
         ),
     ))
 }
