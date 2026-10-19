@@ -1,8 +1,8 @@
 use std::{rc::Rc, time::Duration};
 
 use gpui::{
-    AnyElement, App, ElementId, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    RenderOnce, Task, Window, div,
+    AnyElement, App, Div, ElementId, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    RenderOnce, StyleRefinement, Styled, Task, Window, div,
 };
 
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -21,6 +21,7 @@ struct PressState {
 #[derive(IntoElement)]
 pub struct Pressable {
     id: ElementId,
+    base: Div,
     content: Content,
     on_press: Option<Handler>,
     on_long_press: Option<Handler>,
@@ -34,6 +35,7 @@ impl Pressable {
     ) -> Self {
         Self {
             id: id.into(),
+            base: div(),
             content: Box::new(content),
             on_press: None,
             on_long_press: None,
@@ -51,6 +53,12 @@ impl Pressable {
     }
 }
 
+impl Styled for Pressable {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.base.style()
+    }
+}
+
 impl RenderOnce for Pressable {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window.use_keyed_state(self.id.clone(), cx, |_, _| PressState::default());
@@ -60,7 +68,7 @@ impl RenderOnce for Pressable {
         let on_long_press = self.on_long_press;
         let on_press = self.on_press;
 
-        div()
+        self.base
             .id(self.id)
             .child(content)
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {

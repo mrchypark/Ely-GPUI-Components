@@ -3,6 +3,7 @@ use gpui::{
     MouseButton, ParentElement, Render, SharedString, Styled, TestAppContext, VisualTestContext,
     Window, div, point, prelude::*, px,
 };
+use std::time::Duration;
 
 mod more;
 mod scroll;
@@ -133,6 +134,27 @@ fn desk(cx: &mut TestAppContext) -> (gpui::Entity<Desk>, &mut VisualTestContext)
     (view, cx)
 }
 
+/// The same desk with touch mode on, where a long press opens the context menu.
+fn touch_desk(cx: &mut TestAppContext) -> (gpui::Entity<Desk>, &mut VisualTestContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        crate::forms::bind_keys(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
+    });
+    let (view, cx) = cx.add_window_view(|_, cx| Desk {
+        root: cx.focus_handle(),
+        ran: Vec::new(),
+        wrap: false,
+        theme: "light".into(),
+        view_rows: true,
+        enters_above: 0,
+        shift: false,
+        asked: None,
+    });
+    settle(cx);
+    (view, cx)
+}
+
 fn ran(view: &gpui::Entity<Desk>, cx: &mut VisualTestContext) -> Vec<SharedString> {
     view.read_with(cx, |desk, _| desk.ran.clone())
 }
@@ -218,6 +240,37 @@ fn a_right_click_opens_the_context_menu_where_it_lands(cx: &mut TestAppContext) 
     press("down", cx);
     press("enter", cx);
     assert_eq!(ran(&view, cx), ["cut"]);
+}
+
+#[gpui::test]
+fn a_long_press_opens_the_context_menu_on_touch(cx: &mut TestAppContext) {
+    let (view, cx) = touch_desk(cx);
+    let at = point(px(60.0), px(80.0));
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
+    cx.executor().advance_clock(Duration::from_millis(600));
+    settle(cx);
+    cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
+    settle(cx);
+    press("down", cx);
+    press("enter", cx);
+    assert_eq!(ran(&view, cx), ["cut"]);
+}
+
+#[gpui::test]
+fn a_short_press_leaves_the_context_menu_shut_on_touch(cx: &mut TestAppContext) {
+    let (view, cx) = touch_desk(cx);
+    let at = point(px(60.0), px(80.0));
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
+    settle(cx);
+    press("down", cx);
+    press("enter", cx);
+    assert!(
+        ran(&view, cx).is_empty(),
+        "a short press opened the context menu"
+    );
 }
 
 #[gpui::test]
