@@ -2,10 +2,14 @@ use ely_gpui_component::{
     buttons::Button,
     canvas::{CanvasTouch, InfiniteCanvas, TouchAction, TouchContact, Viewport, ZoomControls},
     forms::{Input, TextInput},
+    interaction::TouchMenu,
     layout::{ViewportInsets, is_compact, reveal_when_focused_in_bounds, usable_bounds},
+    lists::ListItem,
     menus::{DropdownMenu, Menu, MenuItem},
+    navigation::{NavGroup, NavItem},
     overlays::Dialog,
-    primitives::{FocusScope, Place},
+    primitives::{FocusScope, IconName, Place},
+    shell::{TabBar, WindowTab},
     theme::ActiveTheme,
 };
 use gpui::{
@@ -13,6 +17,29 @@ use gpui::{
     IntoElement, ParentElement, Pixels, Render, ScrollHandle, StatefulInteractiveElement, Styled,
     Window, div, point, px,
 };
+
+/// The controls whose hit area the touch floor covers, side by side.
+fn touch_targets() -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child("Touch targets")
+        .child(ListItem::new("showcase-item", "Inbox"))
+        .child(NavItem::new("showcase-nav", IconName::House, "Home"))
+        .child(
+            NavGroup::new("showcase-group", "Places", true).child(NavItem::new(
+                "showcase-nav-star",
+                IconName::Star,
+                "Starred",
+            )),
+        )
+        .child(
+            TabBar::new("showcase-tabs")
+                .tab(WindowTab::new("showcase-doc", "Document"))
+                .selected("showcase-doc"),
+        )
+}
 
 pub struct Showcase {
     focus: FocusHandle,
@@ -84,6 +111,11 @@ impl Render for Showcase {
                 Pixels::ZERO
             },
         );
+        let keyboard_bottom = if self.keyboard {
+            px(240.0)
+        } else {
+            Pixels::ZERO
+        };
         let compact = is_compact(available, px(600.0));
         let colors = cx.theme().colors.clone();
         let keyboard = cx.entity();
@@ -250,7 +282,27 @@ impl Render for Showcase {
                                         cx.notify();
                                     })
                                 },
-                            )),
+                            ))
+                            .child(touch_targets())
+                            .child(
+                                TouchMenu::new(
+                                    "long-press",
+                                    Menu::new()
+                                        .item(MenuItem::new("Share"))
+                                        .item(MenuItem::new("Rename"))
+                                        .item(MenuItem::new("Delete").disabled(true)),
+                                )
+                                .viewport_insets(safe, keyboard_bottom)
+                                .child(
+                                    div()
+                                        .debug_selector(|| "long-press-area".into())
+                                        .w(px(220.0))
+                                        .h(px(88.0))
+                                        .rounded_md()
+                                        .border_1()
+                                        .child("Long press for a menu"),
+                                ),
+                            ),
                     )
                     .child(div().flex_1().min_h_0().overflow_hidden().child(
                         InfiniteCanvas::new("map", self.viewport).on_viewport(

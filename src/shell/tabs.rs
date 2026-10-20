@@ -138,6 +138,7 @@ impl RenderOnce for TabBar {
             let (lit, edge) = (colors.hover, colors.focus);
             div()
                 .id(tab.id.clone())
+                .debug_selector(|| format!("window-tab-{}", tab.id))
                 .group(group.clone())
                 .flex()
                 .flex_1()
@@ -146,6 +147,7 @@ impl RenderOnce for TabBar {
                 .min_w(narrow)
                 .max_w(wide)
                 .h(theme.control_height(ControlSize::Md))
+                .map(|tab| theme.touch_target(tab))
                 .pl_3()
                 .pr_1()
                 .rounded(theme.radius(Radius::Md))

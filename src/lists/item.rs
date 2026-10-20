@@ -149,6 +149,7 @@ impl RenderOnce for ListItem {
         let pressable = self.on_click.is_some() && !self.disabled;
         div()
             .id(self.id)
+            .debug_selector(|| format!("list-item-{}", self.title))
             .role(Role::ListItem)
             .aria_label(self.title.clone())
             .aria_selected(self.selected)
@@ -164,6 +165,7 @@ impl RenderOnce for ListItem {
             .px_3()
             .py_1p5()
             .min_h(theme.control_height(ControlSize::Lg))
+            .map(|row| theme.touch_target(row))
             .rounded(theme.radius(Radius::Md))
             .border_1()
             .border_color(if self.current {

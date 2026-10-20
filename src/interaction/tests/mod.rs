@@ -8,6 +8,7 @@ use super::{Resizable, Rotatable, RovingFocus, ScrollSync, SelectionArea};
 use crate::{forms, primitives::FocusNext, theme::Theme};
 
 mod limits;
+mod touch_menu;
 
 type Part = fn(&Bench, Entity<Bench>) -> AnyElement;
 

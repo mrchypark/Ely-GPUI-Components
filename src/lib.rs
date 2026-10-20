@@ -45,6 +45,9 @@ pub mod theme;
 pub mod tooling;
 pub mod typography;
 
+#[cfg(all(test, feature = "test-support"))]
+mod touch_targets;
+
 pub use assets::Assets;
 
 use anyhow::Context as _;

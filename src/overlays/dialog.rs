@@ -211,6 +211,8 @@ impl RenderOnce for Dialog {
                 .flex()
                 .justify_end()
                 .gap_2()
+                .debug_selector(|| "dialog-actions".into())
+                .map(|row| theme.touch_target(row))
                 .children(buttons)
         });
         let enter = self.enter.map(|build| {
