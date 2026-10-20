@@ -178,6 +178,8 @@ pub(super) fn panel(
             }
         });
     surface((id.clone(), format!("panel-{depth}")), cx)
+        // Keep the press on the panel from reaching the canvas it covers.
+        .occlude()
         .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
         .debug_selector(move || format!("menu-panel-{depth}"))
         .relative()

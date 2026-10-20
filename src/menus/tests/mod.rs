@@ -6,6 +6,7 @@ use gpui::{
 use std::time::Duration;
 
 mod more;
+mod overlay;
 mod scroll;
 
 use super::{ContextMenu, DropdownMenu, Menu, MenuItem, SearchableMenu};
