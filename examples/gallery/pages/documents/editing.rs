@@ -4,11 +4,13 @@ use ely_gpui_component::{
         RichTextEditor, markdown_highlights,
     },
     forms::TextInput,
+    theme::ActiveTheme,
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::{
-    probe::probe,
+    probe::{probe, probe_sized},
     ui::{keep, section, set},
 };
 
@@ -118,7 +120,7 @@ fn kinds() -> Vec<BlockData> {
         block(
             BlockKind::Image(Media {
                 width: 0.7,
-                ..Media::new(ATRIUM)
+                ..Media::new(crate::assets::file(ATRIUM))
             }),
             &["The atrium at noon"],
         ),
@@ -179,7 +181,7 @@ pub fn editing(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 "Markdown that reads as it is written: styles show as they are typed and their marks recede. The toolbar above and the one over a selection apply formats; ⌘K edits the link at the caret. @ suggests people, a colon and two letters suggest emoji. The foot counts words, characters and minutes.",
                 cx,
             )
-            .child(probe("doc-rich", div().w(px(760.)).child(RichTextEditor::new("doc-rich", &rich).people(PEOPLE)))),
+            .child(probe_sized("doc-rich", div().w(px(760.)).when(cx.theme().touch_mode, |view| view.w_full().min_w_0()).child(RichTextEditor::new("doc-rich", &rich).people(PEOPLE)), cx.theme().touch_mode)),
         )
         .child(
             section(
@@ -187,13 +189,14 @@ pub fn editing(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 "One document three ways: visual, where it reads as it will and a pressed block opens as its source; source, styled as typed; and split, the source beside what it makes.",
                 cx,
             )
-            .child(probe(
+            .child(probe_sized(
                 "doc-markdown",
-                div().w(px(840.)).child(
+                div().w(px(840.)).when(cx.theme().touch_mode, |view| view.w_full().min_w_0()).child(
                     MarkdownEditor::new("doc-markdown", &essay, now_mode)
                         .people(PEOPLE)
                         .on_mode(move |next, _, cx| set(&mode, next, cx)),
                 ),
+                cx.theme().touch_mode,
             )),
         )
         .child(

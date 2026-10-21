@@ -97,6 +97,7 @@ pub(crate) fn field_button(
         .items_center()
         .gap_2()
         .h(theme.control_height(size))
+        .map(|field| theme.touch_target(field))
         .px(theme.control_padding(size))
         .rounded(theme.radius(Radius::Md))
         .border_1()

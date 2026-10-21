@@ -106,9 +106,12 @@ impl RenderOnce for ThemePreview {
         let pick = self.on_pick;
         div()
             .id(self.id)
+            .debug_selector(|| "editor-theme-preview".into())
             .flex()
             .flex_col()
             .gap_2()
+            // A finger needs a card it can land on.
+            .map(|card| theme.touch_target(card))
             .cursor_pointer()
             .when_some(pick, |card, pick| {
                 card.on_click(move |_, window, cx| pick(window, cx))

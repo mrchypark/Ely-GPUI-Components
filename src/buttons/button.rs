@@ -128,6 +128,7 @@ pub(crate) fn shortcut_text(source: &str, platform: Platform) -> String {
 #[derive(IntoElement)]
 pub struct Button {
     id: ElementId,
+    debug_selector: Option<String>,
     label: SharedString,
     icon: Option<IconName>,
     trailing_icon: Option<IconName>,
@@ -146,6 +147,7 @@ impl Button {
     pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
         Self {
             id: id.into(),
+            debug_selector: None,
             label: label.into(),
             icon: None,
             trailing_icon: None,
@@ -159,6 +161,12 @@ impl Button {
             slot: None,
             on_click: None,
         }
+    }
+
+    /// Names the existing hit element for frame-bound inspection.
+    pub fn debug_selector(mut self, selector: impl FnOnce() -> String) -> Self {
+        self.debug_selector = Some(selector());
+        self
     }
 
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
@@ -254,6 +262,9 @@ impl RenderOnce for Button {
 
         div()
             .id(self.id)
+            .when_some(self.debug_selector, |el, selector| {
+                el.debug_selector(|| selector)
+            })
             .role(Role::Button)
             .when(!name.is_empty(), |el| el.aria_label(name))
             .flex()
@@ -262,6 +273,7 @@ impl RenderOnce for Button {
             .justify_center()
             .gap_1p5()
             .h(theme.control_height(self.size))
+            .map(|el| theme.touch_target(el))
             .when(!link, |el| el.px(theme.control_padding(self.size)))
             .border_1()
             .border_color(tone.border)

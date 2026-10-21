@@ -158,12 +158,15 @@ impl RenderOnce for SearchResultItem {
         let (path, line) = (self.path.clone(), self.hit.line);
         div()
             .id(self.id)
+            .debug_selector(|| format!("editor-search-result-{}", line + 1))
             .flex()
             .items_center()
             .gap_2()
             .px_2()
             .py_0p5()
             .rounded(theme.radius(Radius::Sm))
+            // A finger needs a row it can land on.
+            .map(|row| theme.touch_target(row))
             .cursor_pointer()
             .hover(|row| row.bg(colors.hover))
             .text_size(theme.text_size(TextSize::Sm))
@@ -220,12 +223,15 @@ fn results(
         out.push(
             div()
                 .id((id.clone(), format!("file-{file_ix}")))
+                .debug_selector(|| format!("editor-search-file-{file_ix}"))
                 .flex()
                 .items_center()
                 .gap_1p5()
                 .px_1()
                 .py_0p5()
                 .rounded(theme.radius(Radius::Sm))
+                // A finger needs a row it can land on.
+                .map(|row| theme.touch_target(row))
                 .cursor_pointer()
                 .hover(|row| row.bg(colors.hover))
                 .text_size(theme.text_size(TextSize::Sm))

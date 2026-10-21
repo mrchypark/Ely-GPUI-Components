@@ -4,7 +4,7 @@ use gpui::{
     AnyElement, App, Axis, Bounds, Canvas, Div, ElementId, EmptyView, Entity, EntityId,
     FocusHandle, HoverListenerMode, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
     RenderOnce, ScrollHandle, StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas,
-    div, point, prelude::*,
+    div, point, prelude::*, px,
 };
 use smallvec::SmallVec;
 use web_time::Instant;
@@ -17,16 +17,10 @@ const IDLE: Duration = Duration::from_millis(900);
 /// Sets `scroll`'s offset along `axis` whole so `item`, as painted, sits inside the box, its start first when it is longer; true when it moved.
 pub(crate) fn bring_into_view(scroll: &ScrollHandle, item: Bounds<Pixels>, axis: Axis) -> bool {
     let (frame, offset) = (scroll.bounds(), scroll.offset());
-    let ((start, end), (first, last)) = match axis {
-        Axis::Horizontal => ((item.left(), item.right()), (frame.left(), frame.right())),
-        Axis::Vertical => ((item.top(), item.bottom()), (frame.top(), frame.bottom())),
-    };
-    let shift = if start < first {
-        first - start
-    } else if end > last {
-        (last - end).max(first - start)
-    } else {
-        Pixels::ZERO
+    let delta = super::reveal_offset(item, frame);
+    let shift = match axis {
+        Axis::Horizontal => delta.x,
+        Axis::Vertical => delta.y,
     };
     if shift != Pixels::ZERO {
         scroll.set_offset(match axis {
@@ -46,19 +40,72 @@ pub(crate) fn reveal_when_focused(
     window: &mut Window,
     cx: &mut App,
 ) -> Canvas<()> {
-    let shown = window.use_keyed_state(id, cx, |_, _| false);
+    focus_revealer(id, scroll, focus, axis, None, window, cx)
+}
+
+/// Reveals again when usable bounds change while focus stays in the same field.
+/// Resize the scroll viewport or add keyboard padding before layout; bounds alone add no scroll reach.
+pub fn reveal_when_focused_in_bounds(
+    id: impl Into<ElementId>,
+    scroll: &ScrollHandle,
+    focus: &FocusHandle,
+    axis: Axis,
+    visible: Bounds<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Canvas<()> {
+    focus_revealer(id, scroll, focus, axis, Some(visible), window, cx)
+}
+
+fn focus_revealer(
+    id: impl Into<ElementId>,
+    scroll: &ScrollHandle,
+    focus: &FocusHandle,
+    axis: Axis,
+    visible: Option<Bounds<Pixels>>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Canvas<()> {
+    let shown = window.use_keyed_state(id, cx, |_, _| (false, None));
     let (scroll, focus) = (scroll.clone(), focus.clone());
     canvas(
         move |bounds, window, cx| {
             let (focused, held) = (focus.is_focused(window), *shown.read(cx));
-            if focused && !held {
-                shown.update(cx, |shown, _| *shown = true);
-                if bring_into_view(&scroll, bounds, axis) {
+            if focused && (!held.0 || held.1 != visible) {
+                shown.update(cx, |shown, _| *shown = (true, visible));
+                let moved = if let Some(mut visible) = visible {
+                    let frame = scroll.bounds();
+                    match axis {
+                        Axis::Horizontal => {
+                            visible.origin.y = frame.origin.y;
+                            visible.size.height = frame.size.height;
+                        }
+                        Axis::Vertical => {
+                            visible.origin.x = frame.origin.x;
+                            visible.size.width = frame.size.width;
+                        }
+                    }
+                    let mut field = bounds;
+                    match axis {
+                        Axis::Horizontal => {
+                            field.origin.y = frame.origin.y;
+                            field.size.height = frame.size.height;
+                        }
+                        Axis::Vertical => {
+                            field.origin.x = frame.origin.x;
+                            field.size.width = frame.size.width;
+                        }
+                    }
+                    super::reveal_in_bounds(&scroll, field, visible)
+                } else {
+                    bring_into_view(&scroll, bounds, axis)
+                };
+                if moved {
                     log::info!("scroll: a focused stop came into view");
                     window.request_animation_frame();
                 }
-            } else if !focused && held {
-                shown.update(cx, |shown, _| *shown = false);
+            } else if !focused && held.0 {
+                shown.update(cx, |shown, _| *shown = (false, None));
             }
         },
         |_, _, _, _| {},
@@ -147,19 +194,47 @@ impl RenderOnce for Scrollbar {
         };
         let length = (span * (span / (span + reach))).max(min_thumb).min(span);
         let travel = span - length;
-        if reach <= Pixels::ZERO || travel <= Pixels::ZERO || self.presence <= 0.0 {
+        // A finger has no hover to hold the scrollbar out, so it stays.
+        let presence = if theme.touch_mode { 1.0 } else { self.presence };
+        if reach <= Pixels::ZERO || travel <= Pixels::ZERO || presence <= 0.0 {
             return div().into_any_element();
         }
         let start = travel * (scrolled / reach).clamp(0.0, 1.0);
         let axis = self.axis;
         let handle = self.handle.clone();
         let (idle, busy) = (theme.colors.fg.opacity(0.22), theme.colors.fg.opacity(0.42));
+        // A finger has no hover to light the thumb, so a phone keeps it lit and
+        // the grab target grows to a finger's width while the bar stays thin.
+        let grab = if theme.touch_mode {
+            theme.touch_minimum(px(48.))
+        } else {
+            thickness
+        };
+        // The thin bar keeps the desktop's place inside the track band; on a
+        // phone the wide grab target around it reaches the screen edge.
+        let bar_inset = if theme.touch_mode {
+            thickness
+        } else {
+            Pixels::ZERO
+        };
+        // The bar keeps its own width; only the grab target around it grows.
+        let (bar_selector, grab_selector) = match axis {
+            Axis::Vertical => ("scrollbar-bar", "scrollbar-thumb"),
+            Axis::Horizontal => ("scrollbar-bar-x", "scrollbar-thumb-x"),
+        };
+        let bar = div()
+            .debug_selector(|| bar_selector.into())
+            .id("thumb-bar")
+            .absolute()
+            .rounded_full()
+            .bg(if theme.touch_mode { busy } else { idle })
+            .when(!theme.touch_mode, |bar| bar.hover(|style| style.bg(busy)))
+            // A press lights the thumb on touch, where no hover ever comes.
+            .active(|style| style.bg(busy));
         let thumb = div()
             .id("thumb")
             .absolute()
-            .rounded_full()
-            .bg(idle)
-            .hover(|style| style.bg(busy))
+            .debug_selector(|| grab_selector.into())
             .on_drag(
                 ThumbDrag {
                     owner,
@@ -169,14 +244,22 @@ impl RenderOnce for Scrollbar {
                 |_, _, _, cx| cx.new(|_| EmptyView),
             )
             .map(|thumb| match axis {
-                Axis::Vertical => thumb.top(start).left_0().w(thickness).h(length),
-                Axis::Horizontal => thumb.left(start).top_0().h(thickness).w(length),
-            });
-        let track = div()
-            .id(self.id)
-            .absolute()
-            .opacity(self.presence)
-            .on_drag_move(move |event: &gpui::DragMoveEvent<ThumbDrag>, window, cx| {
+                // A finger grabs from the edge inward, so the wide target runs
+                // to the edge of the screen while the thin bar inside it stays
+                // where the eye expects it.
+                Axis::Vertical if theme.touch_mode => thumb.top(start).right_0().w(grab).h(length),
+                Axis::Horizontal if theme.touch_mode => {
+                    thumb.left(start).bottom_0().h(grab).w(length)
+                }
+                Axis::Vertical => thumb.top(start).left_0().w(grab).h(length),
+                Axis::Horizontal => thumb.left(start).top_0().h(grab).w(length),
+            })
+            .child(bar.map(|bar| match axis {
+                Axis::Vertical => bar.right(bar_inset).w(thickness).h_full(),
+                Axis::Horizontal => bar.bottom(bar_inset).h(thickness).w_full(),
+            }));
+        let track = div().id(self.id).absolute().opacity(presence).on_drag_move(
+            move |event: &gpui::DragMoveEvent<ThumbDrag>, window, cx| {
                 let drag = event.drag(cx);
                 if drag.owner != owner {
                     return;
@@ -201,7 +284,8 @@ impl RenderOnce for Scrollbar {
                     Axis::Horizontal => point(target, current.y),
                 });
                 window.refresh();
-            });
+            },
+        );
         match axis {
             Axis::Vertical => track
                 .top_0()

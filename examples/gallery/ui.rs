@@ -133,7 +133,9 @@ impl IntoElement for Section {
 /// A gallery picture: a file, or a web address.
 pub fn resource(path: impl Into<SharedString>) -> Resource {
     let path = path.into();
-    if cfg!(target_family = "wasm") {
+    if path.starts_with("gallery-assets/") {
+        Resource::Embedded(path)
+    } else if cfg!(target_family = "wasm") {
         Resource::Uri(path.into())
     } else {
         Resource::Path(std::path::Path::new(path.as_ref()).into())
@@ -251,5 +253,16 @@ pub fn noise(seed: u64) -> impl FnMut() -> f64 {
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
         (state >> 33) as f64 / (1u64 << 31) as f64
+    }
+}
+
+/// Forward the owning window's area into a menu model, including empty areas.
+pub fn bounded_menu(
+    menu: ely_gpui_component::menus::Menu,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> ely_gpui_component::menus::Menu {
+    match bounds {
+        Some(area) => menu.usable_bounds(area),
+        None => menu,
     }
 }

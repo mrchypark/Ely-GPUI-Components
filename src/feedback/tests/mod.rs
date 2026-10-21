@@ -7,6 +7,7 @@ use gpui::{
 
 mod loading;
 mod states;
+mod toast_touch;
 
 use super::{Alert, Notification, NotificationCenter, Toast, ToastViewport, Toaster};
 use crate::{

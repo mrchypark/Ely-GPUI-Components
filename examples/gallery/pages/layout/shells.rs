@@ -117,7 +117,11 @@ pub fn drawer(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
 }
 
-pub fn sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn sheet(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let (state, open) = toggle(window, cx, "sheet-open");
     let close = state.clone();
     section("Sheet", "Slides in from an edge over a scrim.", cx).child(
@@ -131,6 +135,7 @@ pub fn sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     Sheet::new("demo-sheet", Place::Right, "Filters", move |_, cx| {
                         flip(&close, cx)
                     })
+                    .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                     .child(Paragraph::new(
                         "Sheets keep context visible while a side task runs.",
                     ))

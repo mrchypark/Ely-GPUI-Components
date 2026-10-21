@@ -11,6 +11,7 @@ use ely_gpui_component::{
     primitives::{IconName, Severity},
     theme::{ActiveTheme, Radius},
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use jiff::{Timestamp, ToSpan, tz::TimeZone};
 
@@ -78,6 +79,7 @@ pub fn conversations_section(
     history: &History,
     window: &mut Window,
     cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
 ) -> impl IntoElement + use<> {
     let today = Timestamp::now()
         .to_zoned(TimeZone::try_system().expect("the gallery reads the system time zone"))
@@ -160,7 +162,7 @@ pub fn conversations_section(
             ),
     ))
     .children(now_renaming.map(|key| {
-        PromptDialog::new("chat-rename", "Rename conversation", &naming, move |_, cx| set(&shut, None, cx))
+        PromptDialog::new("chat-rename", "Rename conversation", &naming, move |_, cx| set(&shut, None, cx)).when_some(bounds, |overlay, area| overlay.usable_bounds(area))
             .label("Title")
             .submit("Rename")
             .check(|text| match text.trim() {

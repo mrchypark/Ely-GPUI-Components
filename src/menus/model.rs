@@ -1,6 +1,6 @@
-use std::{ops::Range, rc::Rc};
+use std::{cell::Cell, ops::Range, rc::Rc};
 
-use gpui::{App, SharedString, Window};
+use gpui::{App, Bounds, Pixels, SharedString, Window};
 
 use crate::{forms::Run, navigation::fuzzy, primitives::IconName};
 
@@ -90,9 +90,63 @@ pub(super) enum Entry {
 #[derive(Clone, Default)]
 pub struct Menu {
     pub(super) entries: Vec<Entry>,
+    pub(super) usable_bounds: Option<Bounds<Pixels>>,
+    pub(super) on_open_change: Option<Rc<dyn Fn(bool)>>,
+    pub(super) on_panels_change: Option<Rc<dyn Fn(&[Bounds<Pixels>])>>,
+    pub(super) dismiss: MenuDismiss,
+}
+
+/// A handle that closes a menu from outside its host.
+#[derive(Clone, Default)]
+pub struct MenuDismiss {
+    requested: Rc<Cell<bool>>,
+}
+
+impl MenuDismiss {
+    /// Asks the open menu to close. The host closes it on its next render.
+    pub fn request(&self) {
+        self.requested.set(true);
+    }
+
+    /// Whether a close was asked for, clearing the request.
+    pub(super) fn take(&self) -> bool {
+        self.requested.replace(false)
+    }
+
+    /// Whether a close was asked for, keeping the request.
+    #[cfg(test)]
+    pub(super) fn is_requested(&self) -> bool {
+        self.requested.get()
+    }
 }
 
 impl Menu {
+    /// Observes root open/close transitions, including teardown while open.
+    /// Called synchronously; use external state such as `Cell`, without reentering the App.
+    /// The callback selected when opening is retained until that session closes.
+    pub fn on_open_change(mut self, handler: impl Fn(bool) + 'static) -> Self {
+        self.on_open_change = Some(Rc::new(handler));
+        self
+    }
+
+    /// Observes the open menu's panel boxes, root level first; empty when closed.
+    /// Called synchronously; use external state such as `RefCell`, without reentering the App.
+    pub fn on_panels_change(mut self, handler: impl Fn(&[Bounds<Pixels>]) + 'static) -> Self {
+        self.on_panels_change = Some(Rc::new(handler));
+        self
+    }
+
+    /// A handle that can close this menu from outside its host.
+    pub fn dismiss_handle(&self) -> MenuDismiss {
+        self.dismiss.clone()
+    }
+
+    /// Window-local usable area for this menu and all its submenu panels.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -162,6 +216,10 @@ impl Menu {
             .collect();
         found.sort_by(|(a, _), (b, _)| b.cmp(a));
         Menu {
+            usable_bounds: self.usable_bounds,
+            on_open_change: self.on_open_change.clone(),
+            on_panels_change: self.on_panels_change.clone(),
+            dismiss: self.dismiss.clone(),
             entries: found
                 .into_iter()
                 .map(|(_, item)| Entry::Item(item))

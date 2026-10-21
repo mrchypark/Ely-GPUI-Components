@@ -76,6 +76,7 @@ fn open_title(
 pub struct MenuBar {
     id: ElementId,
     menus: Vec<OwnedMenu>,
+    usable_bounds: Option<Bounds<Pixels>>,
 }
 
 impl MenuBar {
@@ -85,7 +86,14 @@ impl MenuBar {
         Self {
             id: id.into(),
             menus,
+            usable_bounds: None,
         }
+    }
+
+    /// Window-local usable area for every title's menu and its submenus.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 }
 
@@ -95,6 +103,15 @@ impl RenderOnce for MenuBar {
         let focus = tab_stop((self.id.clone(), "focus").into(), true, window, cx);
         let bar_focused = focus.is_focused(window);
         let state = window.use_keyed_state((self.id.clone(), "menu"), cx, |_, _| Open::default());
+        // Menu surfaces have p_1 padding and a one-pixel border on each side.
+        let frame = window.rem_size() * 0.5 + gpui::px(2.);
+        let room = self.usable_bounds.is_none_or(|bounds| {
+            let area = super::placement::area(bounds, window.viewport_size());
+            area.size.width > frame && area.size.height > frame
+        });
+        if !room && state.read(cx).is_open() {
+            Open::close(&state, window, cx);
+        }
         let titles =
             window.use_keyed_state((self.id.clone(), "titles"), cx, |_, _| Titles::default());
         if titles.read(cx).boxes.len() != count {
@@ -105,7 +122,13 @@ impl RenderOnce for MenuBar {
         let menus: Rc<Vec<Menu>> = Rc::new(
             self.menus
                 .iter()
-                .map(|menu| rows(&menu.items, window))
+                .map(|menu| {
+                    let menu = rows(&menu.items, window);
+                    match self.usable_bounds {
+                        Some(bounds) => menu.usable_bounds(bounds),
+                        None => menu,
+                    }
+                })
                 .collect(),
         );
         let open = state.read(cx).is_open();
@@ -120,6 +143,7 @@ impl RenderOnce for MenuBar {
             let here = ix == at;
             div()
                 .id(("title", ix))
+                .debug_selector(move || format!("menu-bar-title-{ix}"))
                 .relative()
                 .flex()
                 .items_center()
@@ -137,6 +161,9 @@ impl RenderOnce for MenuBar {
                 .hover(|style| style.bg(colors.hover))
                 .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                     window.prevent_default();
+                    if !room {
+                        return;
+                    }
                     if open && here {
                         Open::close(&press, window, cx);
                     } else {
@@ -144,7 +171,11 @@ impl RenderOnce for MenuBar {
                     }
                 })
                 .on_hover(move |hovered, _, cx| {
-                    if *hovered && hover.read(cx).is_open() && hover_titles.read(cx).at != ix {
+                    if room
+                        && *hovered
+                        && hover.read(cx).is_open()
+                        && hover_titles.read(cx).at != ix
+                    {
                         open_title(&hover, &hover_titles, &hover_menus, ix, false, cx);
                     }
                 })
@@ -175,6 +206,9 @@ impl RenderOnce for MenuBar {
             .items_center()
             .gap_0p5()
             .on_key_down(move |event, _, cx| {
+                if !room {
+                    return;
+                }
                 let key = event.keystroke.key.as_str();
                 let open = keys.read(cx).is_open();
                 let at = key_titles.read(cx).at.min(count - 1);
@@ -204,3 +238,7 @@ impl RenderOnce for MenuBar {
             .children(hang(&self.id, &menus[at], &state, None, window, cx))
     }
 }
+
+#[cfg(all(test, feature = "test-support"))]
+#[path = "bar_tests.rs"]
+mod tests;

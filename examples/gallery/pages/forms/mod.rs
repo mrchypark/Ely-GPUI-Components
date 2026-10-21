@@ -317,7 +317,11 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(text::input(window, cx))
         .child(text::text_area(window, cx))
@@ -366,7 +370,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(other::font(window, cx))
         .child(other::glyphs(window, cx))
         .child(other::regional(window, cx))
-        .child(structure::form(window, cx))
-        .child(structure::inline(window, cx))
+        .child(structure::form(window, cx, bounds))
+        .child(structure::inline(window, cx, bounds))
         .into_any_element()
 }

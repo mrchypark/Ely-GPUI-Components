@@ -254,3 +254,41 @@ fn invalid_sizes_after_a_drag_split_evenly(cx: &mut TestAppContext) {
     let second = cx.debug_bounds("second").expect("second").size.width;
     assert_eq!(first, second);
 }
+
+/// Two panes split by a divider, on a phone or on a desktop.
+struct Split;
+
+impl Render for Split {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let pane = |name: &'static str| div().debug_selector(move || name.into()).size_full();
+        div().w(px(300.0)).h(px(100.0)).child(
+            SplitPane::new("split", Axis::Horizontal, px(10.0))
+                .pane(pane("first"))
+                .pane(pane("second")),
+        )
+    }
+}
+
+#[gpui::test]
+fn a_touch_split_handle_is_a_thumb(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
+    });
+    let (_, cx) = cx.add_window_view(|_, _| Split);
+    cx.run_until_parked();
+    let handle = cx.debug_bounds("split-handle").expect("the divider");
+    assert!(
+        handle.size.width >= px(48.),
+        "the divider is a touch target: {handle:?}"
+    );
+    cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = false));
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let handle = cx.debug_bounds("split-handle").expect("the divider");
+    assert!(
+        handle.size.width < px(48.),
+        "the desktop keeps its thin divider: {handle:?}"
+    );
+}

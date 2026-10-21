@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
+    App, ElementId, Entity, FontWeight, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    prelude::*,
 };
 
 use super::button::{keystroke_of, shortcut_text};
@@ -111,8 +112,10 @@ impl RenderOnce for QuickActions {
             .enumerate()
             .map(|(ix, action)| {
                 let (hover, action_for_click) = (state.clone(), action.clone());
+                let press = state.clone();
                 div()
                     .id(("quick", ix))
+                    .map(|el| theme.touch_target(el))
                     .flex()
                     .items_center()
                     .gap_3()
@@ -126,6 +129,9 @@ impl RenderOnce for QuickActions {
                             select(&hover, ix, cx);
                         }
                     })
+                    // A tap never hovers, so the press marks the row selected
+                    // the way the pointer does.
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| select(&press, ix, cx))
                     .on_click(move |_, window, cx| run(&action_for_click, window, cx))
                     .child(
                         div()

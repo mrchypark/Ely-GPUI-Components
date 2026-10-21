@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{collections::HashSet, rc::Rc};
 
 use gpui::{
     AnyElement, App, ElementId, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
@@ -238,9 +238,29 @@ impl WatchPanel {
 }
 
 impl RenderOnce for WatchPanel {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // A phone never hovers, so a press on a row reveals its remove action.
+        // Reveal은 행마다 따로 든다: 몇 행을 눌러도 그 행들만 함께 열리고, 각자 닫힌다.
+        let revealed = window.use_keyed_state((self.id.clone(), "remove"), cx, |_, _| {
+            HashSet::<SharedString>::new()
+        });
+        let shown: HashSet<SharedString> = revealed.read(cx).clone();
+        // 목록이 바뀌어도 눌린 행의 index가 밀리지 않도록, 지금 보이는 순서를 따로 든다.
+        let latest = window.use_keyed_state((self.id.clone(), "latest"), cx, |_, _| {
+            Vec::<SharedString>::new()
+        });
+        let keys: Vec<SharedString> = self
+            .watches
+            .iter()
+            .map(|watch| watch.expression.clone())
+            .collect();
+        if *latest.read(cx) != keys {
+            latest.update(cx, |latest, _| *latest = keys.clone());
+        }
         let theme = cx.theme();
         let colors = theme.colors.clone();
+        // 터치에서는 보이지 않은 제거 버튼이 눌리지 않게, reveal된 행에만 동작을 건다.
+        let touch = theme.touch_mode;
         div()
             .flex()
             .flex_col()
@@ -249,13 +269,35 @@ impl RenderOnce for WatchPanel {
             .children(self.watches.iter().enumerate().map(|(ix, watch)| {
                 let group = SharedString::from(format!("watch-{ix}"));
                 let remove = self.on_remove.clone();
+                let press = revealed.clone();
+                let press_on_remove = revealed.clone();
+                // Reveal은 index가 아니라 표현식 문자열로 묶는다. index로 묶으면 watch 하나가
+                // 지워질 때 뒤의 watch들이 밀리며 reveal이 엉뚱한 watch의 제거 버튼으로 옮겨 붙는다.
+                let key = watch.expression.clone();
+                let open = shown.contains(&key);
                 let (value, color) = match &watch.value {
                     Ok((value, kind)) => (value.clone(), kind.color(&colors)),
                     Err(error) => (error.clone(), colors.danger),
                 };
-                div()
+                let row = div()
                     .id((self.id.clone(), format!("row-{ix}")))
                     .group(group.clone())
+                    .debug_selector(move || format!("watch-row-{ix}"))
+                    // A phone never hovers, so a press on a row reveals its remove action.
+                    // A pointer keeps its hover, so a press there must not change the reveal.
+                    .when(touch, |row| {
+                        let press = press.clone();
+                        let key = key.clone();
+                        row.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                            press.update(cx, |revealed, cx| {
+                                // 같은 행을 다시 누르면 그 행만 닫히고, 다른 행은 그대로 열려 있다.
+                                if !revealed.remove(&key) {
+                                    revealed.insert(key.clone());
+                                }
+                                cx.notify();
+                            });
+                        })
+                    })
                     .flex()
                     .items_center()
                     .gap_2()
@@ -268,6 +310,7 @@ impl RenderOnce for WatchPanel {
                         div()
                             .flex_none()
                             .text_color(colors.fg)
+                            .debug_selector(move || format!("watch-label-{ix}"))
                             .child(watch.expression.clone()),
                     )
                     .child(div().flex_none().text_color(colors.fg_subtle).child("="))
@@ -280,24 +323,68 @@ impl RenderOnce for WatchPanel {
                     )
                     .child(
                         div()
-                            .opacity(0.)
+                            .opacity(if open { 1. } else { 0. })
                             .group_hover(group, |actions| actions.opacity(1.))
+                            .debug_selector(move || {
+                                if open {
+                                    "watch-remove-revealed".to_string()
+                                } else {
+                                    "watch-remove".to_string()
+                                }
+                            })
+                            // 제거 버튼을 누른 press가 행까지 올라가 reveal을 다시 켜지 않게 막는다.
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .child(
-                                IconButton::new(
-                                    (self.id.clone(), format!("remove-{ix}")),
-                                    IconName::X,
-                                )
-                                .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
-                                .tooltip("Stop watching")
-                                .when_some(
-                                    remove,
-                                    |button, remove| {
-                                        button.on_click(move |_, window, cx| remove(ix, window, cx))
-                                    },
-                                ),
+                                div()
+                                    .debug_selector(move || {
+                                        if open {
+                                            format!("watch-remove-revealed-{ix}")
+                                        } else {
+                                            format!("watch-remove-{ix}")
+                                        }
+                                    })
+                                    .child(
+                                        IconButton::new(
+                                            (self.id.clone(), format!("remove-{ix}")),
+                                            IconName::X,
+                                        )
+                                        .debug_selector(|| "watch-remove-button".to_string())
+                                        .variant(ButtonVariant::Ghost)
+                                        .size(ControlSize::Sm)
+                                        .tooltip("Stop watching")
+                                        .when_some(
+                                            remove.filter(|_| !touch || open),
+                                            |button, remove| {
+                                                let latest = latest.clone();
+                                                let key = key.clone();
+                                                button.on_click(move |_, window, cx| {
+                                                    cx.stop_propagation();
+                                                    // 제거와 함께 그 행의 reveal만 닫는다.
+                                                    press_on_remove.update(cx, |revealed, cx| {
+                                                        revealed.remove(&key);
+                                                        cx.notify();
+                                                    });
+                                                    // 지금 보이는 목록에서의 자리로 알린다.
+                                                    let at = latest
+                                                        .read(cx)
+                                                        .iter()
+                                                        .position(|known| *known == key)
+                                                        .unwrap_or(ix);
+                                                    remove(at, window, cx)
+                                                })
+                                            },
+                                        ),
+                                    ),
                             ),
                     )
+                    .into_any_element();
+                // 행 전체를 가리키는 옛 이름도 남겨 둔다: 행별 이름이 더 정확하지만, 이 이름이 행의 자리다.
+                div()
+                    .flex()
+                    .flex_col()
+                    .debug_selector(|| "watch-row".to_string())
+                    .child(row)
+                    .into_any_element()
             }))
             .child(Input::new(&self.field).size(ControlSize::Sm))
     }

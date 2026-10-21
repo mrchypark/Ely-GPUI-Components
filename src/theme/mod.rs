@@ -16,6 +16,7 @@ mod project;
 mod syntax;
 mod tokens;
 mod tooling;
+mod touch;
 
 #[cfg(all(test, feature = "test-support"))]
 mod tests;
@@ -74,6 +75,8 @@ pub struct Theme {
     custom: [Option<Palette>; 2],
     pub colors: Palette,
     pub density: Density,
+    /// Opt in to logical-pixel touch targets on supported controls.
+    pub touch_mode: bool,
     pub radius_scale: f32,
     pub font_scale: f32,
     pub font_family: SharedString,
@@ -104,6 +107,7 @@ impl Theme {
             custom: [None, None],
             colors: Palette::light(false),
             density: Density::Standard,
+            touch_mode: false,
             radius_scale: 1.0,
             font_scale: 1.0,
             font_family: "Inter".into(),

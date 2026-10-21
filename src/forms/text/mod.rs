@@ -4,6 +4,7 @@ mod element;
 mod geometry;
 mod highlight;
 mod ime;
+mod owner;
 
 use std::{ops::Range, rc::Rc, time::Duration};
 
@@ -17,6 +18,7 @@ pub use edit::History;
 use edit::Snapshot;
 pub(crate) use edit::{from_utf16, to_utf16};
 pub use highlight::Highlight;
+pub use owner::TextInputOwner;
 
 use crate::theme::ActiveTheme;
 
@@ -49,6 +51,8 @@ const BLINK: Duration = Duration::from_millis(530);
 /// Editable text: one line or many, with selection, undo, IME and clipboard.
 pub struct TextInput {
     focus: FocusHandle,
+    owner_activation: u64,
+    owner_observer: Option<Rc<dyn Fn(TextInputOwner)>>,
     text: String,
     placeholder: SharedString,
     label: SharedString,
@@ -90,13 +94,16 @@ impl TextInput {
         let focus = cx.focus_handle().tab_stop(true);
         let subscriptions = vec![
             cx.on_focus(&focus, window, |input, _, cx| {
+                input.advance_owner_activation();
                 input.focused = true;
                 input.restart_blink(cx);
                 cx.emit(InputEvent::Focus);
             }),
-            cx.on_blur(&focus, window, |input, _, cx| {
+            cx.on_blur(&focus, window, |input, window, cx| {
+                input.advance_owner_activation();
                 input.focused = false;
                 input.selecting = false;
+                gpui::EntityInputHandler::unmark_text(input, window, cx);
                 input._blink = None;
                 cx.emit(InputEvent::Blur);
                 cx.notify();
@@ -104,6 +111,8 @@ impl TextInput {
         ];
         Self {
             focus,
+            owner_activation: 0,
+            owner_observer: None,
             text: String::new(),
             placeholder: SharedString::default(),
             label: SharedString::default(),
@@ -243,6 +252,9 @@ impl TextInput {
     }
 
     pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
+        if self.disabled != disabled {
+            self.advance_owner_activation();
+        }
         self.disabled = disabled;
         self.focus = self.focus.clone().tab_stop(!disabled);
         cx.notify();

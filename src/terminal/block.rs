@@ -176,7 +176,9 @@ impl RenderOnce for CommandBlock {
                         header.child(
                             div()
                                 .id((self.id.clone(), "fold"))
+                                .debug_selector(|| "terminal-command-fold".into())
                                 .cursor_pointer()
+                                .map(|toggle| theme.touch_target(toggle))
                                 .when_some(fold, |toggle, fold| {
                                     toggle.on_click(move |_, window, cx| fold(!folded, window, cx))
                                 })

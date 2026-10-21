@@ -9,6 +9,7 @@ use crate::{primitives::FocusNext, theme::Theme};
 mod audio;
 mod devices;
 mod edit;
+mod hover_touch;
 mod images;
 mod player;
 mod stale;

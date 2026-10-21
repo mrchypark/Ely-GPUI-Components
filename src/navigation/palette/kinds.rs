@@ -1,14 +1,17 @@
 use std::{iter, ops::Range, rc::Rc};
 
-use gpui::{App, ElementId, IntoElement, RenderOnce, SharedString, Window};
+use gpui::{App, Bounds, ElementId, IntoElement, Pixels, RenderOnce, SharedString, Window};
 
 use super::{Fit, Group, Palette, Row, fuzzy, marked, query_field};
 use crate::{
     forms::{Choice, OnValue, Run},
     i18n,
     primitives::IconName,
-    typography::{Highlight, KbdCombo},
+    typography::KbdCombo,
 };
+
+pub(crate) use super::search::Search;
+pub use super::search::SearchPalette;
 
 /// Items that fit `query`, best first; ties go to the shorter text, then the given order.
 fn ranked<T>(
@@ -77,6 +80,7 @@ impl Command {
 #[derive(IntoElement)]
 pub struct CommandPalette {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     groups: Vec<(SharedString, Vec<Command>)>,
     recent: Vec<SharedString>,
     on_run: Option<OnValue>,
@@ -91,6 +95,7 @@ impl CommandPalette {
     ) -> Self {
         Self {
             id: id.into(),
+            usable_bounds: None,
             groups: Vec::new(),
             recent: Vec::new(),
             on_run: None,
@@ -105,6 +110,12 @@ impl CommandPalette {
     ) -> Self {
         self.groups
             .push((title.into(), commands.into_iter().collect()));
+        self
+    }
+
+    /// Current usable rectangle in logical window coordinates.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
         self
     }
 
@@ -186,6 +197,7 @@ impl RenderOnce for CommandPalette {
         };
         Palette {
             id: self.id,
+            usable_bounds: self.usable_bounds,
             input,
             groups,
             start: 0,
@@ -204,6 +216,7 @@ const SHOWN: usize = 50;
 #[derive(IntoElement)]
 pub struct QuickOpen {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     paths: Vec<SharedString>,
     recent: Vec<SharedString>,
     on_open: Option<OnValue>,
@@ -219,10 +232,17 @@ impl QuickOpen {
         Self {
             id: id.into(),
             paths: paths.into_iter().map(Into::into).collect(),
+            usable_bounds: None,
             recent: Vec::new(),
             on_open: None,
             on_close: Rc::new(on_close),
         }
+    }
+
+    /// Current usable rectangle in logical window coordinates.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 
     /// Recent paths, newest first.
@@ -297,6 +317,7 @@ impl RenderOnce for QuickOpen {
         };
         Palette {
             id: self.id,
+            usable_bounds: self.usable_bounds,
             input,
             groups: vec![group],
             start: 0,
@@ -312,6 +333,7 @@ impl RenderOnce for QuickOpen {
 #[derive(IntoElement)]
 pub struct QuickSwitcher {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     items: Vec<Choice>,
     on_switch: Option<OnValue>,
     on_close: Run,
@@ -332,9 +354,16 @@ impl QuickSwitcher {
         Self {
             id: id.into(),
             items,
+            usable_bounds: None,
             on_switch: None,
             on_close: Rc::new(on_close),
         }
+    }
+
+    /// Current usable rectangle in logical window coordinates.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 
     pub fn on_switch(
@@ -378,6 +407,7 @@ impl RenderOnce for QuickSwitcher {
         };
         Palette {
             id: self.id,
+            usable_bounds: self.usable_bounds,
             input,
             groups: vec![Group { title: None, rows }],
             start,
@@ -386,106 +416,5 @@ impl RenderOnce for QuickSwitcher {
             on_close: self.on_close,
         }
         .overlay(window, cx)
-    }
-}
-
-pub(crate) type Search = Rc<dyn Fn(&str) -> Vec<(SharedString, Vec<Choice>)>>;
-
-/// Searches through the owner's function, which answers a query with results grouped by where they were found. Matches are marked.
-#[derive(IntoElement)]
-pub struct SearchPalette {
-    id: ElementId,
-    search: Search,
-    on_open: Option<OnValue>,
-    on_close: Run,
-}
-
-impl SearchPalette {
-    /// `search` answers the empty query too, with what shows first. Results cannot be disabled.
-    pub fn new(
-        id: impl Into<ElementId>,
-        search: impl Fn(&str) -> Vec<(SharedString, Vec<Choice>)> + 'static,
-        on_close: impl Fn(&mut Window, &mut App) + 'static,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            search: Rc::new(search),
-            on_open: None,
-            on_close: Rc::new(on_close),
-        }
-    }
-
-    pub fn on_open(
-        mut self,
-        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_open = Some(Rc::new(handler));
-        self
-    }
-
-    pub(crate) fn from_parts(
-        id: ElementId,
-        search: Search,
-        on_open: Option<OnValue>,
-        on_close: Run,
-    ) -> Self {
-        Self {
-            id,
-            search,
-            on_open,
-            on_close,
-        }
-    }
-
-    pub(crate) fn palette(self, window: &mut Window, cx: &mut App) -> Palette {
-        let placeholder = i18n::text(cx, "palette.search.placeholder", &[]);
-        let input = query_field(&self.id, placeholder, window, cx);
-        let query = input.read(cx).text().trim().to_string();
-        let groups = (self.search)(&query)
-            .into_iter()
-            .filter(|(_, results)| !results.is_empty())
-            .map(|(title, results)| Group {
-                title: Some(title),
-                rows: results
-                    .into_iter()
-                    .inspect(|result| {
-                        assert!(
-                            !result.disabled,
-                            "search result {} is disabled",
-                            result.value
-                        );
-                    })
-                    .map(|result| Row {
-                        value: result.value.clone(),
-                        name: result.label.clone(),
-                        icon: result.icon,
-                        label: Highlight::matching(result.label, &query).into_any_element(),
-                        detail: result
-                            .note
-                            .map(|note| Highlight::matching(note, &query).into_any_element()),
-                        end: None,
-                    })
-                    .collect(),
-            })
-            .collect();
-        Palette {
-            id: self.id,
-            input,
-            groups,
-            start: 0,
-            empty: if query.is_empty() {
-                i18n::text(cx, "palette.search.idle", &[])
-            } else {
-                i18n::text(cx, "palette.search.empty", &[("query", &query)])
-            },
-            on_pick: self.on_open,
-            on_close: self.on_close,
-        }
-    }
-}
-
-impl RenderOnce for SearchPalette {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        self.palette(window, cx).overlay(window, cx)
     }
 }

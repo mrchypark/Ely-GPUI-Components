@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce,
-    SharedString, Styled, Window, div,
+    App, Bounds, ElementId, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
+    RenderOnce, SharedString, Styled, Window, div, prelude::*,
 };
 
 use crate::{
@@ -92,12 +92,19 @@ type OnColor = Rc<dyn Fn(Hsla, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct AccentColorPicker {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     color: Hsla,
     presets: Vec<(SharedString, Hsla)>,
     on_change: OnColor,
 }
 
 impl AccentColorPicker {
+    /// Constrains color pickers to logical window bounds supplied by the host.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         color: impl Into<Hsla>,
@@ -111,6 +118,7 @@ impl AccentColorPicker {
                 .into_iter()
                 .map(|(name, color)| (name.into(), color.into()))
                 .collect(),
+            usable_bounds: None,
             on_change: Rc::new(on_change),
         }
     }
@@ -140,11 +148,12 @@ impl RenderOnce for AccentColorPicker {
                         .on_change(report(picked)),
                 ),
             )
-            .child(color_well(
-                (self.id, "custom").into(),
-                self.color,
-                report(custom),
-            ))
+            .child(
+                color_well((self.id, "custom").into(), self.color, report(custom))
+                    .when_some(self.usable_bounds, |well, bounds| {
+                        well.usable_bounds(bounds)
+                    }),
+            )
     }
 }
 

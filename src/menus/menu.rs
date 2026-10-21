@@ -10,7 +10,7 @@ use super::{
     model::{Kind, Menu},
 };
 use crate::{
-    forms::{Down, Enter, Run, TextInput, Up, float},
+    forms::{Down, Enter, Run, TextInput, Up},
     motion,
     primitives::{Icon, IconName, Takeover, give_back, raise, take_focus},
     theme::{ActiveTheme, IconSize},
@@ -71,11 +71,43 @@ pub(crate) struct Open {
     host: Bounds<Pixels>,
     anchor: Bounds<Pixels>,
     takeover: Option<Entity<Takeover>>,
+    on_open_change: Option<Rc<dyn Fn(bool)>>,
+    on_panels_change: Option<Rc<dyn Fn(&[Bounds<Pixels>])>>,
+    notified_panels: Vec<Bounds<Pixels>>,
+}
+
+impl Drop for Open {
+    fn drop(&mut self) {
+        if let Some(handler) = self.on_open_change.take() {
+            self.spot = None;
+            handler(false);
+        }
+        self.levels.clear();
+        self.notify_panels();
+    }
 }
 
 impl Open {
     pub(crate) fn is_open(&self) -> bool {
         self.spot.is_some()
+    }
+
+    /// Tells the observer which panels are open, root level first; empty when closed.
+    /// Fires only when the set of open panels actually changed.
+    pub(crate) fn notify_panels(&mut self) {
+        let panels: Vec<Bounds<Pixels>> = self
+            .levels
+            .iter()
+            .map(|level| level.panel)
+            .filter(|panel| !panel.is_empty())
+            .collect();
+        if panels == self.notified_panels {
+            return;
+        }
+        self.notified_panels = panels.clone();
+        if let Some(handler) = self.on_panels_change.clone() {
+            handler(&panels);
+        }
     }
 
     /// Hangs the menu under `anchor`, kept current as its owner moves.
@@ -92,11 +124,20 @@ impl Open {
     pub(crate) fn show(state: &Entity<Open>, menu: &Menu, spot: Spot, marked: bool, cx: &mut App) {
         let first = menu.step(None, 1).filter(|_| marked);
         state.update(cx, |open, cx| {
+            let opening = !open.is_open();
             open.spot = Some(spot);
             open.levels = vec![Level {
                 at: first,
                 ..Level::default()
             }];
+            if opening {
+                open.on_open_change = menu.on_open_change.clone();
+                open.on_panels_change = menu.on_panels_change.clone();
+                if let Some(handler) = &open.on_open_change {
+                    handler(true);
+                }
+            }
+            open.notify_panels();
             cx.notify();
         });
     }
@@ -109,6 +150,7 @@ impl Open {
                 at: first,
                 ..Level::default()
             }];
+            open.notify_panels();
             cx.notify();
         });
     }
@@ -118,6 +160,10 @@ impl Open {
         let takeover = state.update(cx, |open, cx| {
             open.spot = None;
             open.levels.clear();
+            if let Some(handler) = open.on_open_change.take() {
+                handler(false);
+            }
+            open.notify_panels();
             cx.notify();
             open.takeover.take()
         });
@@ -149,6 +195,7 @@ pub(super) fn mark(
         if open_sub && sub {
             open.levels.push(Level::default());
         }
+        open.notify_panels();
         cx.notify();
     });
 }
@@ -183,6 +230,7 @@ pub(super) fn choose(
                 at: first,
                 ..Level::default()
             });
+            open.notify_panels();
             cx.notify();
         });
         return;
@@ -225,6 +273,7 @@ fn keys(
         ("enter" | "space", Some(at)) => choose(state, menu, depth, at, close, window, cx),
         ("left" | "escape", _) if depth > 0 => state.update(cx, |open, cx| {
             open.levels.pop();
+            open.notify_panels();
             cx.notify();
         }),
         ("escape", _) => close(window, cx),
@@ -240,7 +289,11 @@ pub(super) fn measure(
 ) -> impl IntoElement {
     canvas(
         move |bounds, window, cx| {
-            if state.update(cx, |open, _| write(open, bounds)) {
+            if state.update(cx, |open, _| {
+                let changed = write(open, bounds);
+                open.notify_panels();
+                changed
+            }) {
                 state.update(cx, |_, cx| cx.notify());
                 window.request_animation_frame();
             }
@@ -274,6 +327,11 @@ pub(crate) fn hang(
     window: &mut Window,
     cx: &mut App,
 ) -> Option<AnyElement> {
+    if menu.dismiss.take() {
+        log::info!("menu {id:?}: dismissed");
+        Open::close(state, window, cx);
+        return None;
+    }
     let spot = state.read(cx).spot?;
     let takeover = take_focus((id.clone(), "takeover"), window, cx);
     let focus = takeover.read(cx).focus.clone();
@@ -302,7 +360,10 @@ pub(crate) fn hang(
     settle(menu, &mut levels);
     if levels != state.read(cx).levels {
         log::info!("menu {id:?}: rows changed while open");
-        state.update(cx, |open, _| open.levels = levels);
+        state.update(cx, |open, _| {
+            open.levels = levels;
+            open.notify_panels();
+        });
     }
     let depth = state.read(cx).levels.len();
     let enter =
@@ -333,90 +394,110 @@ pub(crate) fn hang(
     });
     let (up_menu, up_state, up_close) = (menu.clone(), state.clone(), close.clone());
     let (down_menu, down_state, down_close) = (menu.clone(), state.clone(), close.clone());
-    let root = draw::panel(id, menu, state, 0, &close, head, cx)
-        .track_focus(&focus)
-        .when(!spaced, |root| {
-            root.capture_action(move |_: &Up, window, cx| {
-                cx.stop_propagation();
-                keys(&up_menu, &up_state, "up", &up_close, window, cx);
-            })
-            .capture_action(move |_: &Down, window, cx| {
-                cx.stop_propagation();
-                keys(&down_menu, &down_state, "down", &down_close, window, cx);
-            })
-            .capture_action(|_: &Enter, _, cx| cx.stop_propagation())
+    let root = draw::panel(
+        draw::Panel {
+            id,
+            menu,
+            state,
+            depth: 0,
+            close: &close,
+            head,
+        },
+        window,
+        cx,
+    )
+    .track_focus(&focus)
+    .when(!spaced, |root| {
+        root.capture_action(move |_: &Up, window, cx| {
+            cx.stop_propagation();
+            keys(&up_menu, &up_state, "up", &up_close, window, cx);
         })
-        .on_key_down(move |event, window, cx| {
-            let stroke = &event.keystroke;
-            let key = stroke.key.as_str();
-            if matches!(key, "enter" | "space") {
-                if confirm(key) && !stroke.modifiers.modified() {
-                    cx.stop_propagation();
-                }
-                return;
-            }
-            if keys(&key_menu, &keyed, key, &key_close, window, cx) {
+        .capture_action(move |_: &Down, window, cx| {
+            cx.stop_propagation();
+            keys(&down_menu, &down_state, "down", &down_close, window, cx);
+        })
+        .capture_action(|_: &Enter, _, cx| cx.stop_propagation())
+    })
+    .on_key_down(move |event, window, cx| {
+        let stroke = &event.keystroke;
+        let key = stroke.key.as_str();
+        if matches!(key, "enter" | "space") {
+            if confirm(key) && !stroke.modifiers.modified() {
                 cx.stop_propagation();
             }
-        })
-        .on_key_up(move |event, window, cx| {
-            let stroke = &event.keystroke;
-            let key = stroke.key.as_str();
-            if confirm(key)
-                && !stroke.modifiers.modified()
-                && keys(&lift_menu, &lifted, key, &lift_close, window, cx)
-            {
-                cx.stop_propagation();
-            }
-        })
-        .on_mouse_down_out(move |event, window, cx| {
-            let open = out.read(cx);
-            let on_host = open.host.contains(&event.position);
-            if !on_host
-                && !open
-                    .levels
-                    .iter()
-                    .any(|level| level.panel.contains(&event.position))
-            {
-                out_close(window, cx);
-            }
-        });
-    let placed = match spot {
-        Spot::Under => float(
-            (id.clone(), "panel"),
-            state.read(cx).anchor,
-            menu.entries.len(),
-            root,
-            window,
-            cx,
-        ),
-        Spot::At(point) => raise(
-            (id.clone(), "panel"),
-            anchored()
-                .position(point)
-                .snap_to_window()
-                .child(
-                    root.with_animation((id.clone(), "in"), enter.clone(), |root, t| {
-                        root.opacity(t)
-                    }),
-                ),
-        )
-        .with_priority(1)
-        .into_any_element(),
-    };
+            return;
+        }
+        if keys(&key_menu, &keyed, key, &key_close, window, cx) {
+            cx.stop_propagation();
+        }
+    })
+    .on_key_up(move |event, window, cx| {
+        let stroke = &event.keystroke;
+        let key = stroke.key.as_str();
+        if confirm(key)
+            && !stroke.modifiers.modified()
+            && keys(&lift_menu, &lifted, key, &lift_close, window, cx)
+        {
+            cx.stop_propagation();
+        }
+    })
+    .on_mouse_down_out(move |event, window, cx| {
+        let open = out.read(cx);
+        let on_host = open.host.contains(&event.position);
+        if !on_host
+            && !open
+                .levels
+                .iter()
+                .any(|level| level.panel.contains(&event.position))
+        {
+            out_close(window, cx);
+        }
+    });
+    let placed = super::placement::root(id, menu, spot, state.read(cx).anchor, root, window, cx);
     let subs = (1..depth).filter_map(|level| {
         let row = state.read(cx).levels[level - 1].row;
         (row != Bounds::default()).then(|| {
+            if let Some(bounds) = menu.usable_bounds {
+                let panel = draw::panel(
+                    draw::Panel {
+                        id,
+                        menu,
+                        state,
+                        depth: level,
+                        close: &close,
+                        head: None,
+                    },
+                    window,
+                    cx,
+                );
+                return raise(
+                    (id.clone(), format!("level-{level}")),
+                    super::placement::bounded(bounds, row.top_right(), panel, window, cx),
+                )
+                .with_priority(2)
+                .into_any_element();
+            }
             raise(
                 (id.clone(), format!("level-{level}")),
                 anchored().position(row.top_right()).snap_to_window().child(
-                    draw::panel(id, menu, state, level, &close, None, cx)
-                        .mt_neg_1()
-                        .with_animation(
-                            (id.clone(), format!("sub-{level}")),
-                            enter.clone(),
-                            |panel, t| panel.opacity(t).ml(motion::NUDGE * (t - 1.0)),
-                        ),
+                    draw::panel(
+                        draw::Panel {
+                            id,
+                            menu,
+                            state,
+                            depth: level,
+                            close: &close,
+                            head: None,
+                        },
+                        window,
+                        cx,
+                    )
+                    .mt_neg_1()
+                    .with_animation(
+                        (id.clone(), format!("sub-{level}")),
+                        enter.clone(),
+                        |panel, t| panel.opacity(t).ml(motion::NUDGE * (t - 1.0)),
+                    ),
                 ),
             )
             .with_priority(2)

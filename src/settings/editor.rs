@@ -1,6 +1,9 @@
 use std::rc::Rc;
 
-use gpui::{App, ElementId, Hsla, IntoElement, ParentElement, RenderOnce, Styled, Window, div};
+use gpui::{
+    App, Bounds, ElementId, Hsla, IntoElement, ParentElement, Pixels, RenderOnce, Styled, Window,
+    div, prelude::*,
+};
 
 use super::{DensitySelector, SettingsRow, SettingsSection};
 use crate::{
@@ -57,11 +60,18 @@ type OnDraft = Rc<dyn Fn(&ThemeDraft, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct ThemeEditor {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     draft: ThemeDraft,
     on_change: OnDraft,
 }
 
 impl ThemeEditor {
+    /// Constrains color pickers to logical window bounds supplied by the host.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         draft: ThemeDraft,
@@ -70,6 +80,7 @@ impl ThemeEditor {
         Self {
             id: id.into(),
             draft,
+            usable_bounds: None,
             on_change: Rc::new(on_change),
         }
     }
@@ -171,17 +182,22 @@ impl RenderOnce for ThemeEditor {
                             .text_color(theme.colors.fg_muted)
                             .child(hex(color.to_rgb())),
                     )
-                    .child(color_well(
-                        (id.clone(), format!("color-{token}")).into(),
-                        color,
-                        move |next, window, cx| {
-                            recolor(
-                                &|d: &mut ThemeDraft| *d.colors.token_mut(token) = next,
-                                window,
-                                cx,
-                            )
-                        },
-                    ))
+                    .child(
+                        color_well(
+                            (id.clone(), format!("color-{token}")).into(),
+                            color,
+                            move |next, window, cx| {
+                                recolor(
+                                    &|d: &mut ThemeDraft| *d.colors.token_mut(token) = next,
+                                    window,
+                                    cx,
+                                )
+                            },
+                        )
+                        .when_some(self.usable_bounds, |well, bounds| {
+                            well.usable_bounds(bounds)
+                        }),
+                    )
                     .into_any_element(),
             )
         });

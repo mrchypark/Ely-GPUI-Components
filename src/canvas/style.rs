@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window,
-    div, prelude::*,
+    App, Bounds, ElementId, Hsla, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
+    Styled, Window, div, prelude::*,
 };
 
 use super::panel::{OnEdit, caption, color_well, editing, heading, pair};
@@ -16,6 +16,9 @@ use crate::{
 
 /// The most a shadow or a border measures, in pixels.
 const FAR: f64 = 1_000.0;
+
+#[cfg(all(test, feature = "test-support"))]
+mod bounds_tests;
 
 /// A color to edit in full, over the document's colors to pick from.
 #[derive(IntoElement)]
@@ -94,11 +97,18 @@ pub struct Shadow {
 #[derive(IntoElement)]
 pub struct ShadowEditor {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     shadows: Vec<Shadow>,
     on_change: OnEdit<Vec<Shadow>>,
 }
 
 impl ShadowEditor {
+    /// Constrains color pickers to logical window bounds supplied by the host.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         shadows: impl IntoIterator<Item = Shadow>,
@@ -107,6 +117,7 @@ impl ShadowEditor {
         Self {
             id: id.into(),
             shadows: shadows.into_iter().collect(),
+            usable_bounds: None,
             on_change: Rc::new(on_change),
         }
     }
@@ -163,11 +174,16 @@ impl RenderOnce for ShadowEditor {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .child(color_well(
-                            (id.clone(), format!("color-{ix}")).into(),
-                            shadow.color,
-                            tint,
-                        ))
+                        .child(
+                            color_well(
+                                (id.clone(), format!("color-{ix}")).into(),
+                                shadow.color,
+                                tint,
+                            )
+                            .when_some(self.usable_bounds, |well, bounds| {
+                                well.usable_bounds(bounds)
+                            }),
+                        )
                         .child(
                             div()
                                 .flex_1()
@@ -237,11 +253,18 @@ pub struct Border {
 #[derive(IntoElement)]
 pub struct BorderEditor {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     border: Border,
     on_change: OnEdit<Border>,
 }
 
 impl BorderEditor {
+    /// Constrains color pickers to logical window bounds supplied by the host.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         border: Border,
@@ -250,6 +273,7 @@ impl BorderEditor {
         Self {
             id: id.into(),
             border,
+            usable_bounds: None,
             on_change: Rc::new(on_change),
         }
     }
@@ -329,16 +353,21 @@ impl RenderOnce for BorderEditor {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(color_well(
-                        (id.clone(), "color").into(),
-                        border.color,
-                        editing(
-                            "border editor",
-                            &border,
-                            on_change,
-                            |border, color: Hsla| border.color = color,
-                        ),
-                    ))
+                    .child(
+                        color_well(
+                            (id.clone(), "color").into(),
+                            border.color,
+                            editing(
+                                "border editor",
+                                &border,
+                                on_change,
+                                |border, color: Hsla| border.color = color,
+                            ),
+                        )
+                        .when_some(self.usable_bounds, |well, bounds| {
+                            well.usable_bounds(bounds)
+                        }),
+                    )
                     .child(div().flex_1().min_w_0().child(
                         scrub("Width", border.width).on_change(at(|b, v| b.width = v as f32)),
                     )),

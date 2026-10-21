@@ -1,14 +1,21 @@
+use gpui::prelude::FluentBuilder as _;
+
 use ely_gpui_component::{
     files::{FileGrid, FileIcon, FileItem},
     lists::{DirEntry, DirectoryListing, SelectableList},
     theme::{ActiveTheme, IconSize, TextSize},
 };
-use gpui::{AnyElement, App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use gpui::{
+    AnyElement, App, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window,
+    div, px,
+};
 use jiff::{Timestamp, ToSpan};
 
 mod actions;
 mod explorer;
 mod find;
+#[cfg(all(test, feature = "test-support", not(target_family = "wasm")))]
+mod touch_tests;
 mod transfers;
 
 use super::Page;
@@ -164,55 +171,92 @@ fn items(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-fn listing(cx: &mut App) -> impl IntoElement + use<> {
+fn listing(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+    let touch = cx.theme().touch_mode;
+    let opened = keep(
+        "files-listing-opened",
+        || (0usize, SharedString::default()),
+        window,
+        cx,
+    );
+    let (count, name) = opened.read(cx).clone();
     section(
         "FileList",
-        "A folder's entries in columns, as lists::DirectoryListing draws them: sort by a column, climb the path, open with Enter or a double press.",
+        "Select an entry, then tap Open on touch. Desktop also opens with Enter or double press. This fixture records the callback only.",
         cx,
     )
     .child(probe(
         "files-listing",
-        div().w(px(640.)).h(px(360.)).child(
+        div().when(touch, |view| view.w_full().min_w_0()).when(!touch, |view| view.w(px(640.))).h(px(360.)).child(
             DirectoryListing::new("files-listing", ["Home", "Projects", "Atrium"], entries())
-                .on_open(|entry, _, _| log::info!("gallery: open {}", entry.name()))
+                .on_open(move |entry, _, cx| change(&opened, cx, |opened| {
+                    opened.0 += 1;
+                    opened.1 = entry.name().clone();
+                }))
                 .on_climb(|level, _, _| log::info!("gallery: climb to {level}")),
         ),
     ))
+    .children((count > 0).then(|| div().debug_selector(|| "files-listing-result".into())
+        .child(format!("Open {name}: local callback {count}; no filesystem operation."))))
 }
 
 fn grid(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+    let touch = cx.theme().touch_mode;
+    let opened = keep(
+        "files-grid-opened",
+        || (0usize, None::<SharedString>),
+        window,
+        cx,
+    );
+    let (open_count, opened_name) = opened.read(cx).clone();
     let picked = keep("files-grid", || None::<SharedString>, window, cx);
     let now = picked.read(cx).clone();
     let pick = picked.clone();
     let grid = FileGrid::new("files-grid", entries())
         .on_select(move |name, _, cx| change(&pick, cx, |now| *now = Some(name.clone())))
-        .on_open(|entry, _, _| log::info!("gallery: open {}", entry.name()));
+        .on_open(move |entry, _, cx| {
+            log::info!("gallery: open {}", entry.name());
+            change(&opened, cx, |(count, name)| {
+                *count += 1;
+                *name = Some(entry.name().clone());
+            });
+        });
     let grid = match now {
         Some(name) => grid.selected(name),
         None => grid,
     };
     section(
         "FileGrid",
-        "Files and folders as tiles. A press picks one and a double press opens it; with focus the arrows move by tile and by row, and Enter opens.",
+        if touch { "Tap once to select a file or folder, then tap Open. This gallery records the chosen entry locally." } else { "Files and folders as tiles. A press picks one and a double press opens it; with focus the arrows move by tile and by row, and Enter opens." },
         cx,
     )
-    .child(probe("files-grid", div().w(px(640.)).child(grid)))
+    .child(probe("files-grid", div().when(touch, |view| view.w_full().min_w_0()).when(!touch, |view| view.w(px(640.))).child(grid)))
+    .children(touch.then_some(opened_name).flatten().map(|name| {
+        let caption = format!("Open {name}: local callback {open_count}; no filesystem operation.");
+        div()
+            .debug_selector(move || format!("gallery-file-opened-{name}"))
+            .child(caption)
+    }))
 }
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(icons(cx))
         .child(items(window, cx))
-        .child(listing(cx))
+        .child(listing(window, cx))
         .child(grid(window, cx))
         .child(explorer::explorer(window, cx))
         .child(explorer::tree(cx))
-        .child(actions::context_menu(cx))
+        .child(actions::context_menu(window, cx, bounds))
         .child(actions::rename(window, cx))
         .child(actions::drop_files(window, cx))
-        .child(find::previews(window, cx))
+        .child(find::previews(window, cx, bounds))
         .child(find::recent(cx))
-        .child(find::favorites(cx))
+        .child(find::favorites(window, cx))
         .child(find::search(window, cx))
         .child(find::duplicates(window, cx))
         .child(find::archive(cx))

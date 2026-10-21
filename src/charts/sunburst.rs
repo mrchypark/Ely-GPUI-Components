@@ -2,8 +2,8 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 
 use gpui::{
     App, Div, ElementId, Entity, HoverListenerMode, Hsla, InteractiveElement, IntoElement,
-    MouseMoveEvent, ParentElement, Pixels, Refineable, RenderOnce, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Refineable, RenderOnce,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div,
 };
 
 use super::{
@@ -105,6 +105,26 @@ fn rings(slices: &[Slice]) -> Vec<Arc> {
     out
 }
 
+/// The arc under a pointer at `position` in a chart box `bounds`: the ring it lands on and the arc within it, if any.
+fn arc_under(
+    arcs: &[Arc],
+    bounds: gpui::Bounds<Pixels>,
+    position: gpui::Point<Pixels>,
+    hole: f32,
+    band: f32,
+    outer: f32,
+) -> Option<Option<usize>> {
+    let center = bounds.center();
+    let at = (f32::from(position.x), f32::from(position.y));
+    let (angle, distance) = bearing((f32::from(center.x), f32::from(center.y)), at);
+    let depth = ((distance - hole) / band).floor();
+    (depth >= 0.0 && distance <= outer).then(|| {
+        arcs.iter().position(|arc| {
+            arc.depth == depth as usize && angle >= arc.start && angle < arc.start + arc.sweep
+        })
+    })
+}
+
 /// Parts of parts as rings around a center that holds the whole, each arc as wide as its share. Hover reads an arc's path and share.
 #[derive(IntoElement)]
 pub struct Sunburst {
@@ -165,6 +185,17 @@ impl RenderOnce for Sunburst {
             ),
             None => (compact(total), "Total".to_string()),
         };
+        let path = div()
+            .max_w(Pixels::from(hole * 1.6))
+            .truncate()
+            .text_size(theme.text_size(TextSize::Xs))
+            .text_color(colors.fg_muted)
+            .child(small);
+        let path = if hover.is_some() {
+            path.debug_selector(|| "sunburst-tooltip".into())
+        } else {
+            path
+        };
         let middle = div()
             .absolute()
             .inset_0()
@@ -172,21 +203,17 @@ impl RenderOnce for Sunburst {
             .flex_col()
             .items_center()
             .justify_center()
+            .debug_selector(|| "chart-center".into())
             .child(
                 tabular(div())
                     .text_size(theme.text_size(TextSize::Lg))
                     .text_color(colors.fg)
                     .child(big),
             )
-            .child(
-                div()
-                    .max_w(Pixels::from(hole * 1.6))
-                    .truncate()
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .text_color(colors.fg_muted)
-                    .child(small),
-            );
+            .child(path);
         let (moved, left, measured, hit) = (ring.clone(), ring.clone(), ring.clone(), arcs.clone());
+        let pressed = ring.clone();
+        let press_hit = arcs.clone();
         let painted = arcs.clone();
         let mut frame = div()
             .debug_selector(|| "chart-root".into())
@@ -196,18 +223,32 @@ impl RenderOnce for Sunburst {
         frame
             .id((self.id.clone(), "ring"))
             .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
-                let center = moved.read(cx).bounds.center();
-                let at = (f32::from(event.position.x), f32::from(event.position.y));
-                let (angle, distance) = bearing((f32::from(center.x), f32::from(center.y)), at);
-                let depth = ((distance - hole) / band).floor();
-                let next = (depth >= 0.0 && distance <= outer).then(|| {
-                    hit.iter().position(|arc| {
-                        arc.depth == depth as usize
-                            && angle >= arc.start
-                            && angle < arc.start + arc.sweep
-                    })
-                });
+                let next = arc_under(
+                    &hit,
+                    moved.read(cx).bounds,
+                    event.position,
+                    hole,
+                    band,
+                    outer,
+                );
                 moved.update(cx, |ring, cx| {
+                    let next = next.flatten();
+                    if ring.hover != next {
+                        ring.hover = next;
+                        cx.notify();
+                    }
+                })
+            })
+            .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
+                let next = arc_under(
+                    &press_hit,
+                    pressed.read(cx).bounds,
+                    event.position,
+                    hole,
+                    band,
+                    outer,
+                );
+                pressed.update(cx, |ring, cx| {
                     let next = next.flatten();
                     if ring.hover != next {
                         ring.hover = next;
@@ -254,6 +295,8 @@ impl RenderOnce for Sunburst {
 mod tests {
     use std::f32::consts::{FRAC_PI_2, TAU};
 
+    use gpui::{px, size};
+
     use super::*;
 
     #[test]
@@ -287,6 +330,49 @@ mod tests {
         assert_eq!(
             (web.depth, web.start, web.sweep, web.branch),
             (1, -FRAC_PI_2 + TAU / 8.0, TAU * 3.0 / 8.0, 0)
+        );
+    }
+
+    #[test]
+    fn a_point_lands_on_the_arc_under_it() {
+        let bounds = gpui::Bounds::new(gpui::point(px(0.0), px(0.0)), size(px(100.0), px(100.0)));
+        let arcs = rings(&[Slice::new("a", 1.0)]);
+        assert_eq!(
+            arc_under(
+                &arcs,
+                bounds,
+                gpui::point(px(50.0), px(20.0)),
+                17.0,
+                33.0,
+                50.0
+            )
+            .flatten(),
+            Some(0),
+            "a point in the ring lands on the arc"
+        );
+        assert_eq!(
+            arc_under(
+                &arcs,
+                bounds,
+                gpui::point(px(50.0), px(45.0)),
+                17.0,
+                33.0,
+                50.0
+            ),
+            None,
+            "the hole holds no arc"
+        );
+        assert_eq!(
+            arc_under(
+                &arcs,
+                bounds,
+                gpui::point(px(500.0), px(500.0)),
+                17.0,
+                33.0,
+                50.0
+            ),
+            None,
+            "past the outer edge lands on nothing"
         );
     }
 }

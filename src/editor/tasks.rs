@@ -150,12 +150,15 @@ impl RenderOnce for TaskRunner {
                 rows.push(
                     div()
                         .id((self.id.clone(), format!("task-{ix}")))
+                        .debug_selector(|| format!("editor-task-{ix}"))
                         .flex()
                         .items_center()
                         .gap_2()
                         .px_2()
                         .py_1()
                         .rounded(theme.radius(Radius::Md))
+                        // A finger needs a row it can land on.
+                        .map(|row| theme.touch_target(row))
                         .hover(|row| row.bg(colors.hover))
                         .cursor_pointer()
                         .when_some(toggle, |row, toggle| {

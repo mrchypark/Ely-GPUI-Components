@@ -69,6 +69,31 @@ pub(crate) fn handle_boxes(frame: &Frame, side: f32) -> Vec<(Handle, Frame)> {
         .collect()
 }
 
+/// Where each handle's *hit* square sits, in view pixels.
+///
+/// The square a handle draws is small -- it is a marker on the shape, not the
+/// shape -- so on a touch screen the drawn square stays as it is and the hit
+/// square grows to the touch target around the same centre. A finger then
+/// finds the handle without the canvas drawing eight handles instead of one.
+pub(crate) fn handle_hits(frame: &Frame, side: f32, touch: bool) -> Vec<(Handle, Frame)> {
+    let hit_side = if touch {
+        super::touch::touch_target(side)
+    } else {
+        side
+    };
+    Handle::ALL
+        .into_iter()
+        .map(|handle| {
+            let (sx, sy) = handle.at();
+            let (x, y) = (
+                frame.x + frame.w * sx - hit_side / 2.0,
+                frame.y + frame.h * sy - hit_side / 2.0,
+            );
+            (handle, Frame::new(x, y, hit_side, hit_side))
+        })
+        .collect()
+}
+
 impl RenderOnce for TransformHandles {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();

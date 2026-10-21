@@ -1,6 +1,7 @@
 use ely_gpui_component::{
     data_display::{DescriptionList, Tone},
     tables::{Cell, Column, DataTable, Row},
+    theme::ActiveTheme,
     typography::Caption,
 };
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px, rems};
@@ -16,6 +17,12 @@ const MONTHS: [&str; 12] = [
 ];
 
 pub fn wide(cx: &mut App) -> impl IntoElement + use<> {
+    let touch = cx.theme().touch_mode;
+    let frame = if touch {
+        div().w_full().min_w_0()
+    } else {
+        div().w(px(620.))
+    };
     let columns = std::iter::once(Column::new("team", "Team").width(rems(10.)).pinned()).chain(
         MONTHS
             .iter()
@@ -34,10 +41,10 @@ pub fn wide(cx: &mut App) -> impl IntoElement + use<> {
         });
     section(
         "ColumnPinning / ColumnResizer / ColumnReorder",
-        "Team stays put while the months scroll sideways. Drag a header's right edge to resize it; drag a header onto another to move it there.",
+        if touch { "Team stays pinned. Open Adjust columns, choose a column with Previous/Next, then move it left/right or change its width. Reset width restores its declared size." } else { "Team stays put while the months scroll sideways. Drag a header's right edge to resize it; drag a header onto another to move it there." },
         cx,
     )
-    .child(div().w(px(620.)).child(DataTable::new("wide", columns).rows(rows.collect::<Vec<_>>())))
+    .child(frame.child(DataTable::new("wide", columns).rows(rows.collect::<Vec<_>>()).w_full()))
 }
 
 /// Tasks the demo edits in place: key, name, owner, state.
@@ -122,4 +129,79 @@ pub fn grouped(cx: &mut App) -> impl IntoElement + use<> {
     .child(Caption::new(
         "Groups keep the order their first rows come in; sort to reorder them.",
     ))
+}
+
+#[cfg(test)]
+mod column_touch_tests {
+    use super::*;
+    use ely_gpui_component::theme::Theme;
+    use gpui::{Context, Modifiers, Render, TestAppContext, VisualTestContext, size};
+
+    struct Specimen;
+    impl Render for Specimen {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div().w_full().child(super::wide(cx))
+        }
+    }
+    fn settle(cx: &mut VisualTestContext) {
+        cx.run_until_parked();
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+    }
+    fn tap(selector: &'static str, cx: &mut VisualTestContext) {
+        let bounds = cx.debug_bounds(selector).expect(selector);
+        cx.simulate_click(bounds.center(), Modifiers::none());
+        settle(cx);
+    }
+    #[gpui::test]
+    fn real_column_specimen_has_contained_touch_controls_at_both_phone_widths(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| {
+            ely_gpui_component::init_for_tests(cx);
+            Theme::update(cx, |theme| theme.touch_mode = true);
+        });
+        let (_, cx) = cx.add_window_view(|window, _| {
+            window.set_rem_size(px(16.));
+            Specimen
+        });
+        cx.simulate_resize(size(px(390.), px(844.)));
+        settle(cx);
+        tap("table-columns-toggle", cx);
+        for width in [390., 320.] {
+            cx.simulate_resize(size(px(width), px(844.)));
+            settle(cx);
+            for selector in [
+                "table-columns-toggle",
+                "table-column-Previous",
+                "table-column-Next",
+                "table-column-Move left",
+                "table-column-Move right",
+                "table-column-Narrower",
+                "table-column-Wider",
+                "table-column-Reset width",
+            ] {
+                let bounds = cx.debug_bounds(selector).expect(selector);
+                assert!(
+                    bounds.size.width >= px(48.) && bounds.size.height >= px(48.),
+                    "{selector}: {bounds:?}"
+                );
+                assert!(
+                    bounds.left() >= px(0.)
+                        && bounds.right() <= px(width)
+                        && bounds.top() >= px(0.)
+                        && bounds.bottom() <= px(844.),
+                    "{selector}: {bounds:?}"
+                );
+            }
+            let before = cx.debug_bounds("table-head team").unwrap();
+            tap("table-column-Wider", cx);
+            assert_eq!(
+                cx.debug_bounds("table-head team").unwrap().size.width,
+                before.size.width + px(24.)
+            );
+            tap("table-column-Reset width", cx);
+            assert_eq!(cx.debug_bounds("table-head team").unwrap(), before);
+        }
+    }
 }

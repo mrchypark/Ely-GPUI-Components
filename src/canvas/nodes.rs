@@ -191,6 +191,16 @@ impl RenderOnce for NodeGraph {
                     let (press, edges, node_key) = (hold.clone(), edges.clone(), node.key.clone());
                     let (port_key, kind) = (port.key.clone(), port.kind.clone());
                     let nodes = nodes.clone();
+                    // The dot drawn on a socket says *which* port it is; its
+                    // size carries no meaning, so a finger may reach it by a
+                    // larger hit area than the dot itself. The dot keeps its
+                    // drawn size, and only the invisible target around it
+                    // grows to the touch target on a touch screen.
+                    let hit = if theme.touch_mode {
+                        Pixels::from(super::touch::touch_target(f32::from(dot)))
+                    } else {
+                        dot
+                    };
                     div()
                         .id((
                             id.clone(),
@@ -202,14 +212,22 @@ impl RenderOnce for NodeGraph {
                             ),
                         ))
                         .absolute()
-                        .top(Pixels::from((ROW * row as f32 + ROW / 2.0) * view.zoom) - dot / 2.0)
-                        .when(out, |socket| socket.right(-dot / 2.0))
-                        .when(!out, |socket| socket.left(-dot / 2.0))
-                        .size(dot)
+                        .top(Pixels::from((ROW * row as f32 + ROW / 2.0) * view.zoom) - hit * 0.5)
+                        .when(out, |socket| socket.right(-hit * 0.5))
+                        .when(!out, |socket| socket.left(-hit * 0.5))
+                        .size(hit)
                         .rounded_full()
-                        .border_1()
-                        .border_color(surface)
-                        .bg(hue(&kind))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            div()
+                                .size(dot)
+                                .rounded_full()
+                                .border_1()
+                                .border_color(surface)
+                                .bg(hue(&kind)),
+                        )
                         .cursor_crosshair()
                         .on_mouse_down(MouseButton::Left, move |event, _, cx| {
                             if fixed {

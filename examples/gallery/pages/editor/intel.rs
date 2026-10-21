@@ -1,3 +1,5 @@
+use gpui::prelude::FluentBuilder as _;
+
 use ely_gpui_component::{
     buttons::Button,
     editor::{
@@ -110,7 +112,11 @@ fn symbols() -> Vec<Symbol> {
     ]
 }
 
-pub fn navigate(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn navigate(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let cursor = keep("intel-cursor", || 30usize, window, cx);
     let palette = keep("intel-goto", || false, window, cx);
     let incoming = keep("intel-incoming", || true, window, cx);
@@ -206,7 +212,7 @@ pub fn navigate(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         row()
             .gap_4()
             .child(CodeActionMenu::new("intel-actions", fixes))
-            .child(Button::new("intel-goto-open", "Go to symbol…").on_click(move |_, _, cx| set(&opener, true, cx)))
+            .child(Button::new("intel-goto-open", "Go to symbol…").debug_selector(|| "gallery-go-to-symbol".into()).on_click(move |_, _, cx| set(&opener, true, cx)))
             .child(Button::new("intel-rename-open", "Rename lookup").on_click(move |_, _, cx| set(&renamer, true, cx)))
             .child(Caption::new(format!("Cursor on line {}.", line + 1))),
     )
@@ -236,6 +242,7 @@ pub fn navigate(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(div().w(px(840.)).child(ReferencesPanel::new("intel-references", "lookup", references)))
     .children(open.then(|| {
         GoToSymbol::new("intel-goto-palette", symbols(), move |_, cx| set(&close, false, cx))
+            .when_some(bounds, |palette, area| palette.usable_bounds(area))
             .on_pick(move |line, _, cx| set(&go, line, cx))
     }))
 }
