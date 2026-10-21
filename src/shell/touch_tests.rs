@@ -1,7 +1,7 @@
 use crate::{
     buttons::IconButton,
     primitives::IconName,
-    shell::{ColumnShell, ShellColumn, TitleBar, ZoomControl},
+    shell::{ColumnShell, ShellColumn, TabBar, TitleBar, WindowTab, ZoomControl},
     theme::{ActiveTheme, Platform, Theme},
 };
 use gpui::{
@@ -194,7 +194,7 @@ fn zoom_reset_keeps_touch_minimum_across_scale_and_desktop_size(cx: &mut TestApp
         }
         tap("shell-zoom-reset", cx);
         assert_eq!(
-            cx.update(|window, cx| window.rem_size()),
+            cx.update(|window, _cx| window.rem_size()),
             cx.update(|_, cx| cx.theme().base_rem())
         );
     }
@@ -207,4 +207,68 @@ fn zoom_reset_keeps_touch_minimum_across_scale_and_desktop_size(cx: &mut TestApp
             .to_pixels(window.rem_size())
     });
     assert_eq!(reset.size.height, expected);
+}
+
+/// Tabs, and the ones closed.
+struct Tabs {
+    closed: Vec<String>,
+}
+
+impl Render for Tabs {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let owner = cx.entity();
+        div().w_full().child(
+            TabBar::new("tabs")
+                .tab(WindowTab::new("one", "One"))
+                .tab(WindowTab::new("two", "Two"))
+                .selected("one")
+                .on_close(move |id, _, cx| {
+                    owner.update(cx, |state, _| state.closed.push(id.to_string()))
+                }),
+        )
+    }
+}
+
+#[gpui::test]
+fn an_unselected_tab_keeps_its_close_button_in_touch_mode(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| {
+            theme.touch_mode = true;
+            theme.reduced_motion = true;
+        });
+    });
+    let (view, cx) = cx.add_window_view(|_, _| Tabs { closed: Vec::new() });
+    settle(cx);
+    let close = cx
+        .debug_bounds("window-tab-close-touch two")
+        .expect("the unselected tab keeps its close button");
+    assert!(
+        close.size.width >= px(48.) && close.size.height >= px(48.),
+        "the close button is a touch target: {close:?}"
+    );
+    // The button is real: a tap on it closes that tab.
+    let at = close.center();
+    cx.simulate_mouse_down(at, gpui::MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(at, gpui::MouseButton::Left, Modifiers::none());
+    settle(cx);
+    assert_eq!(view.read_with(cx, |state, _| state.closed.clone()), ["two"]);
+    assert!(
+        cx.debug_bounds("window-tab-close-touch two").is_some(),
+        "the close button stays put"
+    );
+}
+
+#[gpui::test]
+fn an_unselected_tab_hides_its_close_button_on_the_desktop(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.reduced_motion = true);
+    });
+    let (_, cx) = cx.add_window_view(|_, _| Tabs { closed: Vec::new() });
+    settle(cx);
+    assert!(
+        cx.debug_bounds("window-tab-close-touch two").is_none(),
+        "on the desktop the close button waits for a hover"
+    );
 }

@@ -81,54 +81,64 @@ impl RenderOnce for SortableList {
         let theme = cx.theme();
         let grip = theme.colors.fg_subtle;
         let dragged = reorder.clone();
-        let list = self.rows.into_iter().enumerate().fold(
-            Reorder::new((self.id.clone(), "rows"))
-                .on_reorder(move |from, to, window, cx| dragged(from, to, window, cx)),
-            |list, (ix, (key, item))| {
-                let pointed = cursor.clone();
-                list.row(
-                    key,
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            pointed.update(cx, |cursor, cx| {
-                                *cursor = ix;
-                                cx.notify();
-                            })
-                        })
-                        .child(
-                            Icon::new(IconName::GripVertical)
-                                .size(IconSize::Sm)
-                                .color(grip),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .child(item.current(focused && ix == at)),
-                        )
-                        .children(theme.touch_mode.then(|| {
-                            div()
-                                .id(("move-controls", ix))
-                                .flex()
-                                .flex_none()
-                                .gap(theme.touch_spacing())
-                                .on_mouse_down(MouseButton::Left, |_, window, cx| {
-                                    window.prevent_default();
-                                    cx.stop_propagation();
+        let list =
+            self.rows.into_iter().enumerate().fold(
+                Reorder::new((self.id.clone(), "rows"))
+                    .on_reorder(move |from, to, window, cx| dragged(from, to, window, cx)),
+                |list, (ix, (key, item))| {
+                    let pointed = cursor.clone();
+                    list.row(
+                        key,
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                pointed.update(cx, |cursor, cx| {
+                                    *cursor = ix;
+                                    cx.notify();
                                 })
-                                .on_click(|_, _, cx| cx.stop_propagation())
-                                .children([true, false].map(|up| {
-                                    let to = nudged(ix, count, up);
-                                    let reorder = reorder.clone();
-                                    let direction = if up { "up" } else { "down" };
-                                    div()
-                                        .flex_none()
-                                        .debug_selector(move || format!("sortable-{ix}-{direction}"))
-                                        .child(
-                                            IconButton::new((direction, ix), if up { IconName::ArrowUp } else { IconName::ArrowDown })
+                            })
+                            .child(
+                                Icon::new(IconName::GripVertical)
+                                    .size(IconSize::Sm)
+                                    .color(grip),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(item.current(focused && ix == at)),
+                            )
+                            .children(theme.touch_mode.then(|| {
+                                div()
+                                    .id(("move-controls", ix))
+                                    .flex()
+                                    .flex_none()
+                                    .gap(theme.touch_spacing())
+                                    .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                        window.prevent_default();
+                                        cx.stop_propagation();
+                                    })
+                                    .on_click(|_, _, cx| cx.stop_propagation())
+                                    .children([true, false].map(|up| {
+                                        let to = nudged(ix, count, up);
+                                        let reorder = reorder.clone();
+                                        let direction = if up { "up" } else { "down" };
+                                        div()
+                                            .flex_none()
+                                            .debug_selector(move || {
+                                                format!("sortable-{ix}-{direction}")
+                                            })
+                                            .child(
+                                                IconButton::new(
+                                                    (direction, ix),
+                                                    if up {
+                                                        IconName::ArrowUp
+                                                    } else {
+                                                        IconName::ArrowDown
+                                                    },
+                                                )
                                                 .tooltip(if up { "Move up" } else { "Move down" })
                                                 .disabled(!can_reorder || to.is_none())
                                                 .on_click(move |_, window, cx| {
@@ -137,12 +147,12 @@ impl RenderOnce for SortableList {
                                                         reorder(ix, to, window, cx);
                                                     }
                                                 }),
-                                        )
-                                }))
-                        })),
-                )
-            },
-        );
+                                            )
+                                    }))
+                            })),
+                    )
+                },
+            );
         div()
             .id(self.id)
             .track_focus(&focus)

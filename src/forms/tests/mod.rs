@@ -1,6 +1,8 @@
+mod calendar_touch;
 mod choices;
 mod colors;
 mod dates;
+mod hover_touch;
 mod other;
 mod stale;
 mod structure;

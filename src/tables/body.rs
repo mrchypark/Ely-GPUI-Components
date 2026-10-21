@@ -217,7 +217,11 @@ impl Body {
             .text_size(theme.text_size(TextSize::Sm))
             .text_color(colors.fg)
             .when(on, |row| row.bg(colors.active))
-            .when(!on, |row| row.hover(|style| style.bg(colors.hover)))
+            .when(!on, |row| {
+                row.hover(|style| style.bg(colors.hover))
+                    // A phone never hovers, so the press itself shows the row pressed.
+                    .active(|style| style.bg(colors.hover))
+            })
             .when_some(self.select.clone().filter(|_| lead), |row, select| {
                 row.child(
                     div()

@@ -4,9 +4,9 @@ use std::{
 };
 
 use gpui::{
-    Context, Entity, InteractiveElement, IntoElement, Modifiers, ParentElement, Pixels, Point,
-    Render, ScrollDelta, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled,
-    TestAppContext, TouchPhase, VisualTestContext, Window, div, point, px,
+    Context, Entity, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement,
+    Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
+    Styled, TestAppContext, TouchPhase, VisualTestContext, Window, div, point, px,
 };
 
 use super::{
@@ -117,6 +117,34 @@ fn presses_pick_one_toggle_with_cmd_and_range_with_shift(cx: &mut TestAppContext
     cx.simulate_keystrokes("cmd-a");
     settle(cx);
     assert_eq!(picks(&view, cx), NAMES);
+}
+
+#[gpui::test]
+fn a_finger_picks_a_row_and_the_row_keeps_a_finger_sized_target(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    let (view, cx) = cx.add_window_view(|_, _| Picks(Vec::new(), Vec::new(), None, false));
+    settle(cx);
+
+    // A phone has no hover, so the row must be a finger-sized target of its own.
+    let bounds = cx.debug_bounds("list-item-b").expect("the second row");
+    assert!(
+        bounds.size.height >= px(48.),
+        "a list row keeps a finger-sized target, got {:?}",
+        bounds.size.height
+    );
+
+    // The press shows the row as pressed, and the release picks it.
+    cx.simulate_mouse_down(bounds.center(), MouseButton::Left, Modifiers::none());
+    settle(cx);
+    assert_eq!(
+        picks(&view, cx),
+        Vec::<String>::new(),
+        "the press has not lifted"
+    );
+    cx.simulate_mouse_up(bounds.center(), MouseButton::Left, Modifiers::none());
+    settle(cx);
+    assert_eq!(picks(&view, cx), ["b"], "the tap picked the row");
 }
 
 #[gpui::test]
@@ -577,11 +605,19 @@ struct TouchSorting {
 impl Render for TouchSorting {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let reorder = cx.entity();
-        (0..3).fold(SortableList::new("touch-sorting"), |list, ix| {
-            let selected = cx.entity();
-            list.row(format!("row-{ix}"), ListItem::new(format!("row-{ix}"), format!("Row {ix}"))
-                .on_click(move |_, _, cx| selected.update(cx, |view, _| view.selections += 1)))
-        }).on_reorder(move |from, to, _, cx| reorder.update(cx, |view, _| view.moves.push((from, to))))
+        (0..3)
+            .fold(SortableList::new("touch-sorting"), |list, ix| {
+                let selected = cx.entity();
+                list.row(
+                    format!("row-{ix}"),
+                    ListItem::new(format!("row-{ix}"), format!("Row {ix}")).on_click(
+                        move |_, _, cx| selected.update(cx, |view, _| view.selections += 1),
+                    ),
+                )
+            })
+            .on_reorder(move |from, to, _, cx| {
+                reorder.update(cx, |view, _| view.moves.push((from, to)))
+            })
     }
 }
 
@@ -591,24 +627,43 @@ fn touch_sort_controls_move_once_and_disable_boundaries(cx: &mut TestAppContext)
     cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = true));
     let (view, cx) = cx.add_window_view(|window, _| {
         window.set_rem_size(px(8.));
-        TouchSorting { moves: Vec::new(), selections: 0 }
+        TouchSorting {
+            moves: Vec::new(),
+            selections: 0,
+        }
     });
     settle(cx);
-    for selector in ["sortable-0-up", "sortable-2-down", "sortable-0-down", "sortable-2-up"] {
+    for selector in [
+        "sortable-0-up",
+        "sortable-2-down",
+        "sortable-0-down",
+        "sortable-2-up",
+    ] {
         let bounds = cx.debug_bounds(selector).expect("visible move control");
         assert!(bounds.size.width >= px(48.) && bounds.size.height >= px(48.));
         cx.simulate_click(bounds.center(), Modifiers::none());
         settle(cx);
         assert!(!cx.update(|_, cx| cx.has_active_drag()));
     }
-    assert_eq!(view.read_with(cx, |view, _| view.moves.clone()), vec![(0, 1), (2, 1)]);
+    assert_eq!(
+        view.read_with(cx, |view, _| view.moves.clone()),
+        vec![(0, 1), (2, 1)]
+    );
     assert_eq!(view.read_with(cx, |view, _| view.selections), 0);
     // A move-control press must not arm the enclosing drag recognizer.
     let bounds = cx.debug_bounds("sortable-1-up").unwrap();
     cx.simulate_mouse_down(bounds.center(), gpui::MouseButton::Left, Modifiers::none());
-    cx.simulate_mouse_move(bounds.center() + point(px(0.), px(25.)), Some(gpui::MouseButton::Left), Modifiers::none());
+    cx.simulate_mouse_move(
+        bounds.center() + point(px(0.), px(25.)),
+        Some(gpui::MouseButton::Left),
+        Modifiers::none(),
+    );
     assert!(!cx.update(|_, cx| cx.has_active_drag()));
-    cx.simulate_mouse_up(bounds.center() + point(px(0.), px(25.)), gpui::MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(
+        bounds.center() + point(px(0.), px(25.)),
+        gpui::MouseButton::Left,
+        Modifiers::none(),
+    );
     cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = false));
     settle(cx);
     assert!(cx.debug_bounds("sortable-0-up").is_none());

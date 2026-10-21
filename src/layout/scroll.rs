@@ -4,7 +4,7 @@ use gpui::{
     AnyElement, App, Axis, Bounds, Canvas, Div, ElementId, EmptyView, Entity, EntityId,
     FocusHandle, HoverListenerMode, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
     RenderOnce, ScrollHandle, StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas,
-    div, point, prelude::*,
+    div, point, prelude::*, px,
 };
 use smallvec::SmallVec;
 use web_time::Instant;
@@ -194,19 +194,47 @@ impl RenderOnce for Scrollbar {
         };
         let length = (span * (span / (span + reach))).max(min_thumb).min(span);
         let travel = span - length;
-        if reach <= Pixels::ZERO || travel <= Pixels::ZERO || self.presence <= 0.0 {
+        // A finger has no hover to hold the scrollbar out, so it stays.
+        let presence = if theme.touch_mode { 1.0 } else { self.presence };
+        if reach <= Pixels::ZERO || travel <= Pixels::ZERO || presence <= 0.0 {
             return div().into_any_element();
         }
         let start = travel * (scrolled / reach).clamp(0.0, 1.0);
         let axis = self.axis;
         let handle = self.handle.clone();
         let (idle, busy) = (theme.colors.fg.opacity(0.22), theme.colors.fg.opacity(0.42));
+        // A finger has no hover to light the thumb, so a phone keeps it lit and
+        // the grab target grows to a finger's width while the bar stays thin.
+        let grab = if theme.touch_mode {
+            theme.touch_minimum(px(48.))
+        } else {
+            thickness
+        };
+        // The thin bar keeps the desktop's place inside the track band; on a
+        // phone the wide grab target around it reaches the screen edge.
+        let bar_inset = if theme.touch_mode {
+            thickness
+        } else {
+            Pixels::ZERO
+        };
+        // The bar keeps its own width; only the grab target around it grows.
+        let (bar_selector, grab_selector) = match axis {
+            Axis::Vertical => ("scrollbar-bar", "scrollbar-thumb"),
+            Axis::Horizontal => ("scrollbar-bar-x", "scrollbar-thumb-x"),
+        };
+        let bar = div()
+            .debug_selector(|| bar_selector.into())
+            .id("thumb-bar")
+            .absolute()
+            .rounded_full()
+            .bg(if theme.touch_mode { busy } else { idle })
+            .when(!theme.touch_mode, |bar| bar.hover(|style| style.bg(busy)))
+            // A press lights the thumb on touch, where no hover ever comes.
+            .active(|style| style.bg(busy));
         let thumb = div()
             .id("thumb")
             .absolute()
-            .rounded_full()
-            .bg(idle)
-            .hover(|style| style.bg(busy))
+            .debug_selector(|| grab_selector.into())
             .on_drag(
                 ThumbDrag {
                     owner,
@@ -216,14 +244,22 @@ impl RenderOnce for Scrollbar {
                 |_, _, _, cx| cx.new(|_| EmptyView),
             )
             .map(|thumb| match axis {
-                Axis::Vertical => thumb.top(start).left_0().w(thickness).h(length),
-                Axis::Horizontal => thumb.left(start).top_0().h(thickness).w(length),
-            });
-        let track = div()
-            .id(self.id)
-            .absolute()
-            .opacity(self.presence)
-            .on_drag_move(move |event: &gpui::DragMoveEvent<ThumbDrag>, window, cx| {
+                // A finger grabs from the edge inward, so the wide target runs
+                // to the edge of the screen while the thin bar inside it stays
+                // where the eye expects it.
+                Axis::Vertical if theme.touch_mode => thumb.top(start).right_0().w(grab).h(length),
+                Axis::Horizontal if theme.touch_mode => {
+                    thumb.left(start).bottom_0().h(grab).w(length)
+                }
+                Axis::Vertical => thumb.top(start).left_0().w(grab).h(length),
+                Axis::Horizontal => thumb.left(start).top_0().h(grab).w(length),
+            })
+            .child(bar.map(|bar| match axis {
+                Axis::Vertical => bar.right(bar_inset).w(thickness).h_full(),
+                Axis::Horizontal => bar.bottom(bar_inset).h(thickness).w_full(),
+            }));
+        let track = div().id(self.id).absolute().opacity(presence).on_drag_move(
+            move |event: &gpui::DragMoveEvent<ThumbDrag>, window, cx| {
                 let drag = event.drag(cx);
                 if drag.owner != owner {
                     return;
@@ -248,7 +284,8 @@ impl RenderOnce for Scrollbar {
                     Axis::Horizontal => point(target, current.y),
                 });
                 window.refresh();
-            });
+            },
+        );
         match axis {
             Axis::Vertical => track
                 .top_0()

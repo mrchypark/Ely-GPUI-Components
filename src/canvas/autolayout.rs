@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, InteractiveElement, IntoElement, MouseButton, ParentElement, RenderOnce,
-    SharedString, Styled, Window, div,
+    App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, Window, div,
 };
 
 use super::{
@@ -184,20 +184,24 @@ impl RenderOnce for AutoLayoutControls {
                     let spot = (*across, *down);
                     let chosen = spot == layout.place;
                     let press = place.clone();
-                    div()
+                    // The cell is a *selection* target, not an encoding: the mark
+                    // inside it carries the meaning (the chosen place draws a
+                    // mark, the rest draw pips), while the cell's own box only
+                    // says where to tap. So the cell may grow to the 48 pixel
+                    // touch floor without changing what the user reads. The
+                    // mark keeps its own size, so the grid stays a 3 by 3 of
+                    // marks and the visual encoding is untouched.
+                    let cell = div()
                         .id((id.clone(), format!("place-{across:?}-{down:?}")))
+                        .debug_selector(move || format!("place-{across:?}-{down:?}"))
+                        .flex_none()
                         .flex()
                         .items_center()
                         .justify_center()
                         .size(sizes.place)
-                        .rounded(theme.radius(Radius::Sm))
-                        .cursor_pointer()
-                        .hover(move |style| style.bg(hover))
-                        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                            press(spot, window, cx)
-                        })
                         .child(
                             div()
+                                .debug_selector(move || format!("place-mark-{across:?}-{down:?}"))
                                 .size(if chosen {
                                     sizes.place_mark
                                 } else {
@@ -205,7 +209,17 @@ impl RenderOnce for AutoLayoutControls {
                                 })
                                 .rounded(theme.radius(Radius::Sm))
                                 .bg(if chosen { accent } else { subtle }),
-                        )
+                        );
+                    // A click covers the mouse click, the keyboard activation and
+                    // the tap GPUI recognizes from a touch, so one place picks a
+                    // spot the same way on every device. A raw mouse press is
+                    // not enough: on touch it would fire nothing at all.
+                    theme
+                        .touch_target(cell)
+                        .rounded(theme.radius(Radius::Sm))
+                        .cursor_pointer()
+                        .hover(move |style| style.bg(hover))
+                        .on_click(move |_, window, cx| press(spot, window, cx))
                 }))
             }));
         div()

@@ -13,6 +13,7 @@ mod calls;
 mod messages;
 mod people;
 mod pickers;
+mod touch;
 
 fn setup(cx: &mut TestAppContext) {
     cx.update(|cx| {

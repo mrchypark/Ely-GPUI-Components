@@ -141,7 +141,7 @@ impl RenderOnce for AudioWaveform {
         .top_0()
         .left_0()
         .size_full();
-        let (moved, left) = (wave.clone(), wave.clone());
+        let (moved, left, pressed) = (wave.clone(), wave.clone(), wave.clone());
         div()
             .id(self.id.clone())
             .debug_selector(|| "audio-waveform".into())
@@ -154,6 +154,13 @@ impl RenderOnce for AudioWaveform {
             .children(tip)
             .on_mouse_move(move |event, _, cx| {
                 moved.update(cx, |wave, cx| {
+                    wave.hover = along(wave.bounds, event.position);
+                    cx.notify();
+                })
+            })
+            // A tap has no pointer to move, so the press sets the hover itself.
+            .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                pressed.update(cx, |wave, cx| {
                     wave.hover = along(wave.bounds, event.position);
                     cx.notify();
                 })

@@ -126,12 +126,15 @@ impl RenderOnce for CompletionMenu {
                 let picked = item.clone();
                 div()
                     .id((self.id.clone(), format!("item-{ix}")))
+                    .debug_selector(|| format!("editor-completion-{ix}"))
                     .flex()
                     .items_center()
                     .gap_2()
                     .px_2()
                     .py_0p5()
                     .rounded(theme.radius(Radius::Sm))
+                    // A finger needs a row it can land on.
+                    .map(|row| theme.touch_target(row))
                     .when(ix == chosen, |row| row.bg(colors.active))
                     .cursor_pointer()
                     .hover(|row| row.bg(colors.hover))

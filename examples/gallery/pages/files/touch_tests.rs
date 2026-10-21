@@ -53,7 +53,10 @@ fn settle(cx: &mut VisualTestContext) {
     }
     cx.run_until_parked();
 }
-fn stage<'a>(cx: &'a mut TestAppContext, title: &'static str) -> (Entity<Story>, &'a mut VisualTestContext) {
+fn stage<'a>(
+    cx: &'a mut TestAppContext,
+    title: &'static str,
+) -> (Entity<Story>, &'a mut VisualTestContext) {
     cx.update(|cx| {
         ely_gpui_component::init_for_tests(cx);
         Theme::update(cx, |theme| {

@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, Div, ElementId, Entity, HoverListenerMode, Hsla, InteractiveElement, IntoElement,
-    MouseMoveEvent, ParentElement, Pixels, Refineable, RenderOnce, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div, fill,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Refineable, RenderOnce,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div, fill,
 };
 
 use super::{
@@ -42,17 +42,15 @@ pub(crate) fn tracked(
     tiles: &Entity<Tiles>,
     find: impl Fn((f32, f32)) -> Option<usize> + 'static,
 ) -> gpui::Stateful<Div> {
-    let (moved, left) = (tiles.clone(), tiles.clone());
+    let (moved, pressed, left) = (tiles.clone(), tiles.clone(), tiles.clone());
+    let find = Rc::new(find);
+    let (moved_find, pressed_find) = (find.clone(), find.clone());
     root.id(id)
         .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
-            let offset = event.position - moved.read(cx).bounds.origin;
-            let next = find((f32::from(offset.x), f32::from(offset.y)));
-            moved.update(cx, |tiles, cx| {
-                if tiles.hover != next {
-                    tiles.hover = next;
-                    cx.notify();
-                }
-            })
+            point_at(&moved, &*moved_find, event.position, cx)
+        })
+        .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
+            point_at(&pressed, &*pressed_find, event.position, cx)
         })
         .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
         .on_hover(move |inside, _, cx| {
@@ -63,6 +61,21 @@ pub(crate) fn tracked(
                 })
             }
         })
+}
+
+/// Records the tile under a pointer, whether it moved there or pressed there.
+fn point_at<F>(tiles: &Entity<Tiles>, find: &F, position: gpui::Point<Pixels>, cx: &mut App)
+where
+    F: Fn((f32, f32)) -> Option<usize>,
+{
+    let offset = position - tiles.read(cx).bounds.origin;
+    let next = find((f32::from(offset.x), f32::from(offset.y)));
+    tiles.update(cx, |tiles, cx| {
+        if tiles.hover != next {
+            tiles.hover = next;
+            cx.notify();
+        }
+    })
 }
 
 /// A key of five steps from none to most, between two words.
@@ -417,7 +430,11 @@ impl RenderOnce for HeatmapChart {
             .h(sizes.height);
         root.style().refine(self.base.style());
         let chart = tracked(
-            div().relative().flex_1().min_h_0(),
+            div()
+                .debug_selector(|| "heatmap-plot".into())
+                .relative()
+                .flex_1()
+                .min_h_0(),
             (self.id.clone(), "heatmap").into(),
             &tiles,
             move |at| {

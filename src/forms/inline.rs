@@ -220,11 +220,19 @@ impl RenderOnce for InlineEdit {
             .child(label)
             .child(
                 div()
+                    .debug_selector(|| "inline-edit-pencil".into())
                     .flex_none()
                     .when(!touch, |pencil| {
                         pencil
                             .invisible()
                             .group_hover(group, |style| style.visible())
+                    })
+                    // A phone never hovers, so the pencil shows outright and keeps
+                    // a thumb-sized target.
+                    .when(touch, |pencil| {
+                        pencil
+                            .map(|pencil| theme.touch_target(pencil))
+                            .debug_selector(|| "inline-edit-pencil-touch".into())
                     })
                     .child(
                         Icon::new(IconName::Pencil)

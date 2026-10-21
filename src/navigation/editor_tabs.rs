@@ -215,6 +215,7 @@ impl RenderOnce for EditorTabs {
                     };
                     let hidden = !theme.touch_mode && (tab.dirty || !on);
                     let close_id = tab.id.clone();
+                    let dot_id = tab.id.clone();
                     div()
                         .relative()
                         .flex_none()
@@ -238,7 +239,15 @@ impl RenderOnce for EditorTabs {
                                     .items_center()
                                     .justify_center()
                                     .group_hover(group.clone(), |style| style.invisible())
-                                    .child(div().size(theme.status_dot()).rounded_full().bg(fg)),
+                                    .child(
+                                        div()
+                                            .debug_selector(move || {
+                                                format!("editor-dirty-{dot_id}")
+                                            })
+                                            .size(theme.status_dot())
+                                            .rounded_full()
+                                            .bg(fg),
+                                    ),
                             )
                         })
                         .child(
@@ -345,6 +354,7 @@ impl RenderOnce for EditorTabs {
                         el.child(
                             div()
                                 .flex_none()
+                                .debug_selector(move || format!("editor-touch-dirty-{}", tab.id))
                                 .size(theme.status_dot())
                                 .rounded_full()
                                 .bg(fg),

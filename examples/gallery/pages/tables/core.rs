@@ -211,7 +211,9 @@ pub fn orders(
     let store = picked.clone();
     let note = "Press a header to sort, Shift to add it to the sort. The toolbar searches, opens the filter and sort builders, hides columns, sets the density and copies the rows as CSV. Boxes select; Shift takes a range. Growth is tinted by where it sits; the footer sums and averages what the filters keep.";
     let note = if cx.theme().touch_mode {
-        format!("{note} Touch rows stay at least 48 pixels high; density options may look identical.")
+        format!(
+            "{note} Touch rows stay at least 48 pixels high; density options may look identical."
+        )
     } else {
         note.to_owned()
     };

@@ -17,6 +17,7 @@ use super::{
     links::{Target, links},
     view::{Terminal, TerminalEvent},
 };
+use crate::theme::ActiveTheme;
 
 actions!(
     ely_terminal,
@@ -77,7 +78,15 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<Terminal>)
         .on_mouse_move(cx.listener(Terminal::moved))
         .on_mouse_up(
             MouseButton::Left,
-            cx.listener(|terminal, _, _, _| terminal.selecting = false),
+            cx.listener(|terminal, _, _, cx| {
+                terminal.selecting = false;
+                // A finger has no hover to clear, so the pressed link would stay
+                // underlined after the tap. A pointer keeps its hover, so the
+                // underline stays while the button is held.
+                if cx.theme().touch_mode && terminal.hovered.take().is_some() {
+                    cx.notify();
+                }
+            }),
         )
         .on_scroll_wheel(cx.listener(Terminal::wheel))
         .on_modifiers_changed(
@@ -172,14 +181,16 @@ impl Terminal {
 
     fn press(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         let (row, cell, side) = self.cell_at(event.position);
-        if event.modifiers.platform
-            && let Some((_, _, target)) = self.link_at(row, cell.column.0)
-        {
-            log::info!("terminal: open {target:?}");
-            match &target {
-                Target::Url(url) => cx.open_url(url),
-                Target::Path { .. } => cx.emit(TerminalEvent::Open(target)),
+        // A finger carries no platform modifier, so a plain tap opens the link and a
+        // long press still starts a text selection.
+        let opens_link = event.modifiers.platform || cx.theme().touch_mode;
+        if opens_link && let Some((_, _, target)) = self.link_at(row, cell.column.0) {
+            // A finger gets no hover, so the press marks the link for the underline.
+            if cx.theme().touch_mode {
+                self.hovered = self.link_at(row, cell.column.0);
+                cx.notify();
             }
+            self.open_link(target, cx);
             return;
         }
         let kind = match event.click_count {
@@ -192,6 +203,15 @@ impl Terminal {
         cx.notify();
     }
 
+    /// Opens a link under the cursor or finger.
+    fn open_link(&mut self, target: Target, cx: &mut Context<Self>) {
+        log::info!("terminal: open {target:?}");
+        match &target {
+            Target::Url(url) => cx.open_url(url),
+            Target::Path { .. } => cx.emit(TerminalEvent::Open(target)),
+        }
+    }
+
     fn moved(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
         let (row, cell, side) = self.cell_at(event.position);
         if self.selecting && event.pressed_button == Some(MouseButton::Left) {
@@ -201,11 +221,16 @@ impl Terminal {
             cx.notify();
             return;
         }
-        let hovered = event
-            .modifiers
-            .platform
-            .then(|| self.link_at(row, cell.column.0))
-            .flatten();
+        // A finger never hovers, so the link under it is only known once it is pressed.
+        let hovered = if cx.theme().touch_mode {
+            None
+        } else {
+            event
+                .modifiers
+                .platform
+                .then(|| self.link_at(row, cell.column.0))
+                .flatten()
+        };
         if hovered != self.hovered {
             self.hovered = hovered;
             cx.notify();

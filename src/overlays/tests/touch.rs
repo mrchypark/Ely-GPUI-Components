@@ -7,9 +7,9 @@ use crate::{
     theme::Theme,
 };
 use gpui::{
-    AppContext, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, Modifiers,
-    ParentElement, Pixels, Render, ScrollDelta, ScrollWheelEvent, Styled, TestAppContext,
-    TouchPhase, VisualTestContext, Window, div, point, px, size,
+    Bounds, Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, ParentElement,
+    Pixels, Render, ScrollDelta, ScrollWheelEvent, Styled, TestAppContext, TouchPhase,
+    VisualTestContext, Window, div, point, px, size,
 };
 
 struct BoundedOverlay {

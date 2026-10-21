@@ -156,6 +156,8 @@ impl RenderOnce for Carousel {
                 moving,
             )
         };
+        // A finger has no hover to show the arrows by, so they stay out in touch mode.
+        let arrows = if cx.theme().touch_mode { 1.0 } else { arrows };
         if moving {
             window.request_animation_frame();
         }
@@ -175,34 +177,40 @@ impl RenderOnce for Carousel {
         let theme = cx.theme();
         let colors = &theme.colors;
         let button = theme.control_height(ControlSize::Lg);
+        // A finger needs room to land, so the arrow keeps a 48 pixel hit area in touch mode.
+        let hit = theme.touch_minimum(button.to_pixels(window.rem_size()));
         let dot = theme.status_dot();
         let arrow = |name: &'static str, icon: IconName, delta: isize| {
             let step = step.clone();
-            div()
-                .id((self.id.clone(), name))
-                .absolute()
-                .top(relative(0.5))
-                .mt(button * -0.5)
-                .flex()
-                .items_center()
-                .justify_center()
-                .size(button)
-                .rounded_full()
-                .border_1()
-                .border_color(colors.border)
-                .bg(colors.surface)
-                .opacity(arrows)
-                .when(arrows > 0.0, |arrow| {
-                    arrow
-                        .cursor_pointer()
-                        .hover(|style| style.bg(colors.hover))
-                        .on_mouse_down(MouseButton::Left, |_, window, cx| {
-                            window.prevent_default();
-                            cx.stop_propagation();
-                        })
-                        .on_click(move |_, _, cx| step(delta, cx))
-                })
-                .child(Icon::new(icon).size(IconSize::Sm).color(colors.fg))
+            theme.touch_target(
+                div()
+                    .id((self.id.clone(), name))
+                    .debug_selector(move || format!("carousel-arrow-{name}"))
+                    .absolute()
+                    .top(relative(0.5))
+                    .mt(hit * -0.5)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .size(button)
+                    .rounded_full()
+                    .border_1()
+                    .border_color(colors.border)
+                    .bg(colors.surface)
+                    .opacity(arrows)
+                    .when(arrows > 0.0, |arrow| {
+                        arrow
+                            .cursor_pointer()
+                            .hover(|style| style.bg(colors.hover))
+                            .active(|style| style.bg(colors.hover))
+                            .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                window.prevent_default();
+                                cx.stop_propagation();
+                            })
+                            .on_click(move |_, _, cx| step(delta, cx))
+                    })
+                    .child(Icon::new(icon).size(IconSize::Sm).color(colors.fg)),
+            )
         };
         let keys = step.clone();
         let viewport = div()
@@ -266,12 +274,15 @@ impl RenderOnce for Carousel {
             .flex()
             .flex_col()
             .gap_2()
-            .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
-            .on_hover(move |hovered, _, cx| {
-                hover.update(cx, |deck, cx| {
-                    deck.hovered = *hovered;
-                    cx.notify();
-                })
+            .when(!cx.theme().touch_mode, |carousel| {
+                carousel
+                    .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
+                    .on_hover(move |hovered, _, cx| {
+                        hover.update(cx, |deck, cx| {
+                            deck.hovered = *hovered;
+                            cx.notify();
+                        })
+                    })
             })
             .child(viewport)
             .when(count > 1, |carousel| {

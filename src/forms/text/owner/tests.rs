@@ -251,7 +251,10 @@ fn owner_probe_empty_commit_clears_real_marked_text(cx: &mut TestAppContext) {
     let mut candidate = handler(field, cx);
     let owner = probe.query(&mut candidate).expect("real handler identity");
     candidate.replace_and_mark_text_in_range(None, "한", Some(1..1));
-    assert_eq!(field.read_with(cx, |input, _| input.text().to_owned()), "한");
+    assert_eq!(
+        field.read_with(cx, |input, _| input.text().to_owned()),
+        "한"
+    );
     assert!(candidate.marked_text_range().is_some());
     // Companion production-helper test verifies action0 empty reaches this operation.
     candidate.replace_text_in_range(None, "");

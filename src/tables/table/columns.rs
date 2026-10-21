@@ -190,13 +190,13 @@ pub(super) fn controls(
                             }
                             match name {
                                 "Move left" | "Move right" => {
-                                    if let Some(other) = &neighbor {
-                                        if let (Some(a), Some(b)) = (
+                                    if let Some(other) = &neighbor
+                                        && let (Some(a), Some(b)) = (
                                             view.order.iter().position(|k| k == key),
                                             view.order.iter().position(|k| k == other),
-                                        ) {
-                                            view.order.swap(a, b);
-                                        }
+                                        )
+                                    {
+                                        view.order.swap(a, b);
                                     }
                                 }
                                 "Reset width" => {

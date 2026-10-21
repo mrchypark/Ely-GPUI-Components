@@ -13,6 +13,7 @@ use crate::{
 };
 
 mod layers;
+mod pinch;
 mod popup;
 
 /// The view inside the map's 1px border, in pixels.

@@ -22,9 +22,12 @@ struct Dot {
 }
 
 impl RenderOnce for Dot {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let side = theme.onboarding().hotspot;
+        // A finger needs a target to land on, so the dot's own box grows to a
+        // finger's size; the pulse inside it keeps the size it had.
+        let hit = theme.touch_minimum(side.to_pixels(window.rem_size()) * 2.0);
         let toggle = self.toggle;
         div()
             .id(self.id.clone())
@@ -32,10 +35,11 @@ impl RenderOnce for Dot {
             .flex_none()
             .items_center()
             .justify_center()
-            .size(side * 2.0)
+            .size(hit)
             .rounded_full()
             .border_1()
             .border_color(gpui::transparent_black())
+            .debug_selector(|| "hotspot-dot".into())
             .tab_index(0)
             .focus_ring(cx)
             .cursor_pointer()

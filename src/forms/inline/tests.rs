@@ -297,3 +297,24 @@ fn desktop_keeps_enter_release_escape_and_outside_blur(cx: &mut TestAppContext) 
         Some(view.read_with(cx, |s, _| s.outside.clone()))
     );
 }
+
+#[gpui::test]
+fn touch_shows_the_pencil_without_a_hover(cx: &mut TestAppContext) {
+    let (_, cx) = fixture(cx, true);
+    let pencil = cx
+        .debug_bounds("inline-edit-pencil-touch")
+        .expect("the pencil shows in touch mode");
+    assert!(
+        pencil.size.width >= px(48.) && pencil.size.height >= px(48.),
+        "the pencil is {pencil:?}"
+    );
+}
+
+#[gpui::test]
+fn desktop_keeps_the_pencil_for_the_hover(cx: &mut TestAppContext) {
+    let (_, cx) = fixture(cx, false);
+    assert!(
+        cx.debug_bounds("inline-edit-pencil-touch").is_none(),
+        "the pencil waits for a hover on the desktop"
+    );
+}

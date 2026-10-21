@@ -1,10 +1,14 @@
 mod activity;
+#[cfg(all(test, feature = "test-support"))]
+mod activity_touch;
 mod bars;
 mod chrome;
 mod columns;
 mod crash;
 mod dialogs;
 mod frame;
+#[cfg(all(test, feature = "test-support"))]
+mod mini_touch;
 mod native;
 mod status;
 mod switcher;

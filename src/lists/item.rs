@@ -182,6 +182,8 @@ impl RenderOnce for ListItem {
                 row.cursor_pointer()
                     .when(!self.selected, |row| {
                         row.hover(|style| style.bg(colors.hover))
+                            // A phone never hovers, so the press itself shows the row pressed.
+                            .active(|style| style.bg(colors.hover))
                     })
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                     .on_click(move |event, window, cx| on_click(event, window, cx))

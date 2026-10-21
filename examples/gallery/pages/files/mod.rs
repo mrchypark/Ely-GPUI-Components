@@ -202,7 +202,12 @@ fn listing(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
 
 fn grid(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let touch = cx.theme().touch_mode;
-    let opened = keep("files-grid-opened", || (0usize, None::<SharedString>), window, cx);
+    let opened = keep(
+        "files-grid-opened",
+        || (0usize, None::<SharedString>),
+        window,
+        cx,
+    );
     let (open_count, opened_name) = opened.read(cx).clone();
     let picked = keep("files-grid", || None::<SharedString>, window, cx);
     let now = picked.read(cx).clone();
@@ -226,7 +231,7 @@ fn grid(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     )
     .child(probe("files-grid", div().when(touch, |view| view.w_full().min_w_0()).when(!touch, |view| view.w(px(640.))).child(grid)))
-    .children(touch.then(|| opened_name).flatten().map(|name| {
+    .children(touch.then_some(opened_name).flatten().map(|name| {
         let caption = format!("Open {name}: local callback {open_count}; no filesystem operation.");
         div()
             .debug_selector(move || format!("gallery-file-opened-{name}"))

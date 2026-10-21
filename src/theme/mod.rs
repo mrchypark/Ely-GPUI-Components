@@ -15,8 +15,8 @@ mod platform;
 mod project;
 mod syntax;
 mod tokens;
-mod touch;
 mod tooling;
+mod touch;
 
 #[cfg(all(test, feature = "test-support"))]
 mod tests;

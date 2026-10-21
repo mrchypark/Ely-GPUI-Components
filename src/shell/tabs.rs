@@ -205,10 +205,16 @@ impl RenderOnce for TabBar {
                         .child(Ellipsis::new(tab.title.clone())),
                 )
                 .when_some(close, |el, close| {
+                    let named = tab.id.clone();
                     el.child(
                         div()
-                            .when(!selected, |slot| {
+                            .when(!selected && !theme.touch_mode, |slot| {
                                 slot.invisible().group_hover(group, |style| style.visible())
+                            })
+                            .when(theme.touch_mode, |slot| {
+                                slot.debug_selector(move || {
+                                    format!("window-tab-close-touch {named}")
+                                })
                             })
                             .child(
                                 IconButton::new(("close", ix), IconName::X)

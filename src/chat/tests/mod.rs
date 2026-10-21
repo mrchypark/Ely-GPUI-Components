@@ -9,6 +9,7 @@ use gpui::{
 
 mod cite;
 mod compose;
+mod conversations_touch;
 mod history;
 mod welcome;
 

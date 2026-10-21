@@ -10,7 +10,6 @@ use ely_gpui_component::{
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
 };
-use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use web_time::Instant;
 
@@ -43,7 +42,7 @@ fn attachments() -> Vec<Attachment> {
             key: "olive".into(),
             name: "atrium-olive.jpg".into(),
             bytes: 184_000,
-            preview: Some(crate::assets::file(asset!("atrium-olive.jpg")).into()),
+            preview: Some(crate::assets::file(asset!("atrium-olive.jpg"))),
             progress: None,
         },
         Attachment {

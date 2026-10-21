@@ -12,6 +12,7 @@ mod panels;
 mod pinch;
 mod stale;
 mod tools;
+mod touch;
 
 /// A view that shows one canvas part and keeps the viewports and words it heard.
 struct Stage {

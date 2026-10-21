@@ -2,7 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use gpui::{
     AnyElement, AppContext as _, Bounds, Context, EmptyView, EntityId, Image, ImageFormat,
-    ImageSource, InteractiveElement, IntoElement, ParentElement, Pixels, SharedUri,
+    ImageSource, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, SharedUri,
     StatefulInteractiveElement, Styled, Window, div, img, prelude::*,
 };
 use regex::Regex;
@@ -11,7 +11,7 @@ use super::{Align, Block, BlockEditor, BlockKind, Media, view::Look};
 use crate::{
     buttons::{Button, ButtonVariant, IconButton},
     primitives::{Icon, IconName, Measure},
-    theme::{ControlSize, IconSize},
+    theme::{ActiveTheme, ControlSize, IconSize},
 };
 
 /// Narrowest a picture gets, as a share of its column.
@@ -141,6 +141,11 @@ pub(super) fn media(
     let column = window.use_keyed_state((id.clone(), format!("column-{key}")), cx, |_, _| {
         Bounds::<Pixels>::default()
     });
+    // A phone never hovers, so the align tools show outright in touch mode and
+    // a press on the picture reveals them everywhere else.
+    let revealed = window.use_keyed_state((id.clone(), format!("tools-{key}")), cx, |_, _| false);
+    let touch = cx.theme().touch_mode;
+    let showing = touch || *revealed.read(cx);
     let bounds = *column.read(cx);
     let (align, width) = (media.align, media.width);
     let owner = cx.entity_id();
@@ -170,6 +175,7 @@ pub(super) fn media(
         IconButton::new((id.clone(), format!("align-{key}-{align_to:?}")), icon)
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Sm)
+            .debug_selector(|| "image-align-button".to_string())
             .tooltip(format!("Align {align_to:?}").to_lowercase())
             .on_click(cx.listener(move |editor, _, _, cx| editor.align(key, align_to, cx)))
     };
@@ -182,16 +188,34 @@ pub(super) fn media(
         .p_0p5()
         .rounded(look.radius)
         .bg(colors.overlay)
-        .opacity(0.0)
+        .opacity(if showing { 1.0 } else { 0.0 })
         .group_hover(format!("picture-{key}"), |tools| tools.opacity(1.0))
+        .debug_selector(move || {
+            if touch {
+                "image-align-tools-touch".to_string()
+            } else if showing {
+                "image-align-tools-revealed".to_string()
+            } else {
+                "image-align-tools".to_string()
+            }
+        })
+        .map(|tools| cx.theme().touch_target(tools))
         .child(aligned(Align::Left, IconName::AlignLeft, cx))
         .child(aligned(Align::Center, IconName::AlignCenter, cx))
         .child(aligned(Align::Right, IconName::AlignRight, cx));
+    let press = revealed.clone();
     let picture = div()
         .id((id.clone(), format!("picture-{key}")))
         .group(format!("picture-{key}"))
+        .debug_selector(|| "image-picture".to_string())
         .relative()
         .w(bounds.size.width * width)
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            press.update(cx, |revealed, cx| {
+                *revealed = true;
+                cx.notify();
+            });
+        })
         .child(
             img(source(&media.source))
                 .id((id.clone(), format!("img-{key}")))

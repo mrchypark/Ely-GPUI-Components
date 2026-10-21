@@ -116,7 +116,7 @@ pub(super) fn toolbar(
         };
         bar = bar.child(
             div()
-                .debug_selector(move || format!("grid-touch-{action}").into())
+                .debug_selector(move || format!("grid-touch-{action}"))
                 .child(
                     Button::new((face.id.clone(), action), label)
                         .disabled(!enabled && action != "cancel")

@@ -1,8 +1,8 @@
 use super::{DirEntry, DirectoryListing};
 use crate::theme::Theme;
 use gpui::{
-    AppContext, Context, Entity, IntoElement, Modifiers, ParentElement, Render, SharedString,
-    Styled, TestAppContext, VisualTestContext, Window, div, px, size,
+    Context, Entity, IntoElement, Modifiers, ParentElement, Render, SharedString, Styled,
+    TestAppContext, VisualTestContext, Window, div, px, size,
 };
 
 struct Host {

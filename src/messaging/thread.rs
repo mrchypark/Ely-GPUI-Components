@@ -79,6 +79,7 @@ impl RenderOnce for MessageThread {
             .text_size(theme.text_size(TextSize::Sm))
             .when_some(self.on_open, |row, open| {
                 row.cursor_pointer()
+                    .map(|row| theme.touch_target(row))
                     .tab_index(0)
                     .focus_ring(cx)
                     .hover(|style| style.bg(colors.surface))

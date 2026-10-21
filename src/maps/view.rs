@@ -3,7 +3,7 @@ use std::{collections::HashSet, f64::consts::LOG2_E, rc::Rc};
 use gpui::{
     AnyElement, App, AppContext as _, Bounds, ElementId, EmptyView, Entity, EntityId, FocusHandle,
     ImageSource, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, canvas, div,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, TouchPhase, Window, canvas, div,
 };
 
 use super::{
@@ -299,10 +299,15 @@ impl RenderOnce for MapView {
             .size_full()
         };
         let owner = stage.entity_id();
-        let (keyed, wheeled, held) = (now.clone(), now.clone(), now);
-        let (by_key, by_wheel, by_drag) = (set.clone(), set.clone(), set);
-        let (scrolled, pressed, dragged, dropped) =
-            (stage.clone(), stage.clone(), stage.clone(), stage);
+        let (keyed, wheeled, held, pinching) = (now.clone(), now.clone(), now.clone(), now);
+        let (by_key, by_wheel, by_drag, by_pinch) = (set.clone(), set.clone(), set.clone(), set);
+        let (scrolled, pressed, dragged, dropped, pinched) = (
+            stage.clone(),
+            stage.clone(),
+            stage.clone(),
+            stage.clone(),
+            stage,
+        );
         div()
             .id(id)
             .track_focus(&focus)
@@ -357,6 +362,40 @@ impl RenderOnce for MapView {
                 };
                 cx.stop_propagation();
                 by_wheel(next, window, cx);
+            })
+            // A pinch is consumed here, in its recognized form. The raw contacts it
+            // comes from belong to whichever layer owns them: a backend that already
+            // sends a cumulative pinch stream must convert it to these incremental
+            // deltas, and an adapter that owns the raw contacts must not also let
+            // GPUI synthesize a second pinch for the same fingers. Mixing the two
+            // would zoom the map twice for one gesture, so exactly one of them acts.
+            .on_pinch(move |event, window, cx| {
+                cx.stop_propagation();
+                if event.phase == TouchPhase::Cancelled {
+                    pinched.update(cx, |stage, _| stage.grip = None);
+                    return;
+                }
+                let factor = 1.0 + event.delta;
+                if !factor.is_finite() || factor <= 0.0 {
+                    return;
+                }
+                let pointer = event.position - pinched.read(cx).bounds.origin;
+                let about = (f32::from(pointer.x), f32::from(pointer.y));
+                if !about.0.is_finite() || !about.1.is_finite() {
+                    return;
+                }
+                if event.delta == 0.0 {
+                    if event.phase == TouchPhase::Started {
+                        pinched.update(cx, |stage, _| stage.grip = None);
+                    }
+                    return;
+                }
+                let (view, size) = pinching(cx);
+                // The zoom is a factor here and a count of levels there.
+                let levels = f64::from(factor).log2();
+                let next = view.zoomed(levels, about, size, tile);
+                pinched.update(cx, |stage, _| stage.grip = None);
+                by_pinch(next, window, cx);
             })
             .on_mouse_down(MouseButton::Left, move |event, _, cx| {
                 let (view, _) = held(cx);

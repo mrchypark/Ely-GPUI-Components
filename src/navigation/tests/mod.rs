@@ -1,3 +1,5 @@
+mod editor_tabs_touch;
+mod menu_touch;
 mod pages;
 mod stale;
 mod tabs;

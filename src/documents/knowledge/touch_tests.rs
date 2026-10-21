@@ -1,8 +1,8 @@
 use super::{Favorite, Favorites, favorite_tools};
 use crate::theme::Theme;
 use gpui::{
-    AppContext, Context, Entity, IntoElement, Modifiers, ParentElement, Render, Styled,
-    TestAppContext, VisualTestContext, Window, div, px, size,
+    Context, Entity, IntoElement, Modifiers, ParentElement, Render, Styled, TestAppContext,
+    VisualTestContext, Window, div, px, size,
 };
 
 struct Host {

@@ -2,8 +2,8 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     AnyElement, App, Axis, CursorStyle, DragMoveEvent, ElementId, EmptyView, EntityId, Hsla,
-    InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, Stateful,
-    StatefulInteractiveElement, Styled, Window, div, prelude::*,
+    InteractiveElement, IntoElement, Length, ParentElement, Pixels, RenderOnce, Stateful,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
 };
 
 use super::seeded::use_seeded;
@@ -11,20 +11,38 @@ use crate::theme::ActiveTheme;
 
 /// Thin divider with a wide grab area. `axis` is the split's direction.
 pub fn resize_handle(id: impl Into<ElementId>, axis: Axis, cx: &App) -> Stateful<gpui::Div> {
-    handle(id, axis, cx.theme().colors.border, cx)
+    handle(id, axis, cx.theme().colors.border, "split-handle", cx)
 }
 
 /// A resize handle whose line shows only while hovered, on an edge whose box draws its own border.
 pub fn resize_edge(id: impl Into<ElementId>, axis: Axis, cx: &App) -> Stateful<gpui::Div> {
-    handle(id, axis, gpui::transparent_black(), cx)
+    let selector = match axis {
+        Axis::Horizontal => "resize-edge-horizontal",
+        Axis::Vertical => "resize-edge-vertical",
+    };
+    handle(id, axis, gpui::transparent_black(), selector, cx)
 }
 
-fn handle(id: impl Into<ElementId>, axis: Axis, line: Hsla, cx: &App) -> Stateful<gpui::Div> {
+fn handle(
+    id: impl Into<ElementId>,
+    axis: Axis,
+    line: Hsla,
+    selector: &'static str,
+    cx: &App,
+) -> Stateful<gpui::Div> {
     let theme = cx.theme();
     let (lit, hit) = (theme.colors.focus, theme.handle_hit());
+    // A touch has no hover, so the line is lit and the grab area is a thumb.
+    let hit: Length = if theme.touch_mode {
+        theme.touch_minimum(px(48.)).into()
+    } else {
+        hit.into()
+    };
+    let border = if theme.touch_mode { lit } else { line };
     let base = div()
         .id(id)
         .group("resize")
+        .debug_selector(|| selector.into())
         .flex_none()
         .flex()
         .justify_center()
@@ -37,9 +55,12 @@ fn handle(id: impl Into<ElementId>, axis: Axis, line: Hsla, cx: &App) -> Statefu
             .child(
                 div()
                     .h_full()
+                    .debug_selector(|| "split-handle-line".into())
                     .border_l_1()
-                    .border_color(line)
-                    .group_hover("resize", |s| s.border_color(lit)),
+                    .border_color(border)
+                    .when(!theme.touch_mode, |line| {
+                        line.group_hover("resize", |s| s.border_color(lit))
+                    }),
             ),
         Axis::Vertical => base
             .h(hit)
@@ -48,9 +69,12 @@ fn handle(id: impl Into<ElementId>, axis: Axis, line: Hsla, cx: &App) -> Statefu
             .child(
                 div()
                     .w_full()
+                    .debug_selector(|| "split-handle-line".into())
                     .border_t_1()
-                    .border_color(line)
-                    .group_hover("resize", |s| s.border_color(lit)),
+                    .border_color(border)
+                    .when(!theme.touch_mode, |line| {
+                        line.group_hover("resize", |s| s.border_color(lit))
+                    }),
             ),
     }
 }

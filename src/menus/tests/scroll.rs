@@ -30,7 +30,10 @@ impl Render for NearBottomMenu {
             .item(MenuItem::new("Third"))
             .item(MenuItem::new("Fourth"));
         FocusScope::new(&self.focus).size_full().child(
-            gpui::div().absolute().top(px(360.)).left(px(20.))
+            gpui::div()
+                .absolute()
+                .top(px(360.))
+                .left(px(20.))
                 .child(DropdownMenu::new("near-bottom", "Actions", menu)),
         )
     }
@@ -46,26 +49,50 @@ fn touch_menu_near_bottom_opens_above_its_host(cx: &mut TestAppContext) {
         });
         crate::forms::bind_keys(cx);
     });
-    let (_, cx) = cx.add_window_view(|_, cx| NearBottomMenu { focus: cx.focus_handle() });
+    let (_, cx) = cx.add_window_view(|_, cx| NearBottomMenu {
+        focus: cx.focus_handle(),
+    });
     cx.simulate_resize(size(px(390.), px(600.)));
     settle(cx);
     cx.update(|window, cx| window.focus_next(cx));
     press("enter", cx);
     let panel = cx.debug_bounds("menu-panel-0").expect("open menu");
-    assert!(panel.top() >= px(0.) && panel.bottom() <= px(360.), "{panel:?}");
-    assert!(panel.left() >= px(0.) && panel.right() <= px(390.), "{panel:?}");
-    for selector in ["menu-row-First", "menu-row-Second", "menu-row-Third", "menu-row-Fourth"] {
+    assert!(
+        panel.top() >= px(0.) && panel.bottom() <= px(360.),
+        "{panel:?}"
+    );
+    assert!(
+        panel.left() >= px(0.) && panel.right() <= px(390.),
+        "{panel:?}"
+    );
+    for selector in [
+        "menu-row-First",
+        "menu-row-Second",
+        "menu-row-Third",
+        "menu-row-Fourth",
+    ] {
         let row = cx.debug_bounds(selector).expect(selector);
-        assert!(row.size.width >= px(48.) && row.size.height >= px(48.), "{row:?}");
-        assert!(row.left() >= panel.left() && row.right() <= panel.right()
-            && row.top() >= panel.top() && row.bottom() <= panel.bottom(), "{row:?}");
+        assert!(
+            row.size.width >= px(48.) && row.size.height >= px(48.),
+            "{row:?}"
+        );
+        assert!(
+            row.left() >= panel.left()
+                && row.right() <= panel.right()
+                && row.top() >= panel.top()
+                && row.bottom() <= panel.bottom(),
+            "{row:?}"
+        );
     }
     press("escape", cx);
     cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = false));
     settle(cx);
     press("enter", cx);
     let desktop = cx.debug_bounds("menu-panel-0").expect("desktop menu");
-    assert!(desktop.top() >= px(388.) && desktop.bottom() <= px(600.), "{desktop:?}");
+    assert!(
+        desktop.top() >= px(388.) && desktop.bottom() <= px(600.),
+        "{desktop:?}"
+    );
     let row = cx.debug_bounds("menu-row-First").unwrap();
     assert_eq!(row.size.height, px(28.));
 }

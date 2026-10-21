@@ -83,16 +83,25 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
         })
 }
 
-pub(super) fn panel(
-    id: &ElementId,
-    menu: &Menu,
-    state: &Entity<Open>,
-    depth: usize,
-    close: &Run,
-    head: Option<AnyElement>,
-    window: &mut Window,
-    cx: &mut App,
-) -> Stateful<Div> {
+/// What a menu panel draws from: its host, its model, the open state, and how deep it sits.
+pub(super) struct Panel<'a> {
+    pub id: &'a ElementId,
+    pub menu: &'a Menu,
+    pub state: &'a Entity<Open>,
+    pub depth: usize,
+    pub close: &'a Run,
+    pub head: Option<AnyElement>,
+}
+
+pub(super) fn panel(panel: Panel, window: &mut Window, cx: &mut App) -> Stateful<Div> {
+    let Panel {
+        id,
+        menu,
+        state,
+        depth,
+        close,
+        head,
+    } = panel;
     let path: Vec<_> = state.read(cx).levels[..depth]
         .iter()
         .map(|level| level.at)
@@ -215,6 +224,7 @@ pub(super) fn panel(
                         state.update(cx, |open, cx| {
                             if open.levels.len() > depth + 1 {
                                 open.levels.truncate(depth + 1);
+                                open.notify_panels();
                                 cx.notify();
                             }
                         });

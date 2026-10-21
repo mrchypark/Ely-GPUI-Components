@@ -68,3 +68,24 @@ fn init_without_ely_assets_returns_an_error(cx: &mut TestAppContext) {
         .expect_err("the test source holds no Ely assets");
     assert!(format!("{error:#}").contains("pass `ely_gpui_component::Assets`"));
 }
+
+#[gpui::test]
+fn a_touch_icon_shows_its_hover_color(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
+    });
+    cx.update(|cx| {
+        let icon = Icon::new(IconName::Check).group_hover_color("row", black());
+        assert_eq!(icon.touch_color(cx.theme()), Some(black()));
+    });
+    cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = false));
+    cx.update(|cx| {
+        let icon = Icon::new(IconName::Check).group_hover_color("row", black());
+        assert_eq!(
+            icon.touch_color(cx.theme()),
+            None,
+            "the desktop keeps the hover color for a hover"
+        );
+    });
+}

@@ -1,4 +1,87 @@
-use super::Viewport;
+use super::{Viewport, edit::hit, gesture::REACH, shape::Shape, view::Frame};
+
+/// The smallest hit area a finger can be trusted to land on, in logical pixels.
+///
+/// The floor is a *hit area* promise, not a layout one. It applies to the
+/// things a finger has to find: a shape to select, a socket to pull a wire
+/// from, a handle to drag. It does not apply to the things whose size *is* the
+/// meaning -- a drawn stroke, a note's text, a grid cell's mark, a minimap's
+/// view rectangle -- because growing those would redraw the canvas instead of
+/// helping the finger. Those keep their own size and are reached by a larger
+/// invisible hit region instead.
+pub const TOUCH_TARGET: f32 = 48.0;
+
+/// The size a hit area keeps, never below the touch target.
+pub fn touch_target(size: f32) -> f32 {
+    size.max(TOUCH_TARGET)
+}
+
+/// How much further a frame's edges reach, in canvas units, so that a frame
+/// smaller than the touch target still fills one on screen.
+///
+/// `zoom` is the view's zoom: the target is a screen measure, so the same
+/// frame needs a wider reach in canvas units the further the view is out.
+pub fn reach(frame: Frame, zoom: f32) -> f32 {
+    if !zoom.is_finite() || zoom <= 0.0 {
+        return 0.0;
+    }
+    let smallest = frame.w.min(frame.h) * zoom;
+    if !smallest.is_finite() {
+        return 0.0;
+    }
+    let wanted = (TOUCH_TARGET - smallest).max(0.0) / 2.0;
+    wanted / zoom
+}
+
+/// How far a shape's edges reach, in canvas units, so that a small shape can
+/// still be tapped with a finger.
+///
+/// A shape's own size is its meaning -- a note is a note's size -- so it is
+/// never drawn bigger. Instead the *hit* area grows around it, and only when
+/// the shape is small enough that its own edge would be hard to land on.
+///
+/// A shape already large on screen keeps the small reach it always had, so a
+/// crowded canvas does not turn into one big overlapping target.
+pub fn shape_reach(frame: Frame, zoom: f32) -> f32 {
+    if !zoom.is_finite() || zoom <= 0.0 {
+        return 0.0;
+    }
+    let wanted = reach(frame, zoom);
+    let least = REACH_FALLBACK / zoom;
+    wanted.max(least)
+}
+
+/// The shape a touch at `at` lands on, if any.
+///
+/// A shape that is already big enough is hit by its own edge, as before. Only
+/// when nothing is hit does the finger get the reach of the touch target, so
+/// a small shape can be found without a big shape stealing its neighbour's
+/// taps. The shape drawn on the canvas never changes size; only what counts as
+/// touching it does.
+///
+/// On a desktop the reach is exactly the one it always had: a mouse has a
+/// pointer, so a shape is taken by its own edge.
+pub fn hit_touch(shapes: &[Shape], at: (f32, f32), zoom: f32, touch: bool) -> Option<usize> {
+    if let Some(ix) = hit(shapes, at, REACH / zoom) {
+        return Some(ix);
+    }
+    if !touch {
+        return None;
+    }
+    shapes.iter().rposition(|shape| {
+        let frame = &shape.frame;
+        let grown = Frame::new(
+            frame.x - shape_reach(*frame, zoom),
+            frame.y - shape_reach(*frame, zoom),
+            frame.w + shape_reach(*frame, zoom) * 2.0,
+            frame.h + shape_reach(*frame, zoom) * 2.0,
+        );
+        !shape.hidden && !shape.locked && grown.contains(at)
+    })
+}
+
+/// The reach a shape gets when it is already big enough on screen.
+const REACH_FALLBACK: f32 = 4.0;
 
 /// One active contact, with a stable backend id and canvas-local logical pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
