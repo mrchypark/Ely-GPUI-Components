@@ -224,6 +224,70 @@ fn owner_probe_tracks_disabled_changes_and_current_focus(cx: &mut TestAppContext
 }
 
 #[gpui::test]
+fn disabling_a_composing_input_finalizes_before_reentry(cx: &mut TestAppContext) {
+    let (fields, probe, cx) = open(cx);
+    cx.update(|_, cx| super::super::bind_keys(cx));
+    let field = &fields[1];
+    focus(field, cx);
+    let mut input = handler(field, cx);
+    input.replace_and_mark_text_in_range(None, "나", Some(1..1));
+    assert_eq!(input.marked_text_range(), Some(0..1));
+    field.update(cx, |input, cx| input.set_disabled(true, cx));
+    assert_eq!(input.marked_text_range(), None);
+    assert!(field.read_with(cx, |input, _| input.composing.is_none()));
+    assert_eq!(
+        field.read_with(cx, |input, _| input.text().to_owned()),
+        "나"
+    );
+    assert!(probe.query(&mut input).unwrap().disabled);
+    input.replace_text_in_range(None, "ignored");
+    focus(&fields[0], cx);
+    field.update(cx, |input, cx| input.set_disabled(false, cx));
+    focus(field, cx);
+    cx.simulate_keystrokes("secondary-z");
+    assert_eq!(field.read_with(cx, |input, _| input.text().to_owned()), "");
+    cx.simulate_keystrokes("secondary-shift-z");
+    input.replace_text_in_range(None, "x");
+    assert_eq!(
+        field.read_with(cx, |input, _| input.text().to_owned()),
+        "나x"
+    );
+}
+
+#[gpui::test]
+fn disabling_composition_applies_input_limits_only_once(cx: &mut TestAppContext) {
+    let (fields, _, cx) = open(cx);
+    let field = &fields[0];
+    field.update(cx, |input, _| {
+        input.filter = Some(Rc::new(|ch: char| ch.is_ascii_digit()));
+        input.max_len = Some(1);
+    });
+    let changes = Rc::new(Cell::new(0));
+    let counted = changes.clone();
+    let _subscription = cx.update(|_, cx| {
+        cx.subscribe(field, move |_, event, _| {
+            if matches!(event, crate::forms::InputEvent::Changed) {
+                counted.set(counted.get() + 1);
+            }
+        })
+    });
+    focus(field, cx);
+    let mut input = handler(field, cx);
+    input.replace_and_mark_text_in_range(None, "a12", None);
+    assert_eq!(
+        field.read_with(cx, |input, _| input.text().to_owned()),
+        "a12"
+    );
+    field.update(cx, |input, cx| input.set_disabled(true, cx));
+    assert_eq!(field.read_with(cx, |input, _| input.text().to_owned()), "1");
+    assert_eq!(input.marked_text_range(), None);
+    assert_eq!(changes.get(), 1);
+    field.update(cx, |input, cx| input.set_disabled(true, cx));
+    input.unmark_text();
+    assert_eq!(changes.get(), 1);
+}
+
+#[gpui::test]
 fn owner_probe_is_opt_in_and_default_input_still_commits(cx: &mut TestAppContext) {
     let (_, probe, cx) = open(cx);
     let plain = cx.update(|window, cx| cx.new(|cx| TextInput::new(window, cx)));

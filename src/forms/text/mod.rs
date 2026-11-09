@@ -252,6 +252,9 @@ impl TextInput {
     }
 
     pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
+        if !self.disabled && disabled {
+            self.finish_composition(cx);
+        }
         if self.disabled != disabled {
             self.advance_owner_activation();
         }
