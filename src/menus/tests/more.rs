@@ -1,7 +1,7 @@
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, KeyBinding, Modifiers, MouseButton,
-    OwnedMenu, OwnedMenuItem, ParentElement, Render, Styled, TestAppContext, VisualTestContext,
-    Window, actions, div, point, px,
+    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, MouseButton, OwnedMenu,
+    OwnedMenuItem, ParentElement, Render, Styled, TestAppContext, VisualTestContext, Window,
+    actions, div, point, px,
 };
 
 use super::{press, settle};
@@ -68,7 +68,7 @@ impl Render for Bar {
 fn bar(cx: &mut TestAppContext) -> (gpui::Entity<Bar>, &mut VisualTestContext) {
     cx.update(|cx| {
         Theme::init(cx);
-        cx.bind_keys([KeyBinding::new("secondary-s", Save, None)]);
+        cx.bind_keys([crate::load_key_binding("secondary-s", Save, None, cx)]);
     });
     let (view, cx) = cx.add_window_view(|_, cx| Bar {
         root: cx.focus_handle(),

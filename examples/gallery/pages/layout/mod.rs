@@ -83,7 +83,11 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(basics::stacks(cx))
         .child(basics::flex(cx))
@@ -114,7 +118,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(regions::well(cx))
         .child(shells::sidebar(window, cx))
         .child(shells::drawer(window, cx))
-        .child(shells::sheet(window, cx))
+        .child(shells::sheet(window, cx, bounds))
         .child(shells::page(cx))
         .child(shells::app_shell(cx))
         .child(shells::master_detail(cx))

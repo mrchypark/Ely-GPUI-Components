@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
+    App, Bounds, ElementId, IntoElement, ParentElement, Pixels, RenderOnce, SharedString, Styled,
+    Window, div,
 };
 
 use crate::{
@@ -27,12 +28,19 @@ type Run = Rc<dyn Fn(&mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct CommandHistory {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     commands: Vec<PastCommand>,
     on_pick: Option<OnPick>,
     on_close: Run,
 }
 
 impl CommandHistory {
+    /// Current usable rectangle in logical window coordinates.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     /// `commands` newest first.
     pub fn new(
         id: impl Into<ElementId>,
@@ -42,6 +50,7 @@ impl CommandHistory {
         Self {
             id: id.into(),
             commands: commands.into_iter().collect(),
+            usable_bounds: None,
             on_pick: None,
             on_close: Rc::new(on_close),
         }
@@ -109,6 +118,7 @@ impl RenderOnce for CommandHistory {
         }
         Palette {
             id: self.id,
+            usable_bounds: self.usable_bounds,
             input,
             groups: vec![Group {
                 title: None,

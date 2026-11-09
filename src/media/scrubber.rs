@@ -266,7 +266,7 @@ impl RenderOnce for Scrubber {
             )
             .children(knob)
             .children(tip);
-        let (moved, left) = (track.clone(), track.clone());
+        let (moved, left, pressed) = (track.clone(), track.clone(), track.clone());
         div()
             .id(self.id.clone())
             .debug_selector(|| "scrubber".into())
@@ -277,6 +277,13 @@ impl RenderOnce for Scrubber {
             .child(rail)
             .on_mouse_move(move |event, _, cx| {
                 moved.update(cx, |track, cx| {
+                    track.hover = along(track.bounds, event.position);
+                    cx.notify();
+                })
+            })
+            // A tap has no pointer to move, so the press sets the hover itself.
+            .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                pressed.update(cx, |track, cx| {
                     track.hover = along(track.bounds, event.position);
                     cx.notify();
                 })

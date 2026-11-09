@@ -4,6 +4,7 @@ use super::{BlockData, BlockEditor, BlockKind};
 use crate::{forms, theme::Theme};
 
 mod stale;
+mod touch;
 
 fn open(
     blocks: Vec<BlockData>,

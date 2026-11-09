@@ -1,10 +1,16 @@
+use gpui::prelude::FluentBuilder as _;
+
 use ely_gpui_component::{
     buttons::{Button, ButtonVariant},
     forms::Choice,
     navigation::{Command, CommandPalette, QuickLauncher, QuickOpen, QuickSwitcher, SearchPalette},
     primitives::IconName,
+    theme::ActiveTheme,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Window};
+use gpui::{
+    App, Bounds, Entity, InteractiveElement, IntoElement, ParentElement, Pixels, SharedString,
+    Window,
+};
 
 use crate::{
     probe::{Opened, probe},
@@ -62,7 +68,11 @@ fn commands() -> Vec<(&'static str, Vec<Command>)> {
     ]
 }
 
-pub fn command_palette(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn command_palette(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<Bounds<Pixels>>,
+) -> impl IntoElement + use<> {
     let open = keep("commands-open", || false, window, cx);
     let recent = keep(
         "commands-recent",
@@ -87,6 +97,7 @@ pub fn command_palette(window: &mut Window, cx: &mut App) -> impl IntoElement + 
                 |palette, (title, commands)| palette.group(title, commands),
             )
             .recent(recents)
+            .when_some(bounds, |palette, area| palette.usable_bounds(area))
             .on_run(move |value, _, cx| {
                 remember(&recent, value, 3, cx);
                 set(&ran, Some(value.clone()), cx);
@@ -137,7 +148,11 @@ const FILES: [&str; 24] = [
     "frontend/package.json",
 ];
 
-pub fn quick_open(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn quick_open(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let open = keep("files-open", || false, window, cx);
     let recent = keep(
         "files-recent",
@@ -155,6 +170,7 @@ pub fn quick_open(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
     let (opener, closer) = (open.clone(), open.clone());
     let palette = (*open.read(cx)).then(|| {
         QuickOpen::new("files", FILES, move |_, cx| set(&closer, false, cx))
+            .when_some(bounds, |palette, area| palette.usable_bounds(area))
             .recent(recent.read(cx).clone())
             .on_open(move |path, _, cx| {
                 remember(&recent, path, 4, cx);
@@ -171,6 +187,7 @@ pub fn quick_open(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
         probe(
             "files",
             Button::new("files-button", "Go to file")
+                .debug_selector(|| "gallery-quick-open".into())
                 .icon(IconName::File)
                 .on_click(move |_, _, cx| set(&opener, true, cx)),
         ),
@@ -202,7 +219,11 @@ fn places() -> Vec<Choice> {
     ]
 }
 
-pub fn quick_switcher(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn quick_switcher(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let open = keep("switch-open", || false, window, cx);
     let order = keep(
         "switch-order",
@@ -226,6 +247,7 @@ pub fn quick_switcher(window: &mut Window, cx: &mut App) -> impl IntoElement + u
                 .clone()
         });
         QuickSwitcher::new("switcher", items, move |_, cx| set(&closer, false, cx))
+            .when_some(bounds, |palette, area| palette.usable_bounds(area))
             .on_switch(move |value, _, cx| remember(&order, value, 6, cx))
     });
     section(
@@ -238,6 +260,7 @@ pub fn quick_switcher(window: &mut Window, cx: &mut App) -> impl IntoElement + u
         probe(
             "switcher",
             Button::new("switcher-button", "Switch")
+                .debug_selector(|| "gallery-quick-switcher".into())
                 .icon(IconName::Layers)
                 .on_click(move |_, _, cx| set(&opener, true, cx)),
         ),
@@ -365,9 +388,15 @@ fn search(query: &str) -> Vec<(SharedString, Vec<Choice>)> {
         .collect()
 }
 
-pub fn search_palette(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn search_palette(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<Bounds<Pixels>>,
+) -> impl IntoElement + use<> {
+    let inline = cfg!(any(target_os = "ios", target_os = "android")) || cx.theme().touch_mode;
     let open = keep("search-open", || false, window, cx);
     let went = keep("search-went", || None::<SharedString>, window, cx);
+    let result = went.read(cx).clone();
     let caption = went
         .read(cx)
         .clone()
@@ -375,13 +404,15 @@ pub fn search_palette(window: &mut Window, cx: &mut App) -> impl IntoElement + u
             format!("opened {value}")
         });
     let (opener, closer, launched) = (open.clone(), open.clone(), went.clone());
+    let inline_opener = open.clone();
     let palette = (*open.read(cx)).then(|| {
         SearchPalette::new("search", search, move |_, cx| set(&closer, false, cx))
+            .when_some(bounds, |palette, area| palette.usable_bounds(area))
             .on_open(move |value, _, cx| set(&went, Some(value.clone()), cx))
     });
     section(
         "SearchPalette / SpotlightSearch / QuickLauncher",
-        "One field searches everywhere and marks each match. As a launcher it opens alone, above every window, and closes when you look away.",
+        if inline { "SearchPalette searches in this surface. The launcher entry uses the same real inline search; it does not open an OS QuickLauncher window." } else { "One field searches everywhere and marks each match. As a launcher it opens alone, above every window, and closes when you look away." },
         cx,
     )
     .child(
@@ -391,19 +422,25 @@ pub fn search_palette(window: &mut Window, cx: &mut App) -> impl IntoElement + u
                 probe(
                     "search",
                     Button::new("search-button", "Search everything")
+                        .debug_selector(|| "gallery-search-open".into())
                         .icon(IconName::Search)
                         .on_click(move |_, _, cx| set(&opener, true, cx)),
                 ),
                 cx,
-            ))
+            ).debug_selector(move || format!("gallery-search-result-{}", result.as_deref().unwrap_or("none"))))
             .child(native_only(specimen(
-                "a window above all others",
+                if inline { "inline search; native QuickLauncher unavailable here" } else { "a window above all others" },
                 probe(
                     "launcher",
-                    Button::new("launcher-button", "Open the launcher")
+                    Button::new("launcher-button", if inline { "Open inline search" } else { "Open the launcher" })
+                        .debug_selector(|| "gallery-launcher-open".into())
                         .variant(ButtonVariant::Ghost)
                         .icon(IconName::Rocket)
                         .on_click(move |_, _, cx| {
+                            if inline {
+                                set(&inline_opener, true, cx);
+                                return;
+                            }
                             let went = launched.clone();
                             let opened = QuickLauncher::open(
                                 search,

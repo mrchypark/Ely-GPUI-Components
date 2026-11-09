@@ -60,7 +60,12 @@ impl RenderOnce for ActionBar {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
-        let bar = self.base.flex().items_center().gap_2();
+        let bar = self
+            .base
+            .flex()
+            .items_center()
+            .gap_2()
+            .when(theme.touch_mode, |el| el.gap(theme.touch_spacing()));
         let bar = if self.floating {
             bar.p_1p5()
                 .rounded_full()

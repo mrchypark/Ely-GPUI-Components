@@ -30,8 +30,9 @@ struct Radios {
 }
 
 fn release(key: &str, cx: &mut VisualTestContext) {
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).unwrap(),
+        keystroke: Keystroke::parse_with_os(key, os).unwrap(),
     });
 }
 

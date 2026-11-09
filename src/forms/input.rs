@@ -109,6 +109,7 @@ impl RenderOnce for Input {
                     frame.items_center().h(theme.control_height(self.size))
                 }
             })
+            .map(|frame| theme.touch_target(frame))
             .rounded(theme.radius(Radius::Md))
             .border_1()
             .border_color(border)

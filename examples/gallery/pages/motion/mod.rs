@@ -64,7 +64,11 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(loading::spinners(cx))
         .child(loading::skeletons(cx))

@@ -154,12 +154,16 @@ impl RenderOnce for TreeTable {
             let mut first = Some(first);
             div()
                 .id((self.id.clone(), format!("row-{}", row.key)))
+                .debug_selector(|| format!("tree-table-row-{}", row.key))
                 .flex()
                 .items_center()
                 .h(height)
+                .min_h(theme.touch_minimum(height.to_pixels(window.rem_size())))
                 .border_b_1()
                 .border_color(colors.border)
                 .hover(|style| style.bg(colors.hover))
+                // A phone never hovers, so the press itself shows the row pressed.
+                .active(|style| style.bg(colors.hover))
                 .text_size(theme.text_size(TextSize::Sm))
                 .children(columns.iter().enumerate().map(|(col, column)| {
                     let cell = sized(

@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, Entity, IntoElement, ParentElement, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::*,
+    App, Bounds, ElementId, Entity, IntoElement, ParentElement, Pixels, RenderOnce, Role,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
 use super::{Close, Dialog};
@@ -25,6 +25,7 @@ fn said(
     let colors = &theme.colors;
     div()
         .id((id.clone(), "said"))
+        .debug_selector(|| "dialog-message".into())
         .role(Role::Label)
         .aria_label(message.clone())
         .flex()
@@ -60,6 +61,7 @@ fn said(
 #[derive(IntoElement)]
 pub struct AlertDialog {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     severity: Severity,
     title: SharedString,
     message: SharedString,
@@ -77,12 +79,19 @@ impl AlertDialog {
     ) -> Self {
         Self {
             id: id.into(),
+            usable_bounds: None,
             severity,
             title: title.into(),
             message: message.into(),
             label: "OK".into(),
             on_close: Rc::new(on_close),
         }
+    }
+
+    /// Uses logical window bounds supplied by the host, including keyboard avoidance.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 
     /// The button's label, OK unless set.
@@ -98,6 +107,9 @@ impl RenderOnce for AlertDialog {
         let id = self.id.clone();
         let on_close = self.on_close;
         Dialog::new(self.id, self.title, move |window, cx| on_close(window, cx))
+            .when_some(self.usable_bounds, |dialog, bounds| {
+                dialog.usable_bounds(bounds)
+            })
             .held()
             .child(said(&id, Some(self.severity), self.message, cx))
             .action(move |close| {
@@ -112,6 +124,7 @@ impl RenderOnce for AlertDialog {
 #[derive(IntoElement)]
 pub struct ConfirmDialog {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     title: SharedString,
     message: SharedString,
     confirm: SharedString,
@@ -130,6 +143,7 @@ impl ConfirmDialog {
     ) -> Self {
         Self {
             id: id.into(),
+            usable_bounds: None,
             title: title.into(),
             message: message.into(),
             confirm: "Confirm".into(),
@@ -137,6 +151,12 @@ impl ConfirmDialog {
             on_confirm: None,
             on_close: Rc::new(on_close),
         }
+    }
+
+    /// Uses logical window bounds supplied by the host, including keyboard avoidance.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 
     /// The confirming button's label.
@@ -168,6 +188,9 @@ impl RenderOnce for ConfirmDialog {
         let on_close = self.on_close;
         let cancel = i18n::text(cx, "dialog.cancel", &[]);
         Dialog::new(self.id, self.title, move |window, cx| on_close(window, cx))
+            .when_some(self.usable_bounds, |dialog, bounds| {
+                dialog.usable_bounds(bounds)
+            })
             .child(said(&id, None, self.message, cx))
             .action(move |close| {
                 Button::new(cancel_id, cancel)
@@ -196,6 +219,7 @@ type Send = Rc<dyn Fn(&Close, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct PromptDialog {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     title: SharedString,
     field: Entity<TextInput>,
     label: Option<SharedString>,
@@ -214,6 +238,7 @@ impl PromptDialog {
     ) -> Self {
         Self {
             id: id.into(),
+            usable_bounds: None,
             title: title.into(),
             field: field.clone(),
             label: None,
@@ -222,6 +247,12 @@ impl PromptDialog {
             on_submit: None,
             on_close: Rc::new(on_close),
         }
+    }
+
+    /// Uses logical window bounds supplied by the host, including keyboard avoidance.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
@@ -250,13 +281,7 @@ impl PromptDialog {
 impl RenderOnce for PromptDialog {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let primed = window.use_keyed_state((self.id.clone(), "primed"), cx, |_, _| false);
-        if !*primed.read(cx) {
-            primed.update(cx, |primed, _| *primed = true);
-            self.field.update(cx, |input, cx| {
-                let end = input.text().len();
-                input.select(0..end, cx);
-            });
-        }
+        let prime_field = self.field.clone();
         let text = self.field.read(cx).text().to_string();
         let verdict = match &self.check {
             Some(check) => check(&text),
@@ -289,6 +314,7 @@ impl RenderOnce for PromptDialog {
         let colors = &theme.colors;
         let (button, lifted) = (send.clone(), send);
         let field = div()
+            .debug_selector(|| "prompt-dialog-field".into())
             .flex()
             .flex_col()
             .gap_1p5()
@@ -323,7 +349,19 @@ impl RenderOnce for PromptDialog {
         let cancel = i18n::text(cx, "dialog.cancel", &[]);
         let on_close = self.on_close;
         Dialog::new(self.id, self.title, move |window, cx| on_close(window, cx))
+            .when_some(self.usable_bounds, |dialog, bounds| {
+                dialog.usable_bounds(bounds)
+            })
             .focus_first(self.field.read(cx).focus().clone())
+            .on_show(move |_, cx| {
+                if !*primed.read(cx) {
+                    primed.update(cx, |primed, _| *primed = true);
+                    prime_field.update(cx, |input, cx| {
+                        let end = input.text().len();
+                        input.select(0..end, cx);
+                    });
+                }
+            })
             .on_enter(move |close| Rc::new(move |window, cx| lifted(&close, window, cx)))
             .child(field)
             .action(move |close| {

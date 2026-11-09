@@ -133,8 +133,17 @@ impl RenderOnce for HexViewer {
                     };
                     let cell = |at: usize, text: String, key: &str| {
                         let (pick, hover) = (on_select.clone(), hovered.clone());
+                        let pressed = hovered.clone();
+                        let glowing = lit == Some(at);
                         div()
                             .id((id.clone(), format!("{key}-{at}")))
+                            .debug_selector(|| {
+                                if glowing {
+                                    format!("hex-byte-lit-{key}-{at}")
+                                } else {
+                                    format!("hex-byte-{key}-{at}")
+                                }
+                            })
                             .px_0p5()
                             .when_some(wash(at), |cell, wash| cell.bg(wash))
                             .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
@@ -147,8 +156,15 @@ impl RenderOnce for HexViewer {
                                     }
                                 })
                             })
-                            .on_mouse_down(MouseButton::Left, |_, window, _| {
-                                window.prevent_default()
+                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                                window.prevent_default();
+                                // A tap has no pointer to hover, so the press lights the byte.
+                                pressed.update(cx, |hovered, cx| {
+                                    if *hovered != Some(at) {
+                                        *hovered = Some(at);
+                                        cx.notify();
+                                    }
+                                })
                             })
                             .when_some(pick, |cell, pick| {
                                 cell.on_click(move |_, window, cx| pick(at, window, cx))

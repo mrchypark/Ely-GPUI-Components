@@ -3,11 +3,13 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 use gpui::{
     AppContext as _, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
     KeyBinding, KeyUpEvent, Keystroke, Modifiers, ParentElement, Pixels, Render, ScrollDelta,
-    ScrollWheelEvent, Styled, TestAppContext, TouchPhase, VisualTestContext, Window, canvas, div,
-    point, px,
+    ScrollEvent, Styled, TestAppContext, TouchPhase, VisualTestContext, Window, canvas, div, point,
+    px,
 };
 
+mod dialogs_bounds;
 mod guides;
+mod touch;
 
 use super::{AlertDialog, ConfirmDialog, Dialog, HoverCard, Popover, PromptDialog};
 use crate::{
@@ -169,8 +171,9 @@ pub(super) fn settle(cx: &mut VisualTestContext) {
 pub(super) fn press(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
     settle(cx);
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).expect("a key"),
+        keystroke: Keystroke::parse_with_os(key, os).expect("a key"),
     });
     settle(cx);
 }
@@ -447,11 +450,12 @@ fn a_tall_dialog_body_keeps_its_height_and_scrolls(cx: &mut TestAppContext) {
     let middle = cx
         .update(|window, _| window.viewport_size())
         .map(|side| side / 2.0);
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: point(middle.width, middle.height),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-300.0))),
         modifiers: Modifiers::none(),
         touch_phase: TouchPhase::Moved,
+        source: Default::default(),
     });
     settle(cx);
     assert_eq!(

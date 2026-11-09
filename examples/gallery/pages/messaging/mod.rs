@@ -250,13 +250,17 @@ fn pins(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(channels(window, cx))
         .child(items(cx))
         .child(header(cx))
         .child(pins(window, cx))
-        .child(messages::conversation(window, cx))
+        .child(messages::conversation(window, cx, bounds))
         .child(messages::thread(window, cx))
         .child(messages::receipts(cx))
         .child(people::members(window, cx))

@@ -72,8 +72,9 @@ fn settle(cx: &mut VisualTestContext) {
 fn press(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
     cx.run_until_parked();
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).expect("a key"),
+        keystroke: Keystroke::parse_with_os(key, os).expect("a key"),
     });
     cx.run_until_parked();
 }

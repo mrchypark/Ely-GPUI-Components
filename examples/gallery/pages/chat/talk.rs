@@ -9,7 +9,10 @@ use ely_gpui_component::{
     primitives::IconName,
     theme::{ActiveTheme, Radius},
 };
-use gpui::{App, ElementId, IntoElement, ParentElement, Styled, Task, Window, div, px};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    App, ElementId, InteractiveElement, IntoElement, ParentElement, Styled, Task, Window, div, px,
+};
 use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
 
 use crate::{
@@ -75,7 +78,12 @@ fn rows(today: Date) -> Vec<Row> {
 fn row(ix: usize, row: &Row, today: Date, now: Timestamp) -> gpui::AnyElement {
     let key = |what: &str| (ElementId::from("chat-row"), format!("{what}-{ix}"));
     let body = match row {
-        Row::Day(day) => return DateSeparator::new(*day, today).into_any_element(),
+        Row::Day(day) => {
+            return div()
+                .debug_selector(move || format!("gallery-chat-day-{ix}"))
+                .child(DateSeparator::new(*day, today))
+                .into_any_element();
+        }
         Row::Note(text) => MessageBubble::new(Role::System).child(*text),
         Row::Said {
             role,
@@ -93,7 +101,11 @@ fn row(ix: usize, row: &Row, today: Date, now: Timestamp) -> gpui::AnyElement {
             let bubble = MessageBubble::new(*role)
                 .avatar(MessageAvatar::new(key("avatar"), *role, *name))
                 .header(header)
-                .child(StreamingMarkdown::new(key("text"), *text, *live));
+                .child(
+                    div()
+                        .debug_selector(move || format!("gallery-chat-markdown-{ix}"))
+                        .child(StreamingMarkdown::new(key("text"), *text, *live)),
+                );
             match (role, live) {
                 (Role::Assistant, false) => bubble.footer(
                     MessageFooter::new().fact("412 tokens").fact("2.1 s").child(
@@ -111,7 +123,12 @@ fn row(ix: usize, row: &Row, today: Date, now: Timestamp) -> gpui::AnyElement {
             }
         }
     };
-    div().px_6().py_3().child(body).into_any_element()
+    div()
+        .px_6()
+        .py_3()
+        .debug_selector(move || format!("gallery-chat-row-{ix}"))
+        .child(body)
+        .into_any_element()
 }
 
 pub fn conversation(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
@@ -131,6 +148,8 @@ pub fn conversation(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         "chat-conversation",
         div()
             .w(px(760.))
+            .when(theme.touch_mode, |view| view.w_full().min_w_0())
+            .debug_selector(|| "gallery-chat-frame".into())
             .h(px(600.))
             .rounded(theme.radius(Radius::Lg))
             .border_1()
@@ -139,7 +158,7 @@ pub fn conversation(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(ChatContainer::new(MessageList::new("chat-messages", count, move |ix, _, _| {
                 row(ix, &all[ix], today, now)
             }))),
-    ))
+    ).when(theme.touch_mode, |host| host.flex_col()))
 }
 
 /// The demo stream: how much of it has arrived, whether more is coming, and the task that feeds it.

@@ -14,6 +14,8 @@ mod sheet;
 
 #[cfg(all(test, feature = "test-support"))]
 mod tests;
+#[cfg(all(test, feature = "test-support"))]
+mod touch_tests;
 
 pub use bars::{ActionBar, BulkActionBar};
 pub(crate) use button::shortcut_text;

@@ -43,27 +43,36 @@ fn progress_line(state: UpdateState) -> Option<AnyElement> {
     }
 }
 
-fn buttons(state: UpdateState, actions: &Actions, size: ControlSize) -> Vec<Button> {
-    let wire = |button: Button, action: &Option<Action>| {
+fn buttons(
+    state: UpdateState,
+    actions: &Actions,
+    size: ControlSize,
+    prefix: &'static str,
+) -> Vec<Button> {
+    let wire = |button: Button, action: &Option<Action>, name: &'static str| {
         action.clone().map(|action| {
             button
                 .size(size)
+                .debug_selector(|| format!("{prefix}-{name}"))
                 .on_click(move |_, window, cx| action(window, cx))
         })
     };
     let later = wire(
         Button::new("update-later", "Later").variant(ButtonVariant::Ghost),
         &actions.later,
+        "later",
     );
     let main = match state {
         UpdateState::Available => wire(
             Button::new("update-download", "Download").primary(),
             &actions.download,
+            "download",
         ),
         UpdateState::Downloading(_) => None,
         UpdateState::Ready => wire(
             Button::new("update-restart", "Restart to update").primary(),
             &actions.restart,
+            "restart",
         ),
     };
     later.into_iter().chain(main).collect()
@@ -153,10 +162,12 @@ impl RenderOnce for UpdateBanner {
                     ..self.actions.clone()
                 },
                 ControlSize::Sm,
+                "shell-update-banner",
             ))
             .when_some(dismiss, |banner, dismiss| {
                 banner.child(
                     IconButton::new("update-dismiss", IconName::X)
+                        .debug_selector(|| "shell-update-banner-dismiss".into())
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| dismiss(window, cx)),
                 )
@@ -265,6 +276,7 @@ impl RenderOnce for UpdateDialog {
                 self.state,
                 &self.actions,
                 ControlSize::Md,
+                "shell-update-dialog",
             )))
     }
 }

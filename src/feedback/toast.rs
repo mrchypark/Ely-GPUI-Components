@@ -2,9 +2,9 @@ use std::{rc::Rc, time::Duration};
 
 use gpui::{
     Anchor, Animation, AnimationExt, AnyElement, App, ClickEvent, Context, ElementId, Entity,
-    FontWeight, HoverListenerMode, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Task, Window, anchored, canvas,
-    div, point, prelude::*, relative,
+    FontWeight, HoverListenerMode, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Task, Window, anchored,
+    canvas, div, point, prelude::*, relative,
 };
 use web_time::Instant;
 
@@ -20,6 +20,8 @@ use crate::{
 const STAY: Duration = Duration::from_secs(5);
 /// A toast past this many sends the oldest away.
 const MOST: usize = 4;
+/// How long a tap holds a toast open before it goes on its way.
+const HELD: Duration = Duration::from_secs(5);
 
 /// A short message for a `ToastViewport`. With an action it is a snackbar; with `undo` it counts down.
 #[derive(Clone)]
@@ -95,6 +97,9 @@ pub struct Toaster {
     pub(super) live: Vec<Live>,
     next: u64,
     held: bool,
+    pointer: bool,
+    tapped: bool,
+    release: Option<Task<()>>,
 }
 
 impl Toaster {
@@ -175,6 +180,41 @@ impl Toaster {
         }
         cx.notify();
     }
+
+    /// The pointer is on the stack, or left it; the clocks wait while it is.
+    fn pointed(&mut self, inside: bool, cx: &mut Context<Self>) {
+        // A finger has no pointer to leave: the tap holds the toast on its own.
+        if cx.theme().touch_mode {
+            return;
+        }
+        self.pointer = inside;
+        if !inside {
+            self.tapped = false;
+        }
+        self.hold(inside || self.tapped, cx);
+    }
+
+    /// A tap holds the toast open while it is read; it leaves when the time is up.
+    fn tapped(&mut self, cx: &mut Context<Self>) {
+        // A second tap must not cancel the first release: the older timer ends the hold sooner.
+        if self.tapped {
+            return;
+        }
+        self.tapped = true;
+        self.hold(true, cx);
+        let until = cx.background_executor().timer(HELD);
+        // The task is kept, for a task dropped is a task cancelled.
+        self.release = Some(cx.spawn(async move |toaster, cx| {
+            until.await;
+            let released = toaster.update(cx, |toaster, cx| {
+                toaster.tapped = false;
+                toaster.hold(toaster.pointer, cx);
+            });
+            if let Err(error) = released {
+                log::error!("toasts: the toaster went first: {error:#}");
+            }
+        }));
+    }
 }
 
 /// Starts a toast's clock; at zero the toast is dismissed.
@@ -218,19 +258,29 @@ impl RenderOnce for ToastViewport {
         let (width, margin) = (theme.toast_width(), theme.window_margin());
         let viewport = window.viewport_size();
         let hold = self.toaster.clone();
+        let tapped = self.toaster.clone();
         let mut cards = Vec::new();
         for ix in 0..self.toaster.read(cx).live.len() {
             cards.push(card(&self.id, ix, &self.toaster, window, cx));
         }
         let stack = div()
             .id(self.id.clone())
+            .debug_selector(|| "toast-stack".into())
             .occlude()
             .flex()
             .flex_col()
             .w(width)
-            .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
-            .on_hover(move |hovered, _, cx| {
-                hold.update(cx, |toaster, cx| toaster.hold(*hovered, cx))
+            // A finger has no hover to leave, so the pointer never holds the clock on touch.
+            .when(!cx.theme().touch_mode, |stack| {
+                stack
+                    .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
+                    .on_hover(move |hovered, _, cx| {
+                        hold.update(cx, |toaster, cx| toaster.pointed(*hovered, cx))
+                    })
+            })
+            // A tap has no pointer to hover, so the press holds the toast open.
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                tapped.update(cx, |toaster, cx| toaster.tapped(cx))
             })
             .children(cards);
         raise(

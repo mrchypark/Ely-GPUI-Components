@@ -50,14 +50,18 @@ const SCRIPT: &[Step] = &[
     Step::Key("escape"),
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(flows::wizard(window, cx))
-        .child(flows::highlights(window, cx))
+        .child(flows::highlights(window, cx, bounds))
         .child(flows::checklist(window, cx))
-        .child(help::tips(window, cx))
+        .child(help::tips(window, cx, bounds))
         .child(help::panel(window, cx))
         .child(help::dialogs(window, cx))
-        .child(help::feedback(window, cx))
+        .child(help::feedback(window, cx, bounds))
         .into_any_element()
 }

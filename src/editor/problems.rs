@@ -183,6 +183,7 @@ impl RenderOnce for ProblemsPanel {
                 rows.push(
                     div()
                         .id((self.id.clone(), format!("problem-{file_ix}-{ix}")))
+                        .debug_selector(|| format!("editor-problem-{file_ix}-{ix}"))
                         .flex()
                         .items_center()
                         .gap_2()
@@ -190,6 +191,8 @@ impl RenderOnce for ProblemsPanel {
                         .pr_2()
                         .py_0p5()
                         .rounded(theme.radius(Radius::Sm))
+                        // A finger needs a row it can land on.
+                        .map(|row| theme.touch_target(row))
                         .cursor_pointer()
                         .hover(|row| row.bg(colors.hover))
                         .text_size(theme.text_size(TextSize::Sm))

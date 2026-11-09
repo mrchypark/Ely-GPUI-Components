@@ -138,6 +138,7 @@ impl RenderOnce for TabBar {
             let (lit, edge) = (colors.hover, colors.focus);
             div()
                 .id(tab.id.clone())
+                .debug_selector(|| format!("window-tab-{}", tab.id))
                 .group(group.clone())
                 .flex()
                 .flex_1()
@@ -146,6 +147,7 @@ impl RenderOnce for TabBar {
                 .min_w(narrow)
                 .max_w(wide)
                 .h(theme.control_height(ControlSize::Md))
+                .map(|tab| theme.touch_target(tab))
                 .pl_3()
                 .pr_1()
                 .rounded(theme.radius(Radius::Md))
@@ -203,10 +205,16 @@ impl RenderOnce for TabBar {
                         .child(Ellipsis::new(tab.title.clone())),
                 )
                 .when_some(close, |el, close| {
+                    let named = tab.id.clone();
                     el.child(
                         div()
-                            .when(!selected, |slot| {
+                            .when(!selected && !theme.touch_mode, |slot| {
                                 slot.invisible().group_hover(group, |style| style.visible())
+                            })
+                            .when(theme.touch_mode, |slot| {
+                                slot.debug_selector(move || {
+                                    format!("window-tab-close-touch {named}")
+                                })
                             })
                             .child(
                                 IconButton::new(("close", ix), IconName::X)

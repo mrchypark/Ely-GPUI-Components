@@ -217,7 +217,11 @@ impl Body {
             .text_size(theme.text_size(TextSize::Sm))
             .text_color(colors.fg)
             .when(on, |row| row.bg(colors.active))
-            .when(!on, |row| row.hover(|style| style.bg(colors.hover)))
+            .when(!on, |row| {
+                row.hover(|style| style.bg(colors.hover))
+                    // A phone never hovers, so the press itself shows the row pressed.
+                    .active(|style| style.bg(colors.hover))
+            })
             .when_some(self.select.clone().filter(|_| lead), |row, select| {
                 row.child(
                     div()
@@ -245,6 +249,11 @@ impl Body {
                     div()
                         .flex_none()
                         .w(self.lead)
+                        .when(theme.touch_mode, |cell| cell.h_full())
+                        .debug_selector({
+                            let key = key.clone();
+                            move || format!("table-expand {key}")
+                        })
                         .flex()
                         .justify_center()
                         .cursor_pointer()
@@ -291,6 +300,11 @@ impl Body {
             .map(|(range, value)| tint(value, range, colors));
         let frame = div()
             .id((self.id.clone(), format!("cell-{}-{col}", row.key)))
+            .debug_selector({
+                let key = row.key.clone();
+                let at = column.key.clone();
+                move || format!("table-cell {key} {at}")
+            })
             .h_full()
             .flex()
             .items_center()
@@ -326,6 +340,12 @@ impl Body {
             ),
         };
         frame
+            .when(
+                cx.theme().touch_mode
+                    && self.view.read(cx).touch_target.as_ref()
+                        == Some(&(row.key.clone(), column.key.clone())),
+                |frame| frame.border_color(colors.accent),
+            )
             .when_some(tinted, |cell, bg| cell.bg(bg))
             .when(
                 column.editable && !editing && self.on_edit.is_some(),
@@ -336,19 +356,27 @@ impl Body {
                         self.on_edit.clone().expect("checked"),
                     );
                     let (key, at, words) = (row.key.clone(), column.key.clone(), cell.words());
+                    let touch = cx.theme().touch_mode;
                     frame.cursor_text().on_click(move |event, window, cx| {
+                        if touch {
+                            view.update(cx, |view, cx| {
+                                view.touch_target = Some((key.clone(), at.clone()));
+                                cx.notify();
+                            });
+                            return;
+                        }
                         if event.click_count() != 2 {
                             return;
                         }
                         cx.stop_propagation();
-                        let (key, at, on_edit) = (key.clone(), at.clone(), on_edit.clone());
-                        view.update(cx, |view, _| view.editing = Some((key.clone(), at.clone())));
-                        editor.update(cx, |editing, _| {
-                            editing.on_commit = Some(Rc::new(move |text, window, cx| {
-                                on_edit(&key, &at, text, window, cx)
-                            }))
-                        });
-                        Editing::begin(&editor, words.to_string(), window, cx);
+                        super::table::touch::begin(
+                            &view,
+                            &editor,
+                            (key.clone(), at.clone(), words.clone()),
+                            on_edit.clone(),
+                            window,
+                            cx,
+                        );
                     })
                 },
             )

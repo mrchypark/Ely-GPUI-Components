@@ -6,6 +6,7 @@ use ely_gpui_component::{
     },
     theme::{ActiveTheme, Radius},
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use super::{board, quiet, studio_labels, team};
@@ -163,7 +164,11 @@ pub fn panel(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-pub fn labels(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn labels(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let labels = keep("project-labels", studio_labels, window, cx);
     let tasks = board(window, cx);
     let listed = labels.read(cx).clone();
@@ -171,6 +176,7 @@ pub fn labels(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         (labels.clone(), labels.clone(), labels.clone(), labels);
     let (renamed_tasks, recolored_tasks, deleted_tasks) = (tasks.clone(), tasks.clone(), tasks);
     let manager = LabelManager::new("project-labels", listed)
+        .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
         .on_rename(move |key, name, _, cx| {
             let name = name.clone();
             change(&renamed, cx, |labels| rename(labels.iter_mut(), key, &name));

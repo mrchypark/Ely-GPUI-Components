@@ -1,4 +1,12 @@
+mod flow_touch;
+mod funnel_touch;
+mod legend_touch;
 mod limits;
+mod network_touch;
+mod pie_touch;
+mod radar_touch;
+mod sunburst_touch;
+mod tiles_touch;
 
 use std::{
     cell::{Cell, RefCell},

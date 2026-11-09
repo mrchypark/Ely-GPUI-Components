@@ -2,13 +2,14 @@ use ely_gpui_component::{
     buttons::IconButton,
     forms::{Input, InputAddon, InputGroup, PasswordInput, SearchInput, TextInput},
     primitives::IconName,
-    theme::ControlSize,
+    theme::{ActiveTheme, ControlSize},
     typography::Caption,
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::{
-    probe::probe,
+    probe::{probe, probe_sized},
     ui::{code, section, specimen, specimens},
 };
 
@@ -78,9 +79,13 @@ pub fn text_area(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> 
         "Several lines. It grows to its content, then scrolls.",
         cx,
     )
-    .child(probe(
+    .child(probe_sized(
         "textarea",
-        div().w(px(420.0)).child(Input::new(&notes)),
+        div()
+            .w(px(420.0))
+            .when(cx.theme().touch_mode, |view| view.w_full().min_w_0())
+            .child(Input::new(&notes)),
+        cx.theme().touch_mode,
     ))
     .child(code("TextInput::new(window, cx).multi_line(3, 6)", cx))
 }

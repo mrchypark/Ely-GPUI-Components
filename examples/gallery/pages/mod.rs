@@ -52,7 +52,7 @@ pub struct Page {
     pub slug: &'static str,
     pub title: &'static str,
     pub summary: &'static str,
-    pub render: fn(&mut Window, &mut App) -> AnyElement,
+    pub render: fn(&mut Window, &mut App, Option<gpui::Bounds<gpui::Pixels>>) -> AnyElement,
     /// Interactions shot after the static pages.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub script: &'static [Step],
@@ -107,6 +107,7 @@ pub const ALL: &[Page] = &[
 
 pub use i18n::install as install_i18n;
 pub use interaction::bind_keys;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub use shell::{open_about, open_managed};
 
 pub fn find(slug: &str) -> Option<usize> {

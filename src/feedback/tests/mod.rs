@@ -7,6 +7,7 @@ use gpui::{
 
 mod loading;
 mod states;
+mod toast_touch;
 
 use super::{Alert, Notification, NotificationCenter, Toast, ToastViewport, Toaster};
 use crate::{
@@ -88,8 +89,9 @@ fn settle(cx: &mut VisualTestContext) {
 fn press(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
     settle(cx);
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).expect("a key"),
+        keystroke: Keystroke::parse_with_os(key, os).expect("a key"),
     });
     settle(cx);
 }

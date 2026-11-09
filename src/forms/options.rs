@@ -112,6 +112,7 @@ pub(crate) fn marked_row(
     let id = id.into();
     let theme = cx.theme();
     let colors = &theme.colors;
+    let name = format!("option-row-{id}");
     let fg = if choice.disabled {
         colors.fg_disabled
     } else {
@@ -119,6 +120,7 @@ pub(crate) fn marked_row(
     };
     div()
         .id(id.clone())
+        .debug_selector(move || name.clone())
         .flex()
         .items_center()
         .gap_2()
@@ -128,7 +130,11 @@ pub(crate) fn marked_row(
         .text_color(fg)
         .when(highlighted && !choice.disabled, |row| row.bg(colors.hover))
         .when(!choice.disabled, |row| {
-            row.cursor_pointer().hover(|style| style.bg(colors.hover))
+            row.cursor_pointer()
+                .hover(|style| style.bg(colors.hover))
+                // A phone never hovers, so the press itself shows the row pressed.
+                .active(|style| style.bg(colors.hover))
+                .map(|row| theme.touch_target(row))
         })
         .when_some(checked, |row, on| {
             row.child(

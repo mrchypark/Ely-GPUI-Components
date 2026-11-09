@@ -33,6 +33,7 @@ pub(crate) fn when(event: &Event, zone: &TimeZone) -> String {
 /// An event's chip that opens its details: its title in its hue, when and where, who comes, and what can be done with it. A press outside or Escape closes them.
 #[derive(IntoElement)]
 pub struct EventPopover {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     event: Event,
     zone: Option<TimeZone>,
@@ -42,8 +43,15 @@ pub struct EventPopover {
 }
 
 impl EventPopover {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, event: Event) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             event,
             zone: None,
@@ -182,5 +190,8 @@ impl RenderOnce for EventPopover {
             },
             details,
         )
+        .when_some(self.usable_bounds, |overlay, bounds| {
+            overlay.usable_bounds(bounds)
+        })
     }
 }

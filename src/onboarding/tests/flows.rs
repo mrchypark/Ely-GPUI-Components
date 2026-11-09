@@ -1,3 +1,5 @@
+mod bounds;
+
 use gpui::{AnyElement, Entity, IntoElement, ParentElement, TestAppContext, div, px};
 
 use super::{Bench, bench, edit, said, say, settle, tab, tap};
@@ -175,6 +177,7 @@ fn after_got_it_tab_reaches_the_next_stop(cx: &mut TestAppContext) {
     tap("tab", cx);
     tap("space", cx);
     assert_eq!(said(&host, cx), ["seen", "after"]);
+    bounds::bounded_dismiss_after_shrink(cx);
 }
 
 fn highlight(_: &Bench, owner: Entity<Bench>) -> AnyElement {

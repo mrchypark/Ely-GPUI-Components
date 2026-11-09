@@ -128,6 +128,7 @@ impl RenderOnce for Radio {
         div()
             .id(self.id)
             .role(Role::RadioButton)
+            .map(|row| theme.touch_target(row))
             .aria_toggled(on.into())
             .when_some(self.label.clone(), |row, label| row.aria_label(label))
             .when(self.disabled, |row| {
@@ -252,6 +253,10 @@ impl RenderOnce for RadioGroup {
             .flex()
             .when(self.horizontal, |group| group.flex_row().gap_4())
             .when(!self.horizontal, |group| group.flex_col().gap_2())
+            .when(cx.theme().touch_mode, |group| {
+                let gap = window.rem_size() * if self.horizontal { 1.0 } else { 0.5 };
+                group.gap(gap.max(cx.theme().touch_spacing()))
+            })
             .on_key_down(move |event, window, cx| {
                 let by = match event.keystroke.key.as_str() {
                     "up" | "left" => -1,

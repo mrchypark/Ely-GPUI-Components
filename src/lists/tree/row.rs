@@ -171,9 +171,17 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
     };
     div()
         .id((rows.id.clone(), format!("node-{key}")))
+        .debug_selector(|| format!("tree-row-{key}"))
         .relative()
         .w_full()
         .h(theme.control_height(ControlSize::Md))
+        .min_h(
+            theme.touch_minimum(
+                theme
+                    .control_height(ControlSize::Md)
+                    .to_pixels(window.rem_size()),
+            ),
+        )
         .flex()
         .items_center()
         .gap_1()
@@ -182,7 +190,11 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
         .text_size(theme.text_size(TextSize::Sm))
         .text_color(colors.fg)
         .when(selected, |row| row.bg(colors.active))
-        .when(!selected, |row| row.hover(|style| style.bg(colors.hover)))
+        .when(!selected, |row| {
+            row.hover(|style| style.bg(colors.hover))
+                // A phone never hovers, so the press itself shows the row pressed.
+                .active(|style| style.bg(colors.hover))
+        })
         .when(landing == Some(DropAt::Inside), |row| {
             row.bg(colors.selection)
         })

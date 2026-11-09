@@ -7,6 +7,11 @@ pub const CUSTOM_ICON: &str = "app-icons/mark.svg";
 
 pub struct GalleryAssets;
 
+/// Desktop/web examples already use filesystem paths or URLs.
+pub fn file(path: &str) -> SharedString {
+    path.to_owned().into()
+}
+
 impl AssetSource for GalleryAssets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
         if path == CUSTOM_ICON {

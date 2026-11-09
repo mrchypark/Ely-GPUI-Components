@@ -1,3 +1,4 @@
+use gpui::prelude::FluentBuilder as _;
 use std::collections::HashMap;
 
 use ely_gpui_component::primitives::Measure;
@@ -21,10 +22,17 @@ impl Probes {
 
 /// Wraps `element`, sized to it, so scripts can find it by `key`.
 pub fn probe(key: &'static str, element: impl IntoElement) -> Div {
+    probe_sized(key, element, false)
+}
+
+/// Fill an allocated caller width without letting the measurement flex item
+/// impose its child's intrinsic width. Existing probes retain content sizing.
+pub fn probe_sized(key: &'static str, element: impl IntoElement, fill: bool) -> Div {
     div().flex().child(
         Measure::new(key, move |bounds, _, cx| {
             cx.default_global::<Probes>().0.insert(key, bounds);
         })
+        .when(fill, |measure| measure.flex_1().min_w_0().w_full())
         .child(element),
     )
 }

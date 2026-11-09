@@ -20,6 +20,11 @@ impl TextInput {
 }
 
 impl EntityInputHandler for TextInput {
+    fn accepts_text_input(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.report_input_owner(window, cx);
+        true
+    }
+
     fn paste(&mut self, item: ClipboardItem, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = item.text() {
             self.replace(self.selection.clone(), &text, false, cx);

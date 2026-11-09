@@ -4,6 +4,8 @@ use gpui::{App, Window};
 
 mod disasm;
 mod flame;
+#[cfg(all(test, feature = "test-support"))]
+mod flame_touch;
 mod hex;
 mod network;
 mod session;

@@ -42,6 +42,7 @@ Ely GPUI Component. A component library for GPUI, in light and dark.
 
 ## Rules
 
+- Mobile hosts supply logical window bounds and insets; Ely owns layout policy without depending on a mobile backend. Canvas adapters subtract the painted canvas origin and choose raw contacts or recognized pinch exclusively, suppressing duplicate synthesized input.
 - Colors, control and icon sizes, text sizes, radii, shadows come from `cx.theme()`. No raw `px()` literals inside components.
 - Gaps and padding use gpui's rem scale helpers (`gap_2`, `px_3`). That scale is the spacing system.
 - Borders use gpui's fixed-pixel helpers (`border_1` is 1px). Hairlines do not scale.

@@ -196,6 +196,7 @@ impl RenderOnce for ZoomControl {
             .gap_0p5()
             .child(
                 IconButton::new("zoom-out", IconName::ZoomOut)
+                    .debug_selector(|| "shell-zoom-out".into())
                     .size(ControlSize::Sm)
                     .disabled(down.is_none())
                     .when_some(down, |button, next| {
@@ -205,10 +206,19 @@ impl RenderOnce for ZoomControl {
             .child(
                 div()
                     .id("zoom-reset")
+                    .debug_selector(|| "shell-zoom-reset".into())
                     .flex()
                     .items_center()
                     .justify_center()
                     .min_w(theme.control_height(ControlSize::Lg) * 1.5)
+                    .when(theme.touch_mode, |el| {
+                        theme.touch_target(el).min_w(
+                            theme.touch_minimum(
+                                (theme.control_height(ControlSize::Lg) * 1.5)
+                                    .to_pixels(window.rem_size()),
+                            ),
+                        )
+                    })
                     .h(theme.control_height(ControlSize::Sm))
                     .rounded_full()
                     .cursor_pointer()
@@ -219,6 +229,7 @@ impl RenderOnce for ZoomControl {
             )
             .child(
                 IconButton::new("zoom-in", IconName::ZoomIn)
+                    .debug_selector(|| "shell-zoom-in".into())
                     .size(ControlSize::Sm)
                     .variant(ButtonVariant::Ghost)
                     .disabled(up.is_none())

@@ -133,6 +133,7 @@ fn traffic_lights(
             div()
                 .id(SharedString::from(format!("{control:?}")))
                 .size(theme.traffic_light())
+                .map(|light| theme.touch_target(light))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -192,6 +193,7 @@ fn caption_buttons(
                 .justify_center()
                 .w(theme.caption_button_width())
                 .h(height)
+                .map(|button| theme.touch_target(button))
                 .debug_selector(move || format!("caption-{control:?}"))
                 .window_control_area(area)
                 .hover(|style| style.bg(hover))
@@ -238,6 +240,7 @@ fn round_buttons(
                         .items_center()
                         .justify_center()
                         .size(theme.control_height(ControlSize::Sm))
+                        .map(|button| theme.touch_target(button))
                         .rounded_full()
                         .bg(colors.hover)
                         .hover(|style| style.bg(colors.active))
@@ -354,6 +357,34 @@ impl RenderOnce for TitleBar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         if self.platform.is_none() {
             route_close(&self.id, self.on_close.clone(), window, cx);
+        }
+        if cx.theme().touch_mode {
+            let theme = cx.theme();
+            return div()
+                .id(self.id)
+                .debug_selector(|| "titlebar-touch".into())
+                .flex()
+                .flex_none()
+                .flex_wrap()
+                .items_center()
+                .gap_2()
+                .px_3()
+                .min_h(theme.touch_minimum(theme.titlebar_height().to_pixels(window.rem_size())))
+                .bg(theme.colors.bg)
+                .border_b_1()
+                .border_color(theme.colors.border)
+                .children(self.leading)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(theme.text_size(TextSize::Sm))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.colors.fg_muted)
+                        .debug_selector(|| "titlebar-title".into())
+                        .children(self.title.map(Ellipsis::new)),
+                )
+                .children(self.actions);
         }
         let bar = drag_region(self.id, window, cx);
         let (system, style) = controls_style(self.platform, cx);

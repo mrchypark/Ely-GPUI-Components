@@ -1,8 +1,8 @@
-use std::rc::Rc;
+use std::{collections::HashSet, rc::Rc};
 
 use gpui::{
     AnyElement, App, Context, ElementId, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Rems, Render, SharedString, Styled, Window, div, prelude::*,
+    ParentElement, Rems, Render, SharedString, Styled, Window, div, prelude::*, px,
 };
 
 use super::{Block, BlockData, BlockEditor, BlockKind, matching};
@@ -182,6 +182,11 @@ impl Render for BlockEditor {
         let look = Look::new(cx);
         let colors = look.colors.clone();
         let focused = self.focused(window, cx).map(|(key, _)| key);
+        let touch = cx.theme().touch_mode;
+        // A phone never hovers, so a press on a block reveals its gutter.
+        let revealed =
+            window.use_keyed_state((id.clone(), "gutter"), cx, |_, _| HashSet::<u64>::new());
+        let shown: HashSet<u64> = revealed.read(cx).clone();
         let mut number = 0;
         let mut rows: Vec<(SharedString, AnyElement)> = Vec::new();
         for ix in 0..self.blocks.len() {
@@ -213,8 +218,17 @@ impl Render for BlockEditor {
                     .icon(IconName::GripVertical)
                     .tooltip("Drag to move, press for more");
             let content = self.content(&self.blocks[ix], number, &look, window, cx);
+            let press = revealed.clone();
+            let open = touch || focused == Some(key) || shown.contains(&key);
             let row = div()
                 .id((id.clone(), format!("row-{key}")))
+                .debug_selector(|| "block-row".to_string())
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    press.update(cx, |revealed, cx| {
+                        revealed.insert(key);
+                        cx.notify();
+                    });
+                })
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |editor, _, window, cx| {
@@ -241,8 +255,18 @@ impl Render for BlockEditor {
                         .top_0()
                         .left_0()
                         .flex()
-                        .opacity(if focused == Some(key) { 1.0 } else { 0.0 })
+                        .when(touch, |gutter| gutter.min_w(px(48.)).min_h(px(48.)))
+                        .opacity(if open { 1.0 } else { 0.0 })
                         .group_hover(group, |gutter| gutter.opacity(1.0))
+                        .debug_selector(move || {
+                            if touch {
+                                "block-gutter-touch".to_string()
+                            } else if open {
+                                "block-gutter-revealed".to_string()
+                            } else {
+                                "block-gutter".to_string()
+                            }
+                        })
                         .child(plus)
                         .child(handle),
                 );

@@ -1,3 +1,5 @@
+mod bounds;
+
 use gpui::{Entity, IntoElement, TestAppContext};
 use jiff::{civil::date, tz::TimeZone};
 
@@ -111,4 +113,5 @@ fn a_chip_opens_its_details_and_edit_names_it(cx: &mut TestAppContext) {
         focused, chip,
         "Edit closes the details and hands focus back to the chip"
     );
+    bounds::bounded_edit_after_shrink(cx);
 }

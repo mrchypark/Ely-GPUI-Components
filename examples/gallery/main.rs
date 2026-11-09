@@ -21,6 +21,8 @@ macro_rules! asset {
 }
 
 mod assets;
+mod menu_model;
+use menu_model::{DarkMode, LightMode};
 #[cfg(not(target_family = "wasm"))]
 mod capture;
 mod pages;
@@ -51,18 +53,11 @@ use gpui::{
     WindowBounds, WindowHandle, WindowOptions, actions, point, px, size,
 };
 
-actions!(gallery, [Quit, About, LightMode, DarkMode, NewWindow]);
+actions!(gallery, [Quit, About, NewWindow]);
 
 /// The gallery's menu bar, drawn natively and by MenuBar.
 pub fn app_menus() -> Vec<Menu> {
-    let view = Menu {
-        name: "View".into(),
-        items: vec![
-            MenuItem::action("Light", LightMode),
-            MenuItem::action("Dark", DarkMode),
-        ],
-        disabled: false,
-    };
+    let view = menu_model::view_menu();
     // A page opens no second window and cannot quit.
     if cfg!(target_family = "wasm") {
         return vec![view];
