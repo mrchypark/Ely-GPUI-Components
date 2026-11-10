@@ -1,5 +1,7 @@
 # 모바일 컴포넌트 지원·수용 기준 전수표
 
+> 이 문서의 API 표는 과거 Git GPUI 라인의 스냅샷이다. 현재 `feature/mobile-fast`는 `TextInputOwner`와 `set_input_owner_reporter`를 공개한다. 최신 모바일 검증과 남은 문제는 [mobile-audit-20261110.md](mobile-audit-20261110.md)를 따른다.
+
 최초 작성: 2026-10-17. 증거 갱신: 2026-10-18. 공개 모듈의 export 및 gallery 소스 목록을 정적으로 대조한 inventory다. 모든 행의 수용 기준은 해당 행의 **모든 이름**에 적용한다. 데이터 타입·함수도 export 누락 방지를 위해 포함했으며, 이들을 모두 시각적 컴포넌트로 세지 않는다. cfg 조건은 원본 모듈이 기준이다. API 존재는 모바일 동작 PASS가 아니다. 이번 문서 통합에서는 다른 담당자의 실행 기록을 확인했으며 코드 수정이나 빌드, simulator/device 실행은 하지 않았다.
 
 ## 소스와 두 라인의 차이

@@ -11,7 +11,6 @@ use gpui::{
     ParentElement, Pixels, Render, Styled, TestAppContext, VisualTestContext, Window, div, point,
     px, size,
 };
-
 #[derive(Clone, Copy)]
 enum Kind {
     Plain,
