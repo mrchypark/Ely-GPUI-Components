@@ -1,6 +1,6 @@
 use gpui::{
-    App, ElementId, InteractiveElement, IntoElement, MouseButton, ObjectFit, ParentElement,
-    RenderOnce, StatefulInteractiveElement, Styled, Window, div,
+    App, Bounds, ElementId, InteractiveElement, IntoElement, MouseButton, ObjectFit, ParentElement,
+    Pixels, RenderOnce, StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
 use crate::{
@@ -20,6 +20,7 @@ pub struct Gallery {
     id: ElementId,
     slides: Vec<Slide>,
     columns: u16,
+    usable_bounds: Option<Bounds<Pixels>>,
 }
 
 impl Gallery {
@@ -28,12 +29,19 @@ impl Gallery {
             id: id.into(),
             slides: slides.into_iter().collect(),
             columns: 3,
+            usable_bounds: None,
         }
     }
 
     pub fn columns(mut self, columns: u16) -> Self {
         assert!(columns > 0, "a gallery needs a column");
         self.columns = columns;
+        self
+    }
+
+    /// Keep the opened lightbox controls within the host's usable window area.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
         self
     }
 }
@@ -113,6 +121,9 @@ impl RenderOnce for Gallery {
                     *open = Some(to);
                     cx.notify();
                 })
+            })
+            .when_some(self.usable_bounds, |lightbox, bounds| {
+                lightbox.usable_bounds(bounds)
             })
         });
         div()

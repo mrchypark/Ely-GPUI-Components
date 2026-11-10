@@ -2,7 +2,7 @@ use ely_gpui_component::{
     media::{ImageThumbnail, ImageViewer},
     overlays::{Lightbox, Slide},
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::*, px};
 
 use crate::{
     probe::probe,
@@ -35,7 +35,11 @@ pub fn viewer(cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-pub fn thumbnails(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn thumbnails(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let shown = keep("media-shown", || None::<usize>, window, cx);
     let opened = keep("media-last", || 0usize, window, cx);
     let last = *opened.read(cx);
@@ -70,6 +74,7 @@ pub fn thumbnails(window: &mut Window, cx: &mut App) -> impl IntoElement + use<>
             move |_, cx| set(&close, None, cx),
         )
         .on_step(move |to, _, cx| set(&step, Some(to), cx))
+        .when_some(bounds, |lightbox, bounds| lightbox.usable_bounds(bounds))
     });
     section(
         "ImageThumbnail / Lightbox → overlays::Lightbox",

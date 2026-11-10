@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::{
     App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, Window, div,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
 use crate::{
@@ -37,6 +37,7 @@ pub(crate) fn refusal(
 /// A team's labels to tend: each wears its hue, which a press on it changes, and its name, which edits in place; a label can go, and a field at the end makes a new one. Names stay unique, whatever their case.
 #[derive(IntoElement)]
 pub struct LabelManager {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     labels: Vec<Label>,
     on_rename: Option<OnRename>,
@@ -46,6 +47,12 @@ pub struct LabelManager {
 }
 
 impl LabelManager {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, labels: impl IntoIterator<Item = Label>) -> Self {
         let labels: Vec<Label> = labels.into_iter().collect();
         for (ix, label) in labels.iter().enumerate() {
@@ -62,6 +69,7 @@ impl LabelManager {
             );
         }
         Self {
+            usable_bounds: None,
             id: id.into(),
             labels,
             on_rename: None,
@@ -189,7 +197,10 @@ impl RenderOnce for LabelManager {
                         .child(mark)
                 },
                 palette,
-            );
+            )
+            .when_some(self.usable_bounds, |overlay, bounds| {
+                overlay.usable_bounds(bounds)
+            });
             let name = {
                 let (key, labels, refuse) = (key.clone(), labels.clone(), refuse.clone());
                 let on_rename = self.on_rename.clone();

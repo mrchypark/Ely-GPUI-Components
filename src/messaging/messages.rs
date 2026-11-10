@@ -7,6 +7,7 @@ use smallvec::SmallVec;
 
 use crate::{
     data_display::Avatar,
+    menus::{ContextMenu, Menu},
     theme::{ActiveTheme, AvatarSize, Radius, TextSize},
     typography::{Ellipsis, LEADING, format},
 };
@@ -32,6 +33,7 @@ pub struct ChatMessage {
     zone: Option<TimeZone>,
     body: SmallVec<[AnyElement; 2]>,
     footer: Option<AnyElement>,
+    menu: Option<Menu>,
 }
 
 impl ChatMessage {
@@ -45,6 +47,7 @@ impl ChatMessage {
             zone: None,
             body: SmallVec::new(),
             footer: None,
+            menu: None,
         }
     }
 
@@ -67,6 +70,12 @@ impl ChatMessage {
 
     pub fn footer(mut self, footer: impl IntoElement) -> Self {
         self.footer = Some(footer.into_any_element());
+        self
+    }
+
+    /// A menu the message opens on a right click, or on a long press where there is no hover.
+    pub fn context_menu(mut self, menu: Menu) -> Self {
+        self.menu = Some(menu);
         self
     }
 }
@@ -100,8 +109,11 @@ impl RenderOnce for ChatMessage {
                 .justify_center()
                 .text_size(theme.text_size(TextSize::Xs))
                 .text_color(colors.fg_subtle)
-                .invisible()
-                .group_hover(group.clone(), |style| style.visible())
+                .when(!theme.touch_mode, |gutter| {
+                    gutter
+                        .invisible()
+                        .group_hover(group.clone(), |style| style.visible())
+                })
                 .child(
                     div()
                         .debug_selector(move || format!("run-time {named}"))
@@ -137,9 +149,10 @@ impl RenderOnce for ChatMessage {
                         .child(time),
                 )
         });
-        div()
+        let named = self.id.clone();
+        let row = div()
             .id(self.id.clone())
-            .debug_selector(move || format!("message {}", self.id))
+            .debug_selector(move || format!("message {named}"))
             .group(group)
             .flex()
             .gap_3()
@@ -173,6 +186,15 @@ impl RenderOnce for ChatMessage {
                     )
                     .children(self.footer.map(|footer| div().pt_1().child(footer))),
             )
+            .into_any_element();
+        // A message with a menu opens it on a right click, or on a long press
+        // where there is no hover to open it with.
+        match self.menu {
+            Some(menu) => ContextMenu::new((self.id.clone(), "context-menu"), menu)
+                .child(row)
+                .into_any_element(),
+            None => row,
+        }
     }
 }
 

@@ -14,6 +14,7 @@ use crate::{
 #[derive(IntoElement)]
 pub struct IconButton {
     id: ElementId,
+    debug_selector: Option<String>,
     icon: IconName,
     variant: ButtonVariant,
     size: ControlSize,
@@ -26,6 +27,7 @@ impl IconButton {
     pub fn new(id: impl Into<ElementId>, icon: IconName) -> Self {
         Self {
             id: id.into(),
+            debug_selector: None,
             icon,
             variant: ButtonVariant::Ghost,
             size: ControlSize::default(),
@@ -33,6 +35,12 @@ impl IconButton {
             tooltip: None,
             on_click: None,
         }
+    }
+
+    /// Names the existing hit element for frame-bound inspection.
+    pub fn debug_selector(mut self, selector: impl FnOnce() -> String) -> Self {
+        self.debug_selector = Some(selector());
+        self
     }
 
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
@@ -78,6 +86,9 @@ impl RenderOnce for IconButton {
 
         div()
             .id(self.id)
+            .when_some(self.debug_selector, |el, selector| {
+                el.debug_selector(|| selector)
+            })
             .role(Role::Button)
             .aria_label(name)
             .flex()
@@ -85,6 +96,7 @@ impl RenderOnce for IconButton {
             .items_center()
             .justify_center()
             .size(side)
+            .map(|el| theme.touch_target(el))
             .rounded(theme.radius(Radius::Md))
             .bg(tone.bg)
             .border_1()

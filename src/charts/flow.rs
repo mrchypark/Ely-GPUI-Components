@@ -2,8 +2,9 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, Div, ElementId, Entity, HoverListenerMode, InteractiveElement, IntoElement,
-    MouseMoveEvent, ParentElement, PathBuilder, Pixels, Refineable, RenderOnce, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div, fill, prelude::*,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, PathBuilder, Pixels, Refineable,
+    RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas,
+    div, fill, prelude::*,
 };
 
 use super::{
@@ -94,6 +95,42 @@ fn flows_at(links: &[(usize, usize, f64)], ix: usize) -> (f64, f64) {
 fn passing(links: &[(usize, usize, f64)], ix: usize) -> f64 {
     let (inward, outward) = flows_at(links, ix);
     inward.max(outward)
+}
+
+/// The node or link under a place in the chart's own pixels, if any.
+fn under(hit_nodes: &[Rect], hit_ribbons: &[Ribbon], place: (f32, f32)) -> Option<Hover> {
+    hit_nodes
+        .iter()
+        .position(|rect| rect.contains(place))
+        .map(Hover::Node)
+        .or_else(|| {
+            hit_ribbons
+                .iter()
+                .position(|ribbon| ribbon.holds(place))
+                .map(Hover::Link)
+        })
+}
+
+/// Records what the pointer is on, whether it moved there or pressed there.
+fn point_at(
+    flows: &Entity<Flows>,
+    hit_nodes: &[Rect],
+    hit_ribbons: &[Ribbon],
+    position: gpui::Point<Pixels>,
+    cx: &mut App,
+) {
+    let offset = position - flows.read(cx).bounds.origin;
+    let next = under(
+        hit_nodes,
+        hit_ribbons,
+        (f32::from(offset.x), f32::from(offset.y)),
+    );
+    flows.update(cx, |flows, cx| {
+        if flows.hover != next {
+            flows.hover = next;
+            cx.notify();
+        }
+    })
 }
 
 /// Lays out a flow: a column per step from the sources, each node as tall as what passes through it, each link a ribbon between its ends.
@@ -349,7 +386,8 @@ impl RenderOnce for SankeyChart {
         let sources: Vec<usize> = self.links.iter().map(|link| link.0).collect();
         let palette = colors.clone();
         let (hit_nodes, hit_ribbons) = (nodes, ribbons);
-        let (moved, left) = (flows.clone(), flows.clone());
+        let (moved, pressed, left) = (flows.clone(), flows.clone(), flows.clone());
+        let (tap_nodes, tap_ribbons) = (hit_nodes.clone(), hit_ribbons.clone());
         let mut root = div()
             .debug_selector(|| "chart-root".into())
             .relative()
@@ -357,24 +395,10 @@ impl RenderOnce for SankeyChart {
         root.style().refine(self.base.style());
         root.id((self.id.clone(), "sankey"))
             .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
-                let offset = event.position - moved.read(cx).bounds.origin;
-                let place = (f32::from(offset.x), f32::from(offset.y));
-                let next = hit_nodes
-                    .iter()
-                    .position(|rect| rect.contains(place))
-                    .map(Hover::Node)
-                    .or_else(|| {
-                        hit_ribbons
-                            .iter()
-                            .position(|ribbon| ribbon.holds(place))
-                            .map(Hover::Link)
-                    });
-                moved.update(cx, |flows, cx| {
-                    if flows.hover != next {
-                        flows.hover = next;
-                        cx.notify();
-                    }
-                })
+                point_at(&moved, &hit_nodes, &hit_ribbons, event.position, cx)
+            })
+            .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
+                point_at(&pressed, &tap_nodes, &tap_ribbons, event.position, cx)
             })
             .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
             .on_hover(move |inside, _, cx| {

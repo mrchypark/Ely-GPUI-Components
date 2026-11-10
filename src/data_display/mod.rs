@@ -2,6 +2,8 @@ mod avatar;
 mod badge;
 mod before_after;
 mod carousel;
+#[cfg(all(test, feature = "test-support"))]
+mod carousel_touch;
 mod changelog;
 mod codes;
 mod comparison;

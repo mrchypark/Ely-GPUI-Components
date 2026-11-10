@@ -40,6 +40,7 @@ fn a_wheel_over_an_open_list_leaves_the_page(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let list = cx.debug_bounds("option-list").expect("the list opens");
     cx.simulate_event(ScrollWheelEvent {
+        source: gpui::ScrollSource::Pointer,
         position: list.center(),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-120.0))),
         modifiers: Modifiers::none(),

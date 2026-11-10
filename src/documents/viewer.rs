@@ -83,6 +83,7 @@ fn page_in_view(scroll: &ScrollHandle, count: usize) -> usize {
 /// Pages the app drew, one under another on a desk: the page in view and its count, zoom by steps or to the width, the pages as thumbnails beside, a find bar whose hits light on the page, and notes pinned where a press puts them.
 #[derive(IntoElement)]
 pub struct DocumentViewer {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     title: SharedString,
     pages: Rc<Vec<DocPage>>,
@@ -95,6 +96,12 @@ pub struct DocumentViewer {
 }
 
 impl DocumentViewer {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         title: impl Into<SharedString>,
@@ -109,6 +116,7 @@ impl DocumentViewer {
             );
         }
         Self {
+            usable_bounds: None,
             id: id.into(),
             title: title.into(),
             pages,
@@ -350,22 +358,28 @@ impl RenderOnce for DocumentViewer {
                                 .absolute()
                                 .left(Pixels::from(note.at.x * zoom))
                                 .top(Pixels::from(note.at.y * zoom))
-                                .child(HoverCard::new(
-                                    (self.id.clone(), format!("note-{at}")),
-                                    div()
-                                        .size_6()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .rounded(theme.radius(Radius::Sm))
-                                        .bg(colors.warning)
-                                        .child(
-                                            Icon::new(IconName::MessageSquare)
-                                                .size(IconSize::Xs)
-                                                .color(colors.on_accent),
-                                        ),
-                                    move |_, _| div().max_w_64().child(text.clone()),
-                                ))
+                                .child(
+                                    HoverCard::new(
+                                        (self.id.clone(), format!("note-{at}")),
+                                        div()
+                                            .size_6()
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .rounded(theme.radius(Radius::Sm))
+                                            .bg(colors.warning)
+                                            .child(
+                                                Icon::new(IconName::MessageSquare)
+                                                    .size(IconSize::Xs)
+                                                    .color(colors.on_accent),
+                                            ),
+                                        move |_, _| div().max_w_64().child(text.clone()),
+                                    )
+                                    .touch_label(format!("Note {} on page {}", at + 1, ix + 1))
+                                    .when_some(self.usable_bounds, |overlay, bounds| {
+                                        overlay.usable_bounds(bounds)
+                                    }),
+                                )
                         }),
                 )
         });
@@ -464,30 +478,4 @@ impl RenderOnce for DocumentViewer {
 }
 
 #[cfg(test)]
-mod tests {
-    use gpui::px;
-
-    use super::{page_at, step};
-
-    #[test]
-    fn the_page_in_view_is_the_one_under_the_middle() {
-        let bottoms = [px(100.0), px(220.0), px(340.0)];
-        assert_eq!(page_at(&bottoms, px(50.0)), 0);
-        assert_eq!(page_at(&bottoms, px(150.0)), 1);
-        assert_eq!(page_at(&bottoms, px(500.0)), 2, "past the end is the last");
-        assert_eq!(page_at(&[], px(50.0)), 0, "no layout yet");
-    }
-
-    #[test]
-    fn zoom_steps_walk_the_scale_and_stop_at_its_ends() {
-        assert_eq!(step(1.0, true), Some(1.25));
-        assert_eq!(step(1.0, false), Some(0.75));
-        assert_eq!(
-            step(1.1, false),
-            Some(1.0),
-            "between steps goes to the nearer side"
-        );
-        assert_eq!(step(4.0, true), None);
-        assert_eq!(step(0.25, false), None);
-    }
-}
+mod tests;

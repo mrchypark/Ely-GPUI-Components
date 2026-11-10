@@ -67,15 +67,19 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
-        .child(rows::file_menu(window, cx))
-        .child(rows::view_menu(window, cx))
-        .child(rows::hosts(window, cx))
-        .child(rows::context(window, cx))
-        .child(more::menu_bar(cx))
+        .child(rows::file_menu(window, cx, bounds))
+        .child(rows::view_menu(window, cx, bounds))
+        .child(rows::hosts(window, cx, bounds))
+        .child(rows::context(window, cx, bounds))
+        .child(more::menu_bar(cx, bounds))
         .child(more::mega_menu(cx))
-        .child(more::searchable(window, cx))
-        .child(more::pie(window, cx))
+        .child(more::searchable(window, cx, bounds))
+        .child(more::pie(window, cx, bounds))
         .into_any_element()
 }

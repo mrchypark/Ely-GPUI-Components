@@ -399,7 +399,7 @@ pub fn intersection(window: &mut Window, cx: &mut App) -> impl IntoElement + use
     )
 }
 
-pub fn tooltip(cx: &App) -> impl IntoElement + use<> {
+pub fn tooltip(cx: &App, bounds: Option<gpui::Bounds<gpui::Pixels>>) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let muted = theme.colors.tooltip_fg.opacity(0.7);
     let lane = div()
@@ -456,6 +456,7 @@ pub fn tooltip(cx: &App) -> impl IntoElement + use<> {
                 TooltipTrigger::new("tip-follow", lane, |_, _| {
                     SharedString::from("No delay. I follow.").into_any_element()
                 })
+                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                 .delay(Duration::ZERO)
                 .follow_mouse(),
             )),
@@ -464,6 +465,6 @@ pub fn tooltip(cx: &App) -> impl IntoElement + use<> {
         div()
             .text_size(theme.text_size(TextSize::Xs))
             .text_color(theme.colors.fg_subtle)
-            .child("Ely's trigger waits 400ms by default; gpui's waits 500ms."),
+            .child("On desktop, Ely's trigger waits 400ms by default; gpui's waits 500ms. On touch, Ely adds a separate disclosure; the gpui tooltip examples remain pointer-only."),
     )
 }

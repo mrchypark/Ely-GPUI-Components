@@ -406,6 +406,14 @@ impl Icon {
         self.scale = factor;
         self
     }
+
+    /// The hover color, which a touch shows at once since it has no hover.
+    fn touch_color(&self, theme: &crate::theme::Theme) -> Option<Hsla> {
+        if !theme.touch_mode {
+            return None;
+        }
+        self.hover.as_ref().map(|(_, hover)| *hover)
+    }
 }
 
 impl From<IconName> for Icon {
@@ -459,6 +467,8 @@ impl RenderOnce for Icon {
         let icon = if missing { self.broken(cx) } else { self };
         let theme = cx.theme();
         let color = icon.color.unwrap_or(theme.colors.fg);
+        // A touch has no hover, so the hover color is the icon's color there.
+        let color = icon.touch_color(theme).unwrap_or(color);
         svg()
             .path(icon.path)
             .size(theme.icon_size(icon.size))

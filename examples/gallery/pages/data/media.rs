@@ -6,7 +6,7 @@ use ely_gpui_component::{
     theme::{ActiveTheme, Radius, TextSize},
     typography::{Caption, Paragraph, Title},
 };
-use gpui::{App, IntoElement, ObjectFit, ParentElement, Styled, Window, div, px};
+use gpui::{App, IntoElement, ObjectFit, ParentElement, Styled, Window, div, prelude::*, px};
 
 use crate::{
     probe::probe,
@@ -62,7 +62,11 @@ pub fn carousel(cx: &mut App) -> impl IntoElement + use<> {
     )))
 }
 
-pub fn gallery(cx: &mut App) -> impl IntoElement + use<> {
+pub fn gallery(
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
+    let touch = cx.theme().touch_mode;
     section(
         "Gallery",
         "Pictures in square tiles. Press one, or Enter on a focused tile, to open the lightbox there.",
@@ -70,10 +74,10 @@ pub fn gallery(cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(div().flex().child(probe(
         "gallery",
-        div().w(px(420.)).child(Gallery::new(
+        div().w(px(420.)).when(touch, |view| view.w_full().max_w(px(420.))).child(Gallery::new(
             "gallery",
             PICTURES.map(|(path, caption)| Slide::new(picture(path), caption)),
-        )),
+        ).when_some(bounds, |gallery, bounds| gallery.usable_bounds(bounds))),
     )))
 }
 

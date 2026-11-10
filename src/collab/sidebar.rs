@@ -21,6 +21,7 @@ type OnThreadReact = Rc<dyn Fn(&SharedString, usize, &SharedString, &mut Window,
 /// Every conversation on a document down a column, split into open and resolved when the owner resolves: a press picks one, and the one picked takes replies.
 #[derive(IntoElement)]
 pub struct CommentSidebar {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     threads: Vec<Thread>,
     active: Option<SharedString>,
@@ -31,8 +32,15 @@ pub struct CommentSidebar {
 }
 
 impl CommentSidebar {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, threads: impl IntoIterator<Item = Thread>) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             threads: threads.into_iter().collect(),
             active: None,
@@ -152,6 +160,9 @@ impl RenderOnce for CommentSidebar {
             let key = thread.key.clone();
             let active = self.active.as_ref() == Some(&key);
             let mut item = CommentThread::new((self.id.clone(), format!("thread-{key}")), thread)
+                .when_some(self.usable_bounds, |overlay, bounds| {
+                    overlay.usable_bounds(bounds)
+                })
                 .active(active);
             if active && let Some((field, send)) = &self.reply {
                 let send = send.clone();

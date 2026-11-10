@@ -55,7 +55,11 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(people::badges(window, cx))
         .child(people::tags(window, cx))
@@ -68,7 +72,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(records::feed(window, cx))
         .child(records::changelog(cx))
         .child(media::carousel(cx))
-        .child(media::gallery(cx))
+        .child(media::gallery(cx, bounds))
         .child(media::before_after(cx))
         .child(media::watermark(window, cx))
         .child(measures::codes(cx))

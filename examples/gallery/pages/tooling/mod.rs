@@ -63,7 +63,11 @@ pub const PAGE: Page = Page {
     ],
 };
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     let inspection = inspection::sections(window, cx);
     let catalogs = catalogs::sections(window, cx);
     div()

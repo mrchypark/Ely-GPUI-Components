@@ -71,7 +71,11 @@ const SWATCHES: [(&str, u32); 6] = [
     ("Clay", 0xb86f50),
 ];
 
-pub fn styles(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn styles(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let look = keep("canvas-look", Look::new, window, cx);
     let search = window.use_keyed_state("canvas-type-search", cx, |window, cx| {
         TextInput::new(window, cx).placeholder("Font")
@@ -136,7 +140,7 @@ pub fn styles(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                             .on_change(move |next, _, cx| change(&graded, cx, |look| look.stops = next.to_vec())),
                     )
                     .child(
-                        ShadowEditor::new("canvas-shadows", shadows, move |next, _, cx| change(&shaded, cx, |look| look.shadows = next)),
+                        ShadowEditor::new("canvas-shadows", shadows, move |next, _, cx| change(&shaded, cx, |look| look.shadows = next)).when_some(bounds, |overlay, area| overlay.usable_bounds(area)),
                     ),
             )
             .child(
@@ -146,7 +150,7 @@ pub fn styles(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     .flex_col()
                     .gap_6()
                     .child(
-                        BorderEditor::new("canvas-border", border, move |next, _, cx| change(&bordered, cx, |look| look.border = next)),
+                        BorderEditor::new("canvas-border", border, move |next, _, cx| change(&bordered, cx, |look| look.border = next)).when_some(bounds, |overlay, area| overlay.usable_bounds(area)),
                     )
                     .child(div().p_6().child(card)),
             )

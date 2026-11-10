@@ -1,8 +1,9 @@
+use gpui::prelude::*;
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, Entity, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window,
-    div,
+    App, Bounds, ElementId, Entity, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
+    Styled, Window, div,
 };
 
 use crate::{
@@ -19,6 +20,7 @@ type OnDensity = Rc<dyn Fn(Density, &mut Window, &mut App)>;
 /// A table's tools in one row: a search and a filter button that counts its rules, then at the end a menu that shows and hides columns, the density, and an export. Each tool appears once it is given.
 #[derive(IntoElement)]
 pub struct TableToolbar {
+    usable_bounds: Option<Bounds<Pixels>>,
     id: ElementId,
     search: Option<Entity<TextInput>>,
     filter: Option<(usize, Run)>,
@@ -32,6 +34,7 @@ pub struct TableToolbar {
 impl TableToolbar {
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             search: None,
             filter: None,
@@ -41,6 +44,12 @@ impl TableToolbar {
             density: None,
             on_export: None,
         }
+    }
+
+    /// The current window area available to the Columns and Density menus.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 
     /// A search field over the owner's text; hand its text to the table's `query`.
@@ -113,7 +122,12 @@ impl RenderOnce for TableToolbar {
                     }),
                 )
             });
+            let menu = match self.usable_bounds {
+                Some(bounds) => menu.usable_bounds(bounds),
+                None => menu,
+            };
             DropdownMenu::new((id.clone(), "columns"), "Columns", menu)
+                .close_when_unusable()
                 .icon(IconName::Table)
                 .variant(ButtonVariant::Ghost)
         });
@@ -131,12 +145,18 @@ impl RenderOnce for TableToolbar {
                         .on_click(move |window, cx| on_density(density, window, cx)),
                 )
             });
+            let menu = match self.usable_bounds {
+                Some(bounds) => menu.usable_bounds(bounds),
+                None => menu,
+            };
             DropdownMenu::new((id.clone(), "density"), "Density", menu)
+                .close_when_unusable()
                 .icon(IconName::List)
                 .variant(ButtonVariant::Ghost)
         });
         div()
             .flex()
+            .when(cx.theme().touch_mode, |bar| bar.flex_wrap())
             .items_center()
             .gap_1()
             .children(self.search.map(|field| {
@@ -157,8 +177,16 @@ impl RenderOnce for TableToolbar {
                     .on_click(move |_, window, cx| on_press(window, cx))
             }))
             .child(div().flex_1())
-            .children(columns)
-            .children(density)
+            .children(columns.map(|menu| {
+                div()
+                    .debug_selector(|| "table-columns-trigger".into())
+                    .child(menu)
+            }))
+            .children(density.map(|menu| {
+                div()
+                    .debug_selector(|| "table-density-trigger".into())
+                    .child(menu)
+            }))
             .children(self.on_export.map(|on_export| {
                 Button::new((id.clone(), "export"), "Export")
                     .icon(IconName::Download)

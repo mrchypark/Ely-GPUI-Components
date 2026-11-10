@@ -8,6 +8,7 @@ use super::{Resizable, Rotatable, RovingFocus, ScrollSync, SelectionArea};
 use crate::{forms, primitives::FocusNext, theme::Theme};
 
 mod limits;
+mod touch_menu;
 
 type Part = fn(&Bench, Entity<Bench>) -> AnyElement;
 
@@ -323,8 +324,9 @@ fn the_keyboard_walks_and_picks_tiles(cx: &mut TestAppContext) {
 /// A key pressed and let go, as a press on a focused item needs.
 fn press(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(gpui::KeyUpEvent {
-        keystroke: gpui::Keystroke::parse(key).expect("a key"),
+        keystroke: gpui::Keystroke::parse_with_os(key, os).expect("a key"),
     });
     settle(cx);
 }
@@ -389,11 +391,12 @@ fn a_wheel_on_one_pane_takes_the_other_along(cx: &mut TestAppContext) {
         .expect("the right pane")
         .origin
         .y;
-    cx.simulate_event(gpui::ScrollWheelEvent {
+    cx.simulate_event(gpui::ScrollEvent {
         position: at(80.0, 100.0),
         delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(-300.0))),
         modifiers: Modifiers::none(),
         touch_phase: gpui::TouchPhase::Moved,
+        source: Default::default(),
     });
     settle(cx);
     let after = cx

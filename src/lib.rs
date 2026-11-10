@@ -45,10 +45,13 @@ pub mod theme;
 pub mod tooling;
 pub mod typography;
 
+#[cfg(all(test, feature = "test-support"))]
+mod touch_targets;
+
 pub use assets::{Assets, Before};
 
 use anyhow::Context as _;
-use gpui::{App, KeyBinding};
+use gpui::{Action, App, KeyBinding, KeyBindingContextPredicate};
 
 use crate::primitives::{FOCUS_CONTEXT, FocusNext, FocusPrev};
 
@@ -71,6 +74,24 @@ pub fn init(cx: &mut App) -> anyhow::Result<()> {
 #[cfg(any(test, feature = "test-support"))]
 pub fn init_for_tests(cx: &mut App) {
     setup(cx);
+}
+
+/// Loads a binding with the current platform's modifier mapping.
+pub(crate) fn load_key_binding<A: Action>(
+    keystrokes: &str,
+    action: A,
+    context: Option<&str>,
+    cx: &App,
+) -> KeyBinding {
+    KeyBinding::load(
+        keystrokes,
+        Box::new(action),
+        context.map(|context| KeyBindingContextPredicate::parse(context).unwrap().into()),
+        false,
+        None,
+        cx,
+    )
+    .unwrap()
 }
 
 /// The theme and key bindings.
@@ -98,5 +119,10 @@ mod tests {
     #[should_panic(expected = "leaked handles")]
     fn a_leaked_entity_fails_its_test(cx: &mut TestAppContext) {
         std::mem::forget(cx.new(|_| ()));
+    }
+
+    #[gpui::test]
+    fn init_loads_platform_key_bindings(cx: &mut TestAppContext) {
+        cx.update(super::init_for_tests);
     }
 }

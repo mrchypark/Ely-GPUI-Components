@@ -8,6 +8,7 @@ use jiff::Timestamp;
 
 use super::{ListItem, SelectableList};
 use crate::{
+    buttons::Button,
     forms::OnValue,
     layout::{on_axis, seeded::use_seeded},
     navigation::{Breadcrumb, Crumb},
@@ -15,6 +16,9 @@ use crate::{
     theme::{ActiveTheme, IconSize, TextSize},
     typography::{format, tabular},
 };
+
+#[cfg(all(test, feature = "test-support"))]
+mod touch_tests;
 
 /// One entry of a directory: a folder, or a file with its size; both with when they last changed.
 #[derive(Clone, Debug, PartialEq)]
@@ -117,7 +121,7 @@ fn sorted(mut entries: Vec<DirEntry>, column: Column, ascending: bool) -> Vec<Di
 type OnEntry = Rc<dyn Fn(&DirEntry, &mut Window, &mut App)>;
 pub(crate) type OnClimb = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
-/// A directory's entries in columns: name, size, and when each changed. A header sorts by its column and a second press reverses it; folders stay first. Enter or a double press opens an entry; the path above climbs to an earlier level.
+/// A directory's entries in columns: name, size, and when each changed. A header sorts by its column and a second press reverses it; folders stay first. Touch mode adds Open for the selected entry. Enter or a double press also opens; the path above climbs to an earlier level.
 #[derive(IntoElement)]
 pub struct DirectoryListing {
     id: ElementId,
@@ -191,6 +195,7 @@ impl RenderOnce for DirectoryListing {
         let (column, ascending) = *order.read(cx);
         let entries = Rc::new(sorted(self.entries, column, ascending));
         let theme = cx.theme();
+        let touch = theme.touch_mode;
         let colors = &theme.colors;
         let (size_width, date_width) = (theme.label_width() * 0.5, theme.label_width() * 0.75);
         let least = theme.label_width()
@@ -203,6 +208,8 @@ impl RenderOnce for DirectoryListing {
             let order = order.clone();
             div()
                 .id((self.id.clone(), label))
+                .debug_selector(move || format!("directory-sort-{label}"))
+                .when(touch, |header| theme.touch_target(header))
                 .flex()
                 .items_center()
                 .gap_1()
@@ -292,21 +299,46 @@ impl RenderOnce for DirectoryListing {
                             .justify_end()
                             .child(format::relative(entry.modified, now)),
                     );
+                let selector = entry.name.clone();
                 let item =
                     ListItem::new((self.id.clone(), format!("entry-{ix}")), entry.name.clone())
                         .leading(
-                            Icon::new(if entry.is_folder() {
-                                IconName::Folder
-                            } else {
-                                file_icon(&entry.name, cx)
-                            })
-                            .size(IconSize::Md)
-                            .color(colors.fg_muted),
+                            div()
+                                .debug_selector(move || format!("directory-entry-{selector}"))
+                                .when(touch, |icon| icon.min_h(gpui::px(48.)))
+                                .flex()
+                                .items_center()
+                                .child(
+                                    Icon::new(if entry.is_folder() {
+                                        IconName::Folder
+                                    } else {
+                                        file_icon(&entry.name, cx)
+                                    })
+                                    .size(IconSize::Md)
+                                    .color(colors.fg_muted),
+                                ),
                         )
                         .trailing(cells);
                 list.row(entry.name.clone(), item)
             },
         );
+        let open = touch.then(|| {
+            let selected = picked
+                .read(cx)
+                .value
+                .as_ref()
+                .and_then(|name| entries.iter().find(|entry| entry.name == *name).cloned());
+            let on_open = self.on_open.clone();
+            Button::new((self.id.clone(), "open"), "Open")
+                .debug_selector(|| "directory-open".into())
+                .disabled(selected.is_none() || on_open.is_none())
+                .on_click(move |_, window, cx| {
+                    cx.stop_propagation();
+                    if let (Some(entry), Some(on_open)) = (&selected, &on_open) {
+                        on_open(entry, window, cx);
+                    }
+                })
+        });
         let (store, shown, on_open) = (picked.clone(), entries.clone(), self.on_open);
         let on_select = self.on_select;
         div()
@@ -318,6 +350,7 @@ impl RenderOnce for DirectoryListing {
                 &self.path,
                 self.on_climb,
             ))
+            .children(open.map(|button| div().flex().child(button)))
             .child(
                 on_axis(div().id((self.id.clone(), "sideways")).overflow_x_scroll()).child(
                     div().flex().flex_col().min_w(least).child(heading).child(

@@ -163,6 +163,16 @@ pub struct MiniWindow {
 }
 
 impl MiniWindow {
+    /// A mini window over `view`, with no window to return to.
+    #[cfg(all(test, feature = "test-support"))]
+    pub(crate) fn new(title: impl Into<SharedString>, view: AnyView) -> Self {
+        Self {
+            title: title.into(),
+            view,
+            back: None,
+        }
+    }
+
     /// Pinned to a display corner or centered; expanding returns to the opener.
     pub fn open(
         title: impl Into<SharedString>,
@@ -212,7 +222,20 @@ impl MiniWindow {
 
 impl Render for MiniWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let bar = drag_region("mini-bar", window, cx);
+        // On a phone there is no hover, and a drag region cannot scroll, so the bar sits still.
+        let touch = cx.theme().touch_mode;
+        let height = {
+            let theme = cx.theme();
+            let height = theme
+                .control_height(ControlSize::Lg)
+                .to_pixels(window.rem_size());
+            theme.touch_minimum(height)
+        };
+        let bar = if touch {
+            div().id("mini-bar")
+        } else {
+            drag_region("mini-bar", window, cx)
+        };
         let theme = cx.theme();
         let back = self.back;
         div()
@@ -232,20 +255,24 @@ impl Render for MiniWindow {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .h(theme.control_height(ControlSize::Lg))
+                    .h(height)
                     .px_2()
                     .bg(theme.colors.overlay.opacity(0.92))
                     .border_b_1()
                     .border_color(theme.colors.border)
                     .text_size(theme.text_size(TextSize::Xs))
                     .text_color(theme.colors.fg_muted)
-                    .invisible()
-                    .group_hover("mini-window", |style| style.visible())
+                    .debug_selector(|| "mini-window-bar".into())
+                    .when(!theme.touch_mode, |bar| {
+                        bar.invisible()
+                            .group_hover("mini-window", |style| style.visible())
+                    })
                     .child(div().flex_1().child(self.title.clone()))
                     .when_some(back, |bar, back| {
                         bar.child(
                             IconButton::new("mini-expand", IconName::Maximize2)
                                 .size(ControlSize::Sm)
+                                .debug_selector(|| "mini-window-expand".into())
                                 .on_click(move |_, window, cx| {
                                     window.remove_window();
                                     let returned =
@@ -261,6 +288,7 @@ impl Render for MiniWindow {
                     .child(
                         IconButton::new("mini-close", IconName::X)
                             .size(ControlSize::Sm)
+                            .debug_selector(|| "mini-window-close".into())
                             .on_click(|_, window, _| window.remove_window()),
                     ),
             )

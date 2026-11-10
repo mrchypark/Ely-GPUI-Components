@@ -93,7 +93,11 @@ fn shortcut(group: &str, name: &str, keys: &str) -> Shortcut {
     }
 }
 
-pub fn tips(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn tips(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let state = keep("onboarding-help", Help::default, window, cx);
     let billing = field(
         "onboarding-billing-email",
@@ -126,10 +130,10 @@ pub fn tips(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                             .items_center()
                             .gap_1()
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Retention"))
-                            .child(HelpTooltip::new("onboarding-retention-help", "Deleted items stay 30 days before they are gone.")),
+                            .child(HelpTooltip::new("onboarding-retention-help", "Deleted items stay 30 days before they are gone.").when_some(bounds, |overlay, area| overlay.usable_bounds(area))),
                     )
                     .child(
-                        FormField::new("onboarding-billing-field", "Billing email")
+                        FormField::new("onboarding-billing-field", "Billing email").when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                             .help("Invoices go here as well as to the owner.")
                             .child(Input::new(&billing)),
                     )
@@ -272,7 +276,11 @@ pub fn dialogs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .children(open)
 }
 
-pub fn feedback(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn feedback(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let state = keep("onboarding-help", Help::default, window, cx);
     let sent = state.read(cx).sent;
     let done = state.clone();
@@ -295,7 +303,7 @@ pub fn feedback(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .gap_6()
             .child(probe(
                 "onboarding-feedback",
-                FeedbackWidget::new("onboarding-feedback", |sentiment, note, _, _| log::info!("gallery: feedback {} {note}", sentiment.key())),
+                FeedbackWidget::new("onboarding-feedback", |sentiment, note, _, _| log::info!("gallery: feedback {} {note}", sentiment.key())).when_some(bounds, |overlay, area| overlay.usable_bounds(area)),
             ))
             .child(
                 div()

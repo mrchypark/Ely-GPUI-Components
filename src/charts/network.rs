@@ -301,8 +301,16 @@ impl RenderOnce for NetworkGraph {
                 if let Some(ix) = press_hit(place) {
                     log::info!("network graph: dragging node {ix}");
                     pressed.update(cx, |graph, cx| {
+                        graph.hover = Some(ix);
                         graph.drag = Some(ix);
                         cx.notify();
+                    })
+                } else {
+                    pressed.update(cx, |graph, cx| {
+                        if graph.hover.is_some() {
+                            graph.hover = None;
+                            cx.notify();
+                        }
                     })
                 }
             })

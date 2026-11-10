@@ -43,7 +43,11 @@ const SCRIPT: &[Step] = &[
     Step::Key("escape"),
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(sign_in::sign_in(window, cx))
         .child(sign_in::sign_up(window, cx))

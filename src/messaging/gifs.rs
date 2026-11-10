@@ -248,6 +248,7 @@ impl RenderOnce for GifPicker {
                         .track_focus(&focus)
                         .focus_ring(cx)
                         .cursor_pointer()
+                        .map(|tile| theme.touch_target(tile))
                         .tooltip(Tooltip::text(gif.title.clone()))
                         .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                         .on_click(move |_, window, cx| {

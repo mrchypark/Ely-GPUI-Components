@@ -1,3 +1,5 @@
+use gpui::prelude::FluentBuilder as _;
+
 use std::time::Duration;
 
 use ely_gpui_component::{
@@ -40,7 +42,11 @@ fn history() -> Vec<PastCommand> {
     ]
 }
 
-pub fn blocks(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn blocks(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let folded = keep("terminal-folded", || false, window, cx);
     let open = keep("terminal-history", || false, window, cx);
     let said = keep("terminal-said", || None::<SharedString>, window, cx);
@@ -96,10 +102,11 @@ pub fn blocks(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 CommandState::Running,
             )),
     )
-    .child(row().child(Button::new("terminal-history-open", "Search history…").on_click(move |_, _, cx| set(&opener, true, cx))))
+    .child(row().child(Button::new("terminal-history-open", "Search history…").debug_selector(|| "gallery-command-history".into()).on_click(move |_, _, cx| set(&opener, true, cx))))
     .children(told.map(Caption::new))
     .children(now_open.then(|| {
         CommandHistory::new("terminal-history-palette", history(), move |_, cx| set(&close, false, cx))
+            .when_some(bounds, |palette, area| palette.usable_bounds(area))
             .on_pick(move |command, _, cx| set(&pick, Some(format!("Ran {command}.").into()), cx))
     }))
 }

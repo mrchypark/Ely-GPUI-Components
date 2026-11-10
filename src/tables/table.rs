@@ -3,6 +3,9 @@ use std::{
     rc::Rc,
 };
 
+mod columns;
+pub(super) mod touch;
+
 use gpui::{
     AnyElement, App, Div, ElementId, Entity, FocusHandle, InteractiveElement, IntoElement,
     ParentElement, Pixels, RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement,
@@ -45,6 +48,10 @@ impl Row {
 /// A table's own state: the page, a Shift range's start, the scrolls down and sideways, the header last scrolled into view, column widths, edges and order, opened rows, folded groups, and the cell being edited.
 #[derive(Default)]
 pub(crate) struct View {
+    pub column_target: Option<SharedString>,
+    pub column_controls: bool,
+    pub measured_widths: HashMap<SharedString, Pixels>,
+    pub touch_target: Option<(SharedString, SharedString)>,
     pub page: usize,
     pub anchor: usize,
     pub scroll: UniformListScrollHandle,
@@ -251,14 +258,15 @@ impl RenderOnce for DataTable {
             ) as Select
         });
         let theme = cx.theme();
-        let height = theme.table_row(self.density);
+        let height =
+            gpui::rems(theme.touch_minimum(theme.table_row(self.density).to_pixels(rem)) / rem);
         let widths: Rc<Vec<Option<Pixels>>> = Rc::new(
             columns
                 .iter()
                 .map(|column| view.read(cx).widths.get(&column.key).copied())
                 .collect(),
         );
-        let body = Rc::new(Body {
+        let mut body = Body {
             id: id.clone(),
             view: view.clone(),
             columns: columns.clone(),
@@ -280,9 +288,14 @@ impl RenderOnce for DataTable {
                     .collect(),
             ),
             height,
-            lead: theme.control_height(ControlSize::Md),
+            lead: gpui::rems(
+                theme.touch_minimum(theme.control_height(ControlSize::Md).to_pixels(rem)) / rem,
+            ),
             narrowest,
-        });
+        };
+        let tools = touch::controls(&mut body, &shown_columns, window, cx);
+        let column_tools = columns::controls(&id, &view, &columns, &shown_columns, cx);
+        let body = Rc::new(body);
         let all = selected.as_ref().map(|selected| {
             match ordered.iter().filter(|key| selected.contains(key)).count() {
                 0 => CheckState::Off,
@@ -293,7 +306,12 @@ impl RenderOnce for DataTable {
         let on_select = self.on_select;
         let heads = |cols: &[usize], lead: bool, cx: &App| {
             let theme = cx.theme();
+            let measured = view.clone();
+            let names: Vec<_> = cols.iter().map(|col| columns[*col].key.clone()).collect();
             div()
+                .on_children_prepainted(move |bounds, window, cx| {
+                    columns::measure(&measured, &names, bounds, window, cx)
+                })
                 .flex()
                 .items_center()
                 .h(height)
@@ -457,6 +475,12 @@ impl RenderOnce for DataTable {
                     ),
                 )
         });
-        self.base.flex().flex_col().child(table).children(pager)
+        self.base
+            .flex()
+            .flex_col()
+            .children(column_tools)
+            .children(tools)
+            .child(table)
+            .children(pager)
     }
 }

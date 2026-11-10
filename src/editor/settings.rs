@@ -179,12 +179,15 @@ impl RenderOnce for SettingsEditor {
                 let changed = settings.iter().filter(|setting| setting.modified()).count();
                 div()
                     .id((self.id.clone(), format!("section-{ix}")))
+                    .debug_selector(|| format!("editor-settings-section-{ix}"))
                     .flex()
                     .items_center()
                     .justify_between()
                     .px_2()
                     .py_1()
                     .rounded(theme.radius(Radius::Sm))
+                    // A finger needs a row it can land on.
+                    .map(|row| theme.touch_target(row))
                     .cursor_pointer()
                     .when(ix == section, |row| {
                         row.bg(colors.active).text_color(colors.fg)

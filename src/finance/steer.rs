@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, Div, Entity, HoverListenerMode, InteractiveElement, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollWheelEvent, Stateful,
-    StatefulInteractiveElement, Styled, Subscription, Window,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollEvent, Stateful, StatefulInteractiveElement,
+    Styled, Subscription, Window,
 };
 
 use super::{
@@ -12,6 +12,7 @@ use super::{
     tools::{Drawing, Tool},
 };
 use crate::charts::{Linear, Rect};
+use crate::theme::ActiveTheme;
 
 /// A drawing in progress: its tool, and where the drag began and is now, each a candle and a price.
 pub(crate) type Sketch = (Tool, (f64, f64), (f64, f64));
@@ -89,8 +90,8 @@ impl Steering {
             stage.clone(),
             stage,
         );
-        let (sync_move, sync_press, sync_wheel, sync_leave) =
-            (sync.clone(), sync.clone(), sync.clone(), sync);
+        let (sync_move, sync_press, sync_release, sync_wheel, sync_leave) =
+            (sync.clone(), sync.clone(), sync.clone(), sync.clone(), sync);
         let across = (main.x, main.w);
         let pinned = move |(x, y): (f32, f32)| {
             (
@@ -129,6 +130,11 @@ impl Steering {
                     hold(&pressed, &sync_press, cx, None, None);
                     return;
                 }
+                // A finger has no hover to read, so the press points at the candle under it.
+                pressed.update(cx, |stage, _| stage.pointer = Some(place));
+                let hover = (place.0 >= across.0 && place.0 <= across.0 + across.1)
+                    .then(|| visible.at(place.0, across));
+                hold(&pressed, &sync_press, cx, Some(visible), hover);
                 pressed.update(cx, |stage, cx| match tool {
                     Some(tool) if main.contains(place) => {
                         stage.sketch = Some((tool, pinned(place), pinned(place)));
@@ -139,18 +145,25 @@ impl Steering {
                 });
             })
             .on_mouse_up(MouseButton::Left, move |_: &MouseUpEvent, window, cx| {
+                let touch = cx.theme().touch_mode;
                 let sketch = released.update(cx, |stage, cx| {
+                    if touch {
+                        stage.pointer = None;
+                    }
                     stage.drag = None;
                     cx.notify();
                     stage.sketch.take()
                 });
+                if touch {
+                    hold(&released, &sync_release, cx, Some(visible), None);
+                }
                 if let (Some((tool, from, to)), Some(on_draw)) = (sketch, &on_draw) {
                     let drawn = Drawing::of(tool, from, to);
                     log::info!("market chart: drew {drawn:?}");
                     on_draw(drawn, window, cx);
                 }
             })
-            .on_scroll_wheel(move |event: &ScrollWheelEvent, _, cx| {
+            .on_scroll(move |event: &ScrollEvent, _, cx| {
                 let delta = event
                     .delta
                     .pixel_delta(Pixels::from(across.1 / visible.count as f32));

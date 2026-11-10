@@ -65,18 +65,21 @@ impl RenderOnce for ChartLegend {
                             .id((self.id.clone(), format!("entry-{ix}")))
                             .flex()
                             .when_some(on_toggle, |entry, on_toggle| {
-                                entry
-                                    .px_1()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .border_1()
-                                    .border_color(transparent_black())
-                                    .tab_index(0)
-                                    .focus_ring(cx)
-                                    .cursor_pointer()
-                                    .on_mouse_down(MouseButton::Left, |_, window, _| {
-                                        window.prevent_default()
-                                    })
-                                    .on_click(move |_, window, cx| on_toggle(&key, window, cx))
+                                theme.touch_target(
+                                    entry
+                                        .debug_selector(|| format!("chart-legend-entry-{ix}"))
+                                        .px_1()
+                                        .rounded(theme.radius(Radius::Sm))
+                                        .border_1()
+                                        .border_color(transparent_black())
+                                        .tab_index(0)
+                                        .focus_ring(cx)
+                                        .cursor_pointer()
+                                        .on_mouse_down(MouseButton::Left, |_, window, _| {
+                                            window.prevent_default()
+                                        })
+                                        .on_click(move |_, window, cx| on_toggle(&key, window, cx)),
+                                )
                             })
                             .child(
                                 div()
@@ -124,6 +127,7 @@ impl RenderOnce for ChartTooltip {
         let theme = cx.theme();
         let colors = &theme.colors;
         div()
+            .debug_selector(|| "chart-tooltip".into())
             .flex()
             .flex_col()
             .gap_0p5()

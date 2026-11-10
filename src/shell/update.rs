@@ -44,27 +44,37 @@ fn progress_line(state: UpdateState) -> Option<AnyElement> {
     }
 }
 
-fn buttons(state: UpdateState, actions: &Actions, size: ControlSize, cx: &App) -> Vec<Button> {
-    let wire = |button: Button, action: &Option<Action>| {
+fn buttons(
+    state: UpdateState,
+    actions: &Actions,
+    size: ControlSize,
+    prefix: &'static str,
+    cx: &App,
+) -> Vec<Button> {
+    let wire = |button: Button, action: &Option<Action>, name: &'static str| {
         action.clone().map(|action| {
             button
                 .size(size)
+                .debug_selector(|| format!("{prefix}-{name}"))
                 .on_click(move |_, window, cx| action(window, cx))
         })
     };
     let later = wire(
         Button::new("update-later", text(cx, "update.later", &[])).variant(ButtonVariant::Ghost),
         &actions.later,
+        "later",
     );
     let main = match state {
         UpdateState::Available => wire(
             Button::new("update-download", text(cx, "update.download", &[])).primary(),
             &actions.download,
+            "download",
         ),
         UpdateState::Downloading(_) => None,
         UpdateState::Ready => wire(
             Button::new("update-restart", text(cx, "update.restart", &[])).primary(),
             &actions.restart,
+            "restart",
         ),
     };
     later.into_iter().chain(main).collect()
@@ -124,7 +134,11 @@ impl RenderOnce for UpdateBanner {
             UpdateState::Available => text(cx, "update.available", &[("version", version)]),
             UpdateState::Downloading(value) => {
                 let percent = (value * 100.0).round().to_string();
-                text(cx, "update.downloading", &[("version", version), ("percent", &percent)])
+                text(
+                    cx,
+                    "update.downloading",
+                    &[("version", version), ("percent", &percent)],
+                )
             }
             UpdateState::Ready => text(cx, "update.ready", &[("version", version)]),
         };
@@ -156,11 +170,13 @@ impl RenderOnce for UpdateBanner {
                     ..self.actions.clone()
                 },
                 ControlSize::Sm,
+                "shell-update-banner",
                 cx,
             ))
             .when_some(dismiss, |banner, dismiss| {
                 banner.child(
                     IconButton::new("update-dismiss", IconName::X)
+                        .debug_selector(|| "shell-update-banner-dismiss".into())
                         .size(ControlSize::Sm)
                         .on_click(move |_, window, cx| dismiss(window, cx)),
                 )
@@ -220,7 +236,10 @@ impl UpdateDialog {
 
 impl RenderOnce for UpdateDialog {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let args = [("name", self.name.as_ref()), ("version", self.version.as_ref())];
+        let args = [
+            ("name", self.name.as_ref()),
+            ("version", self.version.as_ref()),
+        ];
         let headline = match self.state {
             UpdateState::Ready => text(cx, "update.headline.ready", &args),
             _ => text(cx, "update.headline.available", &args),
@@ -271,6 +290,7 @@ impl RenderOnce for UpdateDialog {
                 self.state,
                 &self.actions,
                 ControlSize::Md,
+                "shell-update-dialog",
                 cx,
             )))
     }

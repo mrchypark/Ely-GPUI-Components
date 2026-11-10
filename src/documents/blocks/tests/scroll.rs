@@ -95,6 +95,7 @@ fn a_wheel_scrolls_the_editor_and_leaves_its_caret(cx: &mut TestAppContext) {
     still(cx);
     let before = shown(&editor, cx);
     cx.simulate_event(ScrollWheelEvent {
+        source: gpui::ScrollSource::Pointer,
         position: point(px(100.0), px(100.0)),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-120.0))),
         modifiers: Modifiers::none(),

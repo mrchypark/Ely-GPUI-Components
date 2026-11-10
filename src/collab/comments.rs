@@ -102,6 +102,7 @@ impl RenderOnce for Reply {
 /// A conversation on a document: the words it is about, each comment with its author, time and reactions, a reply below, and resolve or reopen above; a resolved thread quiets down and takes no replies.
 #[derive(IntoElement)]
 pub struct CommentThread {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     thread: Thread,
     active: bool,
@@ -111,6 +112,12 @@ pub struct CommentThread {
 }
 
 impl CommentThread {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, thread: Thread) -> Self {
         assert!(
             !thread.comments.is_empty(),
@@ -118,6 +125,7 @@ impl CommentThread {
             thread.key
         );
         Self {
+            usable_bounds: None,
             id: id.into(),
             thread,
             active: false,
@@ -201,7 +209,10 @@ impl RenderOnce for CommentThread {
                     let reactions = Reactions::new(
                         (self.id.clone(), format!("reactions-{ix}")),
                         comment.reactions.clone(),
-                    );
+                    )
+                    .when_some(self.usable_bounds, |overlay, bounds| {
+                        overlay.usable_bounds(bounds)
+                    });
                     match react {
                         Some(react) => reactions
                             .on_toggle(move |emoji, window, cx| react(ix, emoji, window, cx)),
@@ -300,6 +311,7 @@ impl RenderOnce for CommentThread {
 /// A comment's mark beside the words it is about, with how many comments it holds; a press opens the thread in a bubble over the page.
 #[derive(IntoElement)]
 pub struct CommentMarker {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     thread: Thread,
     reply: Option<(Entity<TextInput>, Run)>,
@@ -307,8 +319,15 @@ pub struct CommentMarker {
 }
 
 impl CommentMarker {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, thread: Thread) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             thread,
             reply: None,
@@ -338,7 +357,10 @@ impl RenderOnce for CommentMarker {
         let (id, thread, reply, resolve) =
             (self.id.clone(), self.thread, self.reply, self.on_resolve);
         Popover::new(self.id, count, move |_, _| {
-            let mut bubble = CommentThread::new((id.clone(), "thread"), thread);
+            let mut bubble = CommentThread::new((id.clone(), "thread"), thread)
+                .when_some(self.usable_bounds, |overlay, bounds| {
+                    overlay.usable_bounds(bounds)
+                });
             if let Some((field, send)) = reply {
                 bubble = bubble.reply(&field, move |window, cx| send(window, cx));
             }
@@ -346,6 +368,9 @@ impl RenderOnce for CommentMarker {
                 bubble = bubble.on_resolve(move |on, window, cx| resolve(on, window, cx));
             }
             div().w(prose).child(bubble)
+        })
+        .when_some(self.usable_bounds, |overlay, bounds| {
+            overlay.usable_bounds(bounds)
         })
         .icon(IconName::MessageSquare)
         .variant(ButtonVariant::Ghost)

@@ -2,12 +2,17 @@ use ely_gpui_component::devtools::{
     ColorContrastChecker, Container, ContainerList, ContainerState, Encoder, Pod, PodList,
     PodPhase, Reading, RegexTester, ResourceMonitor,
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Hsla, IntoElement, ParentElement, Styled, Window, div, px, rgb};
 use jiff::Timestamp;
 
 use crate::ui::{change, keep, section};
 
-pub fn text(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn text(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let colors = keep(
         "devtools-contrast",
         || (Hsla::from(rgb(0x6b6b6b)), Hsla::from(rgb(0xf4efe6))),
@@ -35,7 +40,7 @@ pub fn text(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .child(div().w(px(380.)).child(Encoder::new("devtools-encoder", "Hello, 世界")))
             .child(
                 div().w(px(360.)).child(
-                    ColorContrastChecker::new("devtools-contrast", fore, back, move |fore, back, _, cx| change(&colors, cx, |colors| *colors = (fore, back))),
+                    ColorContrastChecker::new("devtools-contrast", fore, back, move |fore, back, _, cx| change(&colors, cx, |colors| *colors = (fore, back))).when_some(bounds, |overlay, area| overlay.usable_bounds(area)),
                 ),
             ),
     )

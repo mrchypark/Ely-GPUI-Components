@@ -44,6 +44,7 @@ pub(crate) fn list_button(
         .cursor_pointer()
         .hover(|style| style.bg(colors.hover))
         .child(Icon::new(icon).size(IconSize::Sm).color(colors.fg_muted));
+    let trigger = theme.touch_target(trigger);
     let list = Listing {
         id,
         rows,

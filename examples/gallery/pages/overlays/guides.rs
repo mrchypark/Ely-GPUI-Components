@@ -7,7 +7,7 @@ use ely_gpui_component::{
 };
 use gpui::{
     App, Bounds, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Pixels,
-    SharedString, StatefulInteractiveElement, Styled, Window, div,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
 use crate::{
@@ -20,7 +20,11 @@ const PHOTOS: [(&str, &str); 2] = [
     (asset!("atrium.jpg"), "An atrium, noon"),
 ];
 
-pub fn lightbox(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn lightbox(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<Bounds<Pixels>>,
+) -> impl IntoElement + use<> {
     let shown = keep("lightbox-at", || None::<usize>, window, cx);
     let thumbs = PHOTOS.iter().enumerate().map(|(ix, (path, _))| {
         let open = shown.clone();
@@ -48,6 +52,7 @@ pub fn lightbox(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             move |_, cx| set(&close, None, cx),
         )
         .on_step(move |to, _, cx| set(&step, Some(to), cx))
+        .when_some(bounds, |lightbox, bounds| lightbox.usable_bounds(bounds))
     });
     section(
         "Lightbox",

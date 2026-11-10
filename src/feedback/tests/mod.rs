@@ -7,6 +7,7 @@ use gpui::{
 
 mod loading;
 mod states;
+mod toast_touch;
 
 use super::{Alert, Notification, NotificationCenter, Toast, ToastViewport, Toaster};
 use crate::{
@@ -88,8 +89,9 @@ fn settle(cx: &mut VisualTestContext) {
 fn press(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
     settle(cx);
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).expect("a key"),
+        keystroke: Keystroke::parse_with_os(key, os).expect("a key"),
     });
     settle(cx);
 }
@@ -149,9 +151,19 @@ fn the_owner_reads_what_is_shown(cx: &mut TestAppContext) {
     push(&view, Toast::new("Denied").severity(Severity::Danger), cx);
     let toaster = view.read_with(cx, |desk, _| desk.toaster.clone());
     let shown = |cx: &mut VisualTestContext| toaster.read_with(cx, |toaster, _| toaster.shown());
-    assert_eq!(shown(cx), [("Saved".into(), None), ("Denied".into(), Some(Severity::Danger))]);
+    assert_eq!(
+        shown(cx),
+        [
+            ("Saved".into(), None),
+            ("Denied".into(), Some(Severity::Danger))
+        ]
+    );
     toaster.update(cx, |toaster, cx| toaster.dismiss(first, cx));
-    assert_eq!(shown(cx), [("Denied".into(), Some(Severity::Danger))], "a leaving toast is not shown");
+    assert_eq!(
+        shown(cx),
+        [("Denied".into(), Some(Severity::Danger))],
+        "a leaving toast is not shown"
+    );
 }
 
 #[gpui::test]

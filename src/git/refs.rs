@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
+    AnyElement, App, Bounds, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    prelude::*,
 };
 
 use crate::{
@@ -46,6 +47,7 @@ pub(super) type Run = Rc<dyn Fn(&mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct BranchSelector {
     id: ElementId,
+    usable_bounds: Option<Bounds<Pixels>>,
     branches: Vec<Branch>,
     on_pick: Option<OnName>,
     on_create: Option<OnName>,
@@ -53,6 +55,12 @@ pub struct BranchSelector {
 }
 
 impl BranchSelector {
+    /// Current usable rectangle in logical window coordinates.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         branches: impl IntoIterator<Item = Branch>,
@@ -61,6 +69,7 @@ impl BranchSelector {
         Self {
             id: id.into(),
             branches: branches.into_iter().collect(),
+            usable_bounds: None,
             on_pick: None,
             on_create: None,
             on_close: Rc::new(on_close),
@@ -186,6 +195,7 @@ impl RenderOnce for BranchSelector {
         );
         Palette {
             id: self.id,
+            usable_bounds: self.usable_bounds,
             input,
             groups,
             start: 0,

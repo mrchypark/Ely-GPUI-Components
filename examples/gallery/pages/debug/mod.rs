@@ -18,7 +18,11 @@ pub const PAGE: Page = Page {
 
 const SCRIPT: &[Step] = &[Step::Rest];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(session::session(window, cx))
         .child(session::breakpoints_and_stack(window, cx))

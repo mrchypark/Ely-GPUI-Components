@@ -15,4 +15,7 @@ pub use hover::HoverCard;
 pub(crate) use lightbox::media_button;
 pub use lightbox::{Lightbox, Slide};
 pub use popover::Popover;
+pub(crate) use popover::bounded::{
+    available as tooltip_available, has_room as tooltip_has_room, place as tooltip_place,
+};
 pub use spotlight::{Spotlight, Tour, TourStep};

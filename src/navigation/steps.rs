@@ -161,6 +161,7 @@ impl RenderOnce for Steps {
                 .rounded_full()
                 .border_1()
                 .border_color(gpui::transparent_black())
+                .when(select.is_some(), |head| theme.touch_target(head))
                 .when_some(select, |head, select| {
                     head.cursor_pointer().tab_index(0).focus_ring(cx).on_click(
                         move |_, window, cx| {

@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, ClickEvent, ElementId, Entity, InteractiveElement, IntoElement, ParentElement,
-    Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, canvas, div,
-    prelude::*,
+    App, Bounds, ClickEvent, ElementId, Entity, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    canvas, div, prelude::*,
 };
 
 use super::{
@@ -221,8 +221,18 @@ impl RenderOnce for Cascader {
             let lists = columns.iter().enumerate().map(|(level, column)| {
                 let rows = column.iter().enumerate().map(|(ix, node)| {
                     let (hover, pick) = (state.clone(), pick.clone());
+                    let press = state.clone();
                     let at: Vec<usize> = trail[..level].iter().copied().chain([ix]).collect();
                     let leaf = node.children.is_empty();
+                    // A tap never hovers, so the press opens the next level
+                    // the way the pointer does.
+                    let open_next = (!leaf).then(|| {
+                        let at = at.clone();
+                        let press = press.clone();
+                        move |_: &gpui::MouseDownEvent, _: &mut Window, cx: &mut App| {
+                            show(&press, true, at.clone(), cx)
+                        }
+                    });
                     let choice = Choice::new(node.value.clone(), node.label.clone());
                     option_row(
                         ("row", ix),
@@ -246,12 +256,17 @@ impl RenderOnce for Cascader {
                             }
                         }
                     })
+                    .debug_selector(move || format!("cascade-row-{level}-{ix}"))
+                    .when_some(open_next, |row, open| {
+                        row.on_mouse_down(MouseButton::Left, open)
+                    })
                     .when(leaf, |row| {
                         row.on_click(move |_, window, cx| pick(at.clone(), window, cx))
                     })
                 });
                 div()
                     .id(("column", level))
+                    .debug_selector(move || format!("cascade-column-{level}"))
                     .w(theme.tooltip_max_width() * 0.75)
                     .max_h(theme.list_max_height())
                     .overflow_y_scroll()

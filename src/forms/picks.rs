@@ -207,6 +207,7 @@ pub(crate) fn grid(
                             };
                             div()
                                 .id(("glyph", ix))
+                                .debug_selector(move || format!("glyph-cell-{ix}"))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -217,6 +218,9 @@ pub(crate) fn grid(
                                 .when(selected == Some(ix), |cell| cell.bg(colors.active))
                                 .cursor_pointer()
                                 .hover(|style| style.bg(colors.hover))
+                                // A phone never hovers, so the press itself shows the cell.
+                                .active(|style| style.bg(colors.hover))
+                                .map(|cell| theme.touch_target(cell))
                                 .tooltip(Tooltip::text(name))
                                 .on_click(move |_, window, cx| {
                                     clicked.update(cx, |finder, cx| {

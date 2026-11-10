@@ -1,16 +1,20 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
-    TestAppContext, VisualTestContext, Window, div, px,
+    AnyElement, AppContext as _, Context, Entity, InteractiveElement, IntoElement, Modifiers,
+    MouseButton, ParentElement, Render, Styled, TestAppContext, VisualTestContext, Window, div, px,
 };
 use jiff::Timestamp;
 
+use crate::charts::{Linear, Rect, measure};
 use crate::finance::{
     Arrangement, BidAskBar, CandlestickChart, ChartSync, CryptoWalletCard, CurrencyConverter,
     DepthChart, DomLadder, IntervalSelector, Leg, LeverageSlider, MarginIndicator, MarketHeatmap,
     MultiChartLayout, PayoffDiagram, PerformanceChart, PointFigureChart, QuickTradeButtons,
-    RenkoChart, SpreadIndicator, TimeRangeSelector, candles::Candle, stage::Visible,
+    RenkoChart, SpreadIndicator, TimeRangeSelector,
+    candles::Candle,
+    stage::Visible,
+    steer::{Stage, Steering},
 };
 use crate::{layout::tests::narrow_width, theme::Theme};
 
@@ -371,4 +375,122 @@ fn every_rung_trades_even_where_prices_repeat(cx: &mut TestAppContext) {
             assert_eq!(heard.borrow().len(), 1, "tick {tick}, row {row}");
         }
     }
+}
+
+/// A market chart's own steering: the candles in view and the one under the pointer.
+struct Steered {
+    stage: Entity<Stage>,
+}
+
+impl Render for Steered {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        Steering {
+            stage: self.stage.clone(),
+            sync: None,
+            visible: VISED,
+            total: 30,
+            main: FRAME,
+            price: Linear::new((9.0, 11.0), (FRAME.y + FRAME.h, FRAME.y)),
+            tool: None,
+            on_draw: None,
+        }
+        .attach(
+            div()
+                .id("steered")
+                .relative()
+                .w(px(300.0))
+                .h(px(200.0))
+                .debug_selector(|| "chart-root".into()),
+        )
+        .child(measure(self.stage.clone(), |stage| &mut stage.bounds))
+    }
+}
+
+/// The candles a steered chart shows, and the frame they show in.
+const VISED: Visible = Visible {
+    start: 0.0,
+    count: 30.0,
+};
+const FRAME: Rect = Rect {
+    x: 0.0,
+    y: 0.0,
+    w: 300.0,
+    h: 200.0,
+};
+
+/// Lets the chart settle: it measures itself on its first frame.
+fn settle(cx: &mut VisualTestContext) {
+    for _ in 0..3 {
+        cx.run_until_parked();
+        cx.update(|window, _| window.refresh());
+    }
+    cx.run_until_parked();
+}
+
+/// A steered chart, with touch mode on or off.
+fn steered(cx: &mut TestAppContext, touch: bool) -> (Entity<Steered>, &mut VisualTestContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.touch_mode = touch);
+    });
+    let (view, cx) = cx.add_window_view(|_, cx| Steered {
+        stage: cx.new(|_| Stage::default()),
+    });
+    settle(cx);
+    (view, cx)
+}
+
+#[gpui::test]
+fn a_press_alone_points_at_the_candle_under_the_finger(cx: &mut TestAppContext) {
+    let (view, cx) = steered(cx, true);
+    let at = cx.debug_bounds("chart-root").expect("the chart").center();
+    cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
+    settle(cx);
+
+    let stage = view.read_with(cx, |view, _| view.stage.clone());
+    let bounds = stage.read_with(cx, |stage, _| stage.bounds);
+    let wanted = VISED.at(f32::from(at.x - bounds.origin.x), (FRAME.x, FRAME.w));
+    assert_eq!(
+        stage.read_with(cx, |stage, _| stage.hover),
+        Some(wanted),
+        "the press names the candle under it"
+    );
+    assert!(
+        stage.read_with(cx, |stage, _| stage.pointer).is_some(),
+        "the press leaves the pointer where it landed"
+    );
+}
+
+#[gpui::test]
+fn a_touch_release_clears_the_pointer_and_hover(cx: &mut TestAppContext) {
+    let (view, cx) = steered(cx, true);
+    let at = cx.debug_bounds("chart-root").expect("the chart").center();
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
+    settle(cx);
+
+    let stage = view.read_with(cx, |view, _| view.stage.clone());
+    assert_eq!(
+        stage.read_with(cx, |stage, _| (stage.pointer, stage.hover)),
+        (None, None),
+        "lifting a finger clears the touch crosshair"
+    );
+}
+
+#[gpui::test]
+fn a_mouse_move_still_points_at_the_candle_under_it(cx: &mut TestAppContext) {
+    let (view, cx) = steered(cx, false);
+    let at = cx.debug_bounds("chart-root").expect("the chart").center();
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    settle(cx);
+
+    let stage = view.read_with(cx, |view, _| view.stage.clone());
+    let bounds = stage.read_with(cx, |stage, _| stage.bounds);
+    let wanted = VISED.at(f32::from(at.x - bounds.origin.x), (FRAME.x, FRAME.w));
+    assert_eq!(
+        stage.read_with(cx, |stage, _| stage.hover),
+        Some(wanted),
+        "the move names the candle under it"
+    );
 }

@@ -200,6 +200,24 @@ fn local(position: Point<Pixels>, bounds: Bounds<Pixels>) -> (f32, f32) {
     (f32::from(offset.x), f32::from(offset.y))
 }
 
+fn pick_hover(
+    state: &Entity<State>,
+    place: (f32, f32),
+    (pick, horizontal): (Pick, bool),
+    (rect, span, reach): (Rect, (usize, usize), f32),
+    geometry: &Geometry,
+    cx: &mut App,
+) {
+    state.update(cx, |state, cx| {
+        let next = pick_at(pick, place, rect, horizontal, span, &geometry.dots, reach);
+        if state.hover != next || (next.is_some() && pick != Pick::Dot) {
+            state.hover = next;
+            state.pointer = place;
+            cx.notify();
+        }
+    });
+}
+
 /// Wires the pointer: hover picks, and on a zoomable plot a drag brushes a span and a double press shows all.
 pub(crate) fn answer(
     root: Stateful<Div>,
@@ -210,6 +228,8 @@ pub(crate) fn answer(
 ) -> Stateful<Div> {
     let (moved, left, pressed, released) =
         (state.clone(), state.clone(), state.clone(), state.clone());
+    let tap_pressed = state.clone();
+    let move_geometry = geometry.clone();
     let end_brush = move |_: &MouseUpEvent, _: &mut Window, cx: &mut App| {
         released.update(cx, |state, cx| {
             let Some((a, b)) = state.brush.take() else {
@@ -239,13 +259,32 @@ pub(crate) fn answer(
                 cx.notify();
                 return;
             }
-            let next = pick_at(pick, place, rect, horizontal, span, &geometry.dots, reach);
+            let next = pick_at(
+                pick,
+                place,
+                rect,
+                horizontal,
+                span,
+                &move_geometry.dots,
+                reach,
+            );
             if state.hover != next || (next.is_some() && pick != Pick::Dot) {
                 state.hover = next;
                 state.pointer = place;
                 cx.notify();
             }
         })
+    })
+    .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
+        let place = local(event.position, tap_pressed.read(cx).bounds);
+        pick_hover(
+            &tap_pressed,
+            place,
+            (pick, horizontal),
+            (rect, span, reach),
+            &geometry,
+            cx,
+        );
     })
     .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
     .on_hover(move |inside, _, cx| {
@@ -278,6 +317,118 @@ pub(crate) fn answer(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "test-support")]
+    mod interactive_tests {
+        use std::rc::Rc;
+
+        use gpui::{
+            Context, Modifiers, MouseButton, Render, TestAppContext, div, point, prelude::*, px,
+        };
+
+        use crate::charts::pointer::answer;
+        use crate::charts::{
+            geometry::{Geometry, Rect},
+            paint::measure,
+            parts::ChartTooltip,
+            plot::{Pick, State},
+            tests::settle,
+        };
+        use crate::theme::Theme;
+
+        struct HoverProbe {
+            state: gpui::Entity<State>,
+        }
+
+        impl HoverProbe {
+            fn new(cx: &mut Context<Self>) -> Self {
+                Self {
+                    state: cx.new(|_| State::default()),
+                }
+            }
+        }
+
+        impl Render for HoverProbe {
+            fn render(
+                &mut self,
+                _: &mut gpui::Window,
+                cx: &mut Context<Self>,
+            ) -> impl gpui::IntoElement {
+                let hovered = self.state.read(cx).hover.is_some();
+                let rect = Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 300.0,
+                    h: 200.0,
+                };
+                answer(
+                    div()
+                        .id("hover-probe")
+                        .w(px(300.0))
+                        .h(px(200.0))
+                        .debug_selector(|| "chart-root".into()),
+                    &self.state,
+                    (Pick::Point, false, false),
+                    (rect, (0, 2), 0.0),
+                    Rc::new(Geometry::default()),
+                )
+                .child(measure(self.state.clone(), |state| &mut state.bounds))
+                .children(hovered.then(|| {
+                    div()
+                        .debug_selector(|| "hover-tooltip".into())
+                        .child(ChartTooltip::new("picked"))
+                }))
+            }
+        }
+
+        macro_rules! probe {
+            ($cx:expr, $touch:expr) => {{
+                $cx.update(|cx| {
+                    Theme::init(cx);
+                    Theme::update(cx, |theme| theme.touch_mode = $touch);
+                });
+                let (_, cx) = $cx.add_window_view(|_, cx| HoverProbe::new(cx));
+                cx.simulate_resize(gpui::size(px(400.0), px(240.0)));
+                settle(cx);
+                cx
+            }};
+        }
+
+        #[gpui::test]
+        fn a_press_selects_hover_without_a_mouse_move(cx: &mut TestAppContext) {
+            let cx = probe!(cx, true);
+            let at = point(px(100.0), px(100.0));
+            cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
+            cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
+            settle(cx);
+
+            assert!(
+                cx.debug_bounds("hover-tooltip").is_some(),
+                "a press alone opens the hover tooltip"
+            );
+        }
+
+        #[gpui::test]
+        fn mouse_move_still_selects_hover(cx: &mut TestAppContext) {
+            let cx = probe!(cx, false);
+            cx.simulate_mouse_move(point(px(100.0), px(100.0)), None, Modifiers::none());
+            settle(cx);
+
+            assert!(cx.debug_bounds("hover-tooltip").is_some());
+        }
+
+        #[gpui::test]
+        fn moving_outside_still_clears_hover(cx: &mut TestAppContext) {
+            let cx = probe!(cx, false);
+            cx.simulate_mouse_move(point(px(100.0), px(100.0)), None, Modifiers::none());
+            settle(cx);
+            assert!(cx.debug_bounds("hover-tooltip").is_some());
+
+            cx.simulate_mouse_move(point(px(350.0), px(220.0)), None, Modifiers::none());
+            settle(cx);
+            assert!(cx.debug_bounds("hover-tooltip").is_none());
+        }
+    }
 
     #[test]
     fn the_pointer_picks_bands_points_and_dots() {

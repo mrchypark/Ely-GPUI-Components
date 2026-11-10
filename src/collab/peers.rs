@@ -63,6 +63,7 @@ impl Peer {
 /// Who else is here, their avatars overlapping, each ringed in their color: resting on one says where they are; a press follows them. Past `max`, the rest show as a count.
 #[derive(IntoElement)]
 pub struct PresenceAvatars {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     peers: Vec<Peer>,
     max: usize,
@@ -71,8 +72,15 @@ pub struct PresenceAvatars {
 }
 
 impl PresenceAvatars {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, peers: impl IntoIterator<Item = Peer>) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             peers: peers.into_iter().collect(),
             max: 4,
@@ -107,6 +115,7 @@ impl RenderOnce for PresenceAvatars {
         {
             log::error!("presence: {following} left; following none");
         }
+        let touch = cx.theme().touch_mode;
         let size = AvatarSize::Sm;
         let rest = self.peers.len().saturating_sub(self.max);
         let shown: Vec<AnyElement> = self
@@ -119,8 +128,13 @@ impl RenderOnce for PresenceAvatars {
                 let following = self.following.as_ref() == Some(&peer.key);
                 let (key, name, place) = (peer.key.clone(), peer.name.clone(), peer.place.clone());
                 let follow = self.on_follow.clone();
-                let face = tucked(ix == 0, size)
+                let face = tucked(touch || ix == 0, size)
+                    .map(|face| cx.theme().touch_target(face))
+                    .when(touch, |face| {
+                        face.flex().items_center().justify_center().flex_none()
+                    })
                     .id((self.id.clone(), format!("peer-{key}")))
+                    .debug_selector(|| "presence-primary".into())
                     .rounded_full()
                     .border_1()
                     .border_color(transparent_black())
@@ -175,15 +189,20 @@ impl RenderOnce for PresenceAvatars {
                             }))
                     },
                 )
+                .touch_label(format!("About {}", peer.name))
+                .when_some(self.usable_bounds, |overlay, bounds| {
+                    overlay.usable_bounds(bounds)
+                })
                 .into_any_element()
             })
             .collect();
         div()
             .flex()
             .items_center()
+            .when(touch, |row| row.flex_wrap().gap_2())
             .children(shown)
             .when(rest > 0, |row| {
-                row.child(tucked(false, size).child(more(rest, size, cx)))
+                row.child(tucked(touch, size).child(more(rest, size, cx)))
             })
     }
 }

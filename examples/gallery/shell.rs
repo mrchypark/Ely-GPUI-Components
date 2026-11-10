@@ -254,7 +254,9 @@ impl Gallery {
         if let Some(story) = &self.story {
             cx.set_global(Story::new(story.clone()));
         }
-        let body = window.with_id(("pass", self.pass), |window| (page.render)(window, cx));
+        let body = window.with_id(("pass", self.pass), |window| {
+            (page.render)(window, cx, None)
+        });
         if self.story.is_none() {
             return Ok(body);
         }

@@ -35,7 +35,11 @@ fn link(text: String, window: &mut Window, cx: &mut App) -> Entity<TextInput> {
     })
 }
 
-pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn form(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let name = field("form-name", window, cx, |input| {
         input.placeholder("Ada Lovelace")
     });
@@ -120,12 +124,12 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                     FormSection::new("Profile")
                         .description("How others see you.")
                         .child(
-                            FormField::new("profile-name", "Name")
+                            FormField::new("profile-name", "Name").when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                                 .required()
                                 .child(probe("form-name", div().w(px(480.0)).child(Input::new(&name)))),
                         )
                         .child(
-                            FormField::new("profile-email", "Email")
+                            FormField::new("profile-email", "Email").when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                                 .required()
                                 .help("Only for sign-in and receipts.")
                                 .description("We never share it.")
@@ -133,7 +137,7 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                                 .child(probe("form-email", div().w(px(480.0)).child(Input::new(&email)))),
                         )
                         .child(
-                            FormField::new("profile-bio", "Bio")
+                            FormField::new("profile-bio", "Bio").when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                                 .description("Plain text, a few lines.")
                                 .child(Input::new(&bio)),
                         ),
@@ -169,7 +173,11 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-pub fn inline(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn inline(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let email = field("inline-email", window, cx, |input| {
         input.placeholder("you@example.com")
     });
@@ -181,9 +189,13 @@ pub fn inline(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         div().w(px(480.0)).child(
             InlineForm::new()
-                .child(div().flex_1().child(
-                    FormField::new("inline-newsletter", "Newsletter").child(Input::new(&email)),
-                ))
+                .child(
+                    div().flex_1().child(
+                        FormField::new("inline-newsletter", "Newsletter")
+                            .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+                            .child(Input::new(&email)),
+                    ),
+                )
                 .child(Button::new("inline-join", "Subscribe").primary()),
         ),
     )

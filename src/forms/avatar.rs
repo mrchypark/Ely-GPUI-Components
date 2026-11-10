@@ -1,8 +1,9 @@
 use std::{path::PathBuf, rc::Rc};
 
 use gpui::{
-    App, ElementId, ExternalPaths, InteractiveElement, IntoElement, ParentElement,
+    App, ElementId, ExternalPaths, InteractiveElement, IntoElement, MouseButton, ParentElement,
     PathPromptOptions, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    prelude::FluentBuilder,
 };
 
 use super::{files::hovering, path::choose};
@@ -75,6 +76,9 @@ impl RenderOnce for AvatarUpload {
                 }
             })
         };
+        // A phone never hovers, so the camera shows outright in touch mode and
+        // a press reveals it everywhere else.
+        let revealed = window.use_keyed_state((self.id.clone(), "camera"), cx, |_, _| false);
         let theme = cx.theme();
         let corner = |element: gpui::Div, square: bool| {
             if square {
@@ -85,15 +89,20 @@ impl RenderOnce for AvatarUpload {
         };
         let square = self.avatar.is_square();
         let group = SharedString::from(format!("{:?}", self.id));
+        let touch = theme.touch_mode;
+        let showing = touch || *revealed.read(cx);
         let (pick, drop_in, what_drop) = (take.clone(), take, what.clone());
+        let press = revealed.clone();
         corner(div(), square)
             .id(self.id)
             .group(group.clone())
+            .debug_selector(|| "avatar-upload".into())
             .relative()
             .flex_none()
             .border_1()
             .border_color(gpui::transparent_black())
             .cursor_pointer()
+            .map(|root| theme.touch_target(root))
             .track_focus(&focus)
             .focus_ring(cx)
             .child(self.avatar)
@@ -105,14 +114,37 @@ impl RenderOnce for AvatarUpload {
                     .items_center()
                     .justify_center()
                     .bg(theme.colors.media_backdrop.opacity(0.5))
-                    .opacity(0.0)
+                    .opacity(if showing { 1.0 } else { 0.0 })
                     .group_hover(group, |style| style.opacity(1.0))
+                    .debug_selector(move || {
+                        if touch {
+                            "avatar-camera-overlay-touch".into()
+                        } else if showing {
+                            "avatar-camera-overlay-revealed".into()
+                        } else {
+                            "avatar-camera-overlay".into()
+                        }
+                    })
                     .child(
-                        Icon::new(IconName::Camera)
-                            .size(IconSize::Md)
-                            .color(theme.colors.on_media),
+                        div()
+                            .debug_selector(|| "avatar-camera-button".into())
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .map(|button| theme.touch_target(button))
+                            .child(
+                                Icon::new(IconName::Camera)
+                                    .size(IconSize::Md)
+                                    .color(theme.colors.on_media),
+                            ),
                     ),
             )
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                press.update(cx, |revealed, cx| {
+                    *revealed = true;
+                    cx.notify();
+                });
+            })
             .on_click(move |_, window, cx| {
                 let pick = pick.clone();
                 let what = what.clone();

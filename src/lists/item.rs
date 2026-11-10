@@ -149,6 +149,7 @@ impl RenderOnce for ListItem {
         let pressable = self.on_click.is_some() && !self.disabled;
         div()
             .id(self.id)
+            .debug_selector(|| format!("list-item-{}", self.title))
             .role(Role::ListItem)
             .aria_label(self.title.clone())
             .aria_selected(self.selected)
@@ -164,6 +165,7 @@ impl RenderOnce for ListItem {
             .px_3()
             .py_1p5()
             .min_h(theme.control_height(ControlSize::Lg))
+            .map(|row| theme.touch_target(row))
             .rounded(theme.radius(Radius::Md))
             .border_1()
             .border_color(if self.current {
@@ -180,6 +182,8 @@ impl RenderOnce for ListItem {
                 row.cursor_pointer()
                     .when(!self.selected, |row| {
                         row.hover(|style| style.bg(colors.hover))
+                            // A phone never hovers, so the press itself shows the row pressed.
+                            .active(|style| style.bg(colors.hover))
                     })
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                     .on_click(move |event, window, cx| on_click(event, window, cx))

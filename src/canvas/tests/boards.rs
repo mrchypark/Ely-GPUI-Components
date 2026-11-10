@@ -10,8 +10,9 @@ use crate::canvas::{
 
 fn tap(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(gpui::KeyUpEvent {
-        keystroke: gpui::Keystroke::parse(key).expect("a key"),
+        keystroke: gpui::Keystroke::parse_with_os(key, os).expect("a key"),
     });
     settle(cx);
 }

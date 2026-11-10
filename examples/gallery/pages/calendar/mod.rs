@@ -102,14 +102,18 @@ fn events(today: Date, zone: &TimeZone) -> Vec<Event> {
     ]
 }
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(months::month(window, cx))
         .child(months::mini(window, cx))
         .child(times::week(window, cx))
         .child(times::day(window, cx))
         .child(people::agenda(window, cx))
-        .child(people::details(window, cx))
+        .child(people::details(window, cx, bounds))
         .child(editing::editor(window, cx))
         .child(editing::availability(window, cx))
         .child(months::year(window, cx))

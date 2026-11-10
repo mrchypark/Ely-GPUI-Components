@@ -11,10 +11,17 @@ Status: early. `TASKS.md` tracks every component, chapter by chapter. To help, s
 
 ```toml
 [dependencies]
-ely-gpui-component = { git = "https://github.com/ZacharyZhang-NY/Ely-GPUI-Components" }
-gpui = { package = "gpui-pre", version = "=0.3.8" }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["font-kit"] }
+ely-gpui-component = { git = "https://github.com/mrchypark/Ely-GPUI-Components" }
+gpui = { package = "gpui-fast", version = "=0.1.12" }
+gpui_platform = { package = "gpui-fast-platform", version = "=0.1.12", features = ["font-kit"] }
 ```
+
+Mobile applications using `gpui-mobile` must also apply its
+workspace-root `[patch.crates-io]` overrides for `gpui-fast` and
+`gpui-fast-wgpu`. Cargo does not inherit patches from dependencies. Without
+those overrides, the registry packages do not include the mobile patches.
+The current macOS Fast platform dependency needs Rust 1.99.0; the Android and
+iOS simulator integration builds are checked with Rust 1.97.1.
 
 ```rust
 use ely_gpui_component::{Assets, theme::{Mode, Theme}};
