@@ -62,6 +62,11 @@ rustix = { version = "1", default-features = false, features = ["std", "fs"] }
 [dev-dependencies]
 env_logger = "0.11"
 
+[[test]]
+name = "mobile-gallery"
+path = "examples/mobile_gallery/lib.rs"
+required-features = ["test-support"]
+
 [target.'cfg(target_family = "wasm")'.dev-dependencies]
 gpui_web = { package = "gpui-fast-web", version = "=0.1.12" }
 js-sys = "0.3"

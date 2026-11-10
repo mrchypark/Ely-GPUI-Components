@@ -1,8 +1,8 @@
 use crate::{MobileGallery, probe::Probes};
 use ely_gpui_component::theme::Theme;
 use gpui::{
-    Bounds, Pixels, ScrollDelta, ScrollEvent, TestAppContext, TouchPhase, VisualTestContext,
-    point, px, size,
+    Bounds, Pixels, ScrollDelta, ScrollEvent, TestAppContext, TouchPhase, VisualTestContext, point,
+    px, size,
 };
 
 fn init(cx: &mut TestAppContext) {
@@ -160,6 +160,7 @@ fn phone_chat_virtual_rows_day_system_and_markdown_fit_the_conversation(cx: &mut
                     delta: ScrollDelta::Pixels(point(px(0.), px(amount))),
                     modifiers: gpui::Modifiers::none(),
                     touch_phase: phase,
+                    source: gpui::ScrollSource::Pointer,
                 });
             }
             draw(cx);

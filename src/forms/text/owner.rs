@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use gpui::{Context, EntityId, Window, WindowId};
+use gpui::{App, Context, EntityId, Global, Window, WindowId};
 
 use super::TextInput;
 
@@ -17,6 +17,17 @@ pub struct TextInputOwner {
     pub focused: bool,
     /// Editability metadata; the acceptance return value remains unchanged.
     pub disabled: bool,
+}
+
+struct InputOwnerReporter(Rc<dyn Fn(TextInputOwner)>);
+
+impl Global for InputOwnerReporter {}
+
+/// Sets one app-wide reporter for text input ownership queries.
+/// A per-instance `input_owner_observer` reports instead of the global reporter.
+/// Call during app initialization. A later call replaces the reporter.
+pub fn set_input_owner_reporter(reporter: impl Fn(TextInputOwner) + 'static, cx: &mut App) {
+    cx.set_global(InputOwnerReporter(Rc::new(reporter)));
 }
 
 impl TextInput {
@@ -46,14 +57,17 @@ impl TextInput {
     }
 
     pub(super) fn report_input_owner(&self, window: &Window, cx: &Context<Self>) {
+        let owner = TextInputOwner {
+            window: window.window_handle().window_id(),
+            editor: cx.entity_id(),
+            activation: self.owner_activation,
+            focused: self.focus.is_focused(window),
+            disabled: self.disabled,
+        };
         if let Some(observer) = &self.owner_observer {
-            observer(TextInputOwner {
-                window: window.window_handle().window_id(),
-                editor: cx.entity_id(),
-                activation: self.owner_activation,
-                focused: self.focus.is_focused(window),
-                disabled: self.disabled,
-            });
+            observer(owner);
+        } else if let Some(reporter) = cx.try_global::<InputOwnerReporter>() {
+            (reporter.0)(owner);
         }
     }
 }

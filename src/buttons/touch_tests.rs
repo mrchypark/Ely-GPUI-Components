@@ -1,4 +1,4 @@
-use super::{ActionBar, Button, IconButton};
+use super::{ActionBar, Button, FloatingActionButton, IconButton};
 use crate::{
     primitives::IconName,
     theme::{ControlSize, Density, Theme},
@@ -27,6 +27,12 @@ impl Render for TouchControls {
                     .debug_selector(|| "touch-icon".into())
                     .child(IconButton::new("touch-icon", IconName::Check).size(ControlSize::Sm)),
             )
+            .child(
+                div().flex().debug_selector(|| "touch-fab".into()).child(
+                    FloatingActionButton::new("touch-fab", IconName::Check)
+                        .on_click(cx.listener(|view, _, _, _| view.clicks += 1)),
+                ),
+            )
     }
 }
 
@@ -50,7 +56,8 @@ fn touch_targets_survive_small_rem_and_restore_desktop_density(cx: &mut TestAppC
     cx.run_until_parked();
     let button = cx.debug_bounds("touch-button").expect("touch button");
     let icon = cx.debug_bounds("touch-icon").expect("touch icon");
-    for bounds in [button, icon] {
+    let fab = cx.debug_bounds("touch-fab").expect("touch fab");
+    for bounds in [button, icon, fab] {
         assert!(bounds.size.width >= px(48.) && bounds.size.height >= px(48.));
     }
     assert!(icon.left() - button.right() >= px(8.));
@@ -59,12 +66,18 @@ fn touch_targets_survive_small_rem_and_restore_desktop_density(cx: &mut TestAppC
         Modifiers::none(),
     );
     assert_eq!(view.read_with(cx, |view, _| view.clicks), 1);
+    cx.simulate_click(
+        point(fab.right() - px(2.), fab.bottom() - px(2.)),
+        Modifiers::none(),
+    );
+    assert_eq!(view.read_with(cx, |view, _| view.clicks), 2);
     cx.update(|window, _| {
         window.set_rem_size(px(48.));
         window.refresh();
     });
     cx.run_until_parked();
     assert!(cx.debug_bounds("touch-icon").unwrap().size.height >= px(60.));
+    assert!(cx.debug_bounds("touch-fab").unwrap().size.height >= px(60.));
     cx.update(|window, cx| {
         window.set_rem_size(px(8.));
         Theme::update(cx, |theme| theme.touch_mode = false);

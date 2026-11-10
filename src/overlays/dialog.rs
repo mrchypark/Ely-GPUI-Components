@@ -224,6 +224,12 @@ impl RenderOnce for Dialog {
         });
         let (escape, dismiss, button) = (close.clone(), close.clone(), close);
         let fullscreen = self.fullscreen;
+        // Below four touch rows, preserve the body and actions over the fixed heading.
+        let compact = !fullscreen
+            && !self.body.is_empty()
+            && self
+                .usable_bounds
+                .is_some_and(|bounds| bounds.size.height < window.rem_size() * 12.0);
         let card = if fullscreen {
             div()
                 .id(self.id.clone())
@@ -236,30 +242,39 @@ impl RenderOnce for Dialog {
                 .bg(colors.bg)
                 .child(
                     div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_4()
-                        .px_6()
-                        .py_4()
-                        .border_b_1()
-                        .border_color(colors.border)
-                        .child(heading)
-                        .child(
-                            IconButton::new((self.id.clone(), "close"), IconName::X)
-                                .variant(ButtonVariant::Ghost)
-                                .tooltip(i18n::text(cx, "dialog.close", &[]))
-                                .on_click(move |_, window, cx| button(window, cx)),
-                        ),
-                )
-                .child(
-                    div()
-                        .id((self.id.clone(), "body"))
                         .flex_1()
                         .min_h_0()
-                        .overflow_y_scroll()
-                        .p_6()
-                        .children(self.body),
+                        .flex()
+                        .flex_col()
+                        .overflow_hidden()
+                        .child(
+                            div()
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .gap_4()
+                                .px_6()
+                                .py_4()
+                                .border_b_1()
+                                .border_color(colors.border)
+                                .child(heading)
+                                .child(
+                                    IconButton::new((self.id.clone(), "close"), IconName::X)
+                                        .variant(ButtonVariant::Ghost)
+                                        .tooltip(i18n::text(cx, "dialog.close", &[]))
+                                        .on_click(move |_, window, cx| button(window, cx)),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id((self.id.clone(), "body"))
+                                .flex_1()
+                                .min_h_0()
+                                .overflow_y_scroll()
+                                .p_6()
+                                .children(self.body),
+                        ),
                 )
                 .children(actions.map(|row| {
                     div()
@@ -274,7 +289,9 @@ impl RenderOnce for Dialog {
             let body = (!self.body.is_empty()).then(|| {
                 div()
                     .id((self.id.clone(), "body"))
+                    .flex_1()
                     .min_h_0()
+                    .when(compact, |body| body.min_h(gpui::rems(3.)))
                     .overflow_y_scroll()
                     .child(div().flex().flex_col().gap_5().children(self.body))
             });
@@ -297,13 +314,23 @@ impl RenderOnce for Dialog {
                         .overflow_hidden()
                 })
                 .p_6()
+                .when(compact, |card| card.p_1().gap_1())
                 .rounded(theme.radius(Radius::Xl))
                 .bg(colors.overlay)
                 .border_1()
                 .border_color(colors.border)
                 .shadow(theme.elevation(Elevation::Modal))
-                .child(heading)
-                .children(body)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .flex()
+                        .flex_col()
+                        .gap_5()
+                        .overflow_hidden()
+                        .when(!compact, |content| content.child(heading))
+                        .children(body),
+                )
                 .children(actions)
         };
         let arrive =
@@ -347,23 +374,34 @@ impl RenderOnce for Dialog {
         if fullscreen {
             let viewport = window.viewport_size();
             let top = cx.theme().titlebar_height().to_pixels(window.rem_size());
+            let bounded = self.usable_bounds.is_some();
             let bounds = self.usable_bounds.unwrap_or_else(|| {
                 Bounds::new(
                     point(Pixels::ZERO, top),
                     gpui::size(viewport.width, viewport.height - top),
                 )
             });
+            let blocking = if bounded {
+                Bounds::new(point(Pixels::ZERO, Pixels::ZERO), viewport)
+            } else {
+                bounds
+            };
             return raise(
                 (self.id.clone(), "raised"),
-                anchored().position(bounds.origin).child(
+                anchored().position(blocking.origin).child(
                     div()
-                        .w(bounds.size.width)
-                        .h(bounds.size.height)
-                        .when(self.usable_bounds.is_some(), |layer| {
-                            layer.overflow_hidden()
-                        })
+                        .w(blocking.size.width)
+                        .h(blocking.size.height)
                         .occlude()
-                        .child(layer),
+                        .child(
+                            anchored().position(bounds.origin).child(
+                                div()
+                                    .w(bounds.size.width)
+                                    .h(bounds.size.height)
+                                    .when(bounded, |layer| layer.overflow_hidden())
+                                    .child(layer),
+                            ),
+                        ),
                 ),
             )
             .with_priority(1)

@@ -124,7 +124,8 @@ impl Render for MobileGallery {
             Bounds::new(point(px(0.), px(0.)), window.viewport_size()),
             self.insets,
             self.keyboard,
-        );
+        )
+        .intersect(&window.fully_visible_bounds());
         let colors = cx.theme().colors.clone();
         let page = &pages::ALL[self.page];
         let specimens = stories(page.slug);

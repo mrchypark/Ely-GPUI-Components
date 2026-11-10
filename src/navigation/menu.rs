@@ -157,6 +157,7 @@ impl RenderOnce for NavigationMenu {
                 .items_center()
                 .gap_1()
                 .h(theme.control_height(ControlSize::Md))
+                .map(|entry| theme.touch_target(entry))
                 .px_3()
                 .rounded(theme.radius(Radius::Md))
                 .border_1()

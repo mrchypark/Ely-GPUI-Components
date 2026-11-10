@@ -6,7 +6,7 @@ use gpui::{
     Window, div, point, px,
 };
 
-use super::{Drawer, PaneGroup, SplitPane};
+use super::{Drawer, MasterDetail, PaneGroup, SplitPane};
 use crate::theme::Theme;
 
 type Build = Box<dyn Fn(&mut Window, &mut App) -> AnyElement>;
@@ -291,4 +291,45 @@ fn a_touch_split_handle_is_a_thumb(cx: &mut TestAppContext) {
         handle.size.width < px(48.),
         "the desktop keeps its thin divider: {handle:?}"
     );
+}
+
+struct AdaptiveMasterDetail;
+
+impl Render for AdaptiveMasterDetail {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        MasterDetail::new(
+            "adaptive",
+            div()
+                .debug_selector(|| "adaptive-master".into())
+                .size_full(),
+            div()
+                .debug_selector(|| "adaptive-detail".into())
+                .size_full(),
+            px(40.),
+        )
+    }
+}
+
+#[gpui::test]
+fn master_detail_adapts_when_a_touch_window_changes_size(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
+    });
+    let (_, cx) = cx.add_window_view(|_, _| AdaptiveMasterDetail);
+    for (width, height, stacked) in [(390., 844., true), (1024., 768., false), (320., 600., true)] {
+        cx.simulate_resize(gpui::size(px(width), px(height)));
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        let master = cx.debug_bounds("adaptive-master").expect("master");
+        let detail = cx.debug_bounds("adaptive-detail").expect("detail");
+        if stacked {
+            assert!(detail.top() >= master.bottom(), "{master:?} {detail:?}");
+        } else {
+            assert!(detail.left() >= master.right(), "{master:?} {detail:?}");
+        }
+    }
 }

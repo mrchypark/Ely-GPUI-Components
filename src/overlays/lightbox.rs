@@ -1,9 +1,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    Animation, AnimationExt, App, Div, ElementId, ImageSource, InteractiveElement, IntoElement,
-    MouseButton, ObjectFit, ParentElement, Pixels, Point, RenderOnce, SharedString, Size, Stateful,
-    StatefulInteractiveElement, Styled, Window, anchored, canvas, div, prelude::*,
+    Animation, AnimationExt, App, Bounds, Div, ElementId, ImageSource, InteractiveElement,
+    IntoElement, MouseButton, ObjectFit, ParentElement, Pixels, Point, RenderOnce, SharedString,
+    Size, Stateful, StatefulInteractiveElement, Styled, Window, anchored, canvas, div, prelude::*,
+    px,
 };
 
 use crate::{
@@ -51,6 +52,9 @@ pub(crate) fn media_button(
         .items_center()
         .justify_center()
         .size(theme.control_height(size))
+        .when(theme.touch_mode, |button| {
+            button.min_w(px(48.)).min_h(px(48.))
+        })
         .rounded_full()
         .border_1()
         .border_color(gpui::transparent_black())
@@ -86,6 +90,7 @@ pub struct Lightbox {
     at: usize,
     on_step: Option<OnStep>,
     on_close: Run,
+    usable_bounds: Option<Bounds<Pixels>>,
 }
 
 impl Lightbox {
@@ -102,11 +107,18 @@ impl Lightbox {
             at,
             on_step: None,
             on_close: Rc::new(on_close),
+            usable_bounds: None,
         }
     }
 
     pub fn on_step(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_step = Some(Rc::new(handler));
+        self
+    }
+
+    /// Keep controls inside the host-provided safe and keyboard-visible window area.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
         self
     }
 }
@@ -192,6 +204,9 @@ impl RenderOnce for Lightbox {
             );
         let (keys, escape, press, button) = (step.clone(), close.clone(), close.clone(), close);
         let viewport = window.viewport_size();
+        let usable = self
+            .usable_bounds
+            .map(|bounds| Bounds::new(Point::default(), viewport).intersect(&bounds));
         let stage = div()
             .id((self.id.clone(), "stage"))
             .w(viewport.width)
@@ -212,6 +227,14 @@ impl RenderOnce for Lightbox {
                 FocusScope::new(&focus)
                     .trap()
                     .size_full()
+                    .when_some(usable, |scope, bounds| {
+                        scope
+                            .absolute()
+                            .left(bounds.origin.x)
+                            .top(bounds.origin.y)
+                            .w(bounds.size.width)
+                            .h(bounds.size.height)
+                    })
                     .flex()
                     .flex_col()
                     .child(div().flex().justify_end().p_3().child(media_button(

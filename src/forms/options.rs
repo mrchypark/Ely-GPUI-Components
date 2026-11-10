@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, ElementId, Entity,
+    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, Edges, ElementId, Entity,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, ScrollHandle,
     SharedString, Stateful, StatefulInteractiveElement, Styled, Window, anchored, canvas, div,
     prelude::*,
@@ -202,9 +202,10 @@ pub(crate) fn float(
 }
 
 /// Whether `height` goes over `anchor`: it does not fit below, and above has more room.
-pub(crate) fn opens_up(anchor: Bounds<Pixels>, height: Pixels, viewport: Pixels) -> bool {
-    let below = viewport - anchor.bottom();
-    height > below && anchor.top() > below
+pub(crate) fn opens_up(anchor: Bounds<Pixels>, height: Pixels, visible: Bounds<Pixels>) -> bool {
+    let below = (visible.bottom() - anchor.bottom()).max(Pixels::ZERO);
+    let above = (anchor.top() - visible.top()).max(Pixels::ZERO);
+    height > below && above > below
 }
 
 /// Floats `content` of a known `height` under `anchor`, or over it when only above has room; `id` is its owner's.
@@ -216,7 +217,15 @@ pub(crate) fn float_height(
     window: &Window,
     cx: &App,
 ) -> AnyElement {
-    let up = opens_up(anchor, height, window.viewport_size().height);
+    let viewport = window.viewport_size();
+    let visible = window.fully_visible_bounds();
+    let up = opens_up(anchor, height, visible);
+    let margins = Edges {
+        top: visible.top(),
+        right: (viewport.width - visible.right()).max(Pixels::ZERO),
+        bottom: (viewport.height - visible.bottom()).max(Pixels::ZERO),
+        left: visible.left(),
+    };
     let enter =
         Animation::new(motion::duration(motion::FAST, cx)).with_easing(motion::ease_out_cubic);
     let placed = if up {
@@ -241,7 +250,7 @@ pub(crate) fn float_height(
                     }),
             )
     };
-    raise(id, placed.snap_to_window())
+    raise(id, placed.snap_to_window_with_margin(margins))
         .with_priority(1)
         .into_any_element()
 }
@@ -300,6 +309,7 @@ pub(crate) struct Popup<'a> {
 impl Popup<'_> {
     pub fn render(self, window: &Window, cx: &App) -> AnyElement {
         let theme = cx.theme();
+        let visible = window.fully_visible_bounds();
         let (anchor, pick) = (self.anchor, self.pick);
         let rows = self.rows.iter().enumerate().map(|(ix, choice)| {
             let pick = pick.clone();
@@ -321,12 +331,18 @@ impl Popup<'_> {
         });
         let list = surface(self.id.clone(), cx)
             .debug_selector(|| "option-list".into())
+            .occlude()
             .min_w(theme.tooltip_max_width())
             .when(anchor.size.width > Pixels::ZERO, |list| {
                 list.min_w(anchor.size.width)
             })
-            .max_w(window.viewport_size().width - theme.window_margin() * 2.0)
-            .max_h(theme.list_max_height())
+            .max_w((visible.size.width - theme.window_margin() * 2.0).max(Pixels::ZERO))
+            .max_h(
+                theme
+                    .list_max_height()
+                    .to_pixels(window.rem_size())
+                    .min((visible.size.height - theme.window_margin() * 2.0).max(Pixels::ZERO)),
+            )
             .overflow_y_scroll()
             .when_some(self.scroll, |list, handle| list.track_scroll(handle))
             .p_1()
@@ -352,11 +368,15 @@ mod tests {
 
     #[test]
     fn a_panel_opens_up_only_when_it_does_not_fit_below_and_above_has_more() {
+        let visible = Bounds::new(point(px(0.0), px(0.0)), size(px(320.0), px(790.0)));
         let low = Bounds::new(point(px(0.0), px(600.0)), size(px(80.0), px(28.0)));
-        assert!(opens_up(low, px(260.0), px(790.0)));
-        assert!(!opens_up(low, px(120.0), px(790.0)));
+        assert!(opens_up(low, px(260.0), visible));
+        assert!(!opens_up(low, px(120.0), visible));
         let high = Bounds::new(point(px(0.0), px(100.0)), size(px(80.0), px(28.0)));
-        assert!(!opens_up(high, px(700.0), px(790.0)));
+        assert!(!opens_up(high, px(700.0), visible));
+
+        let keyboard = Bounds::new(point(px(0.0), px(60.0)), size(px(320.0), px(340.0)));
+        assert!(opens_up(low, px(260.0), keyboard));
     }
 
     #[test]
@@ -371,5 +391,97 @@ mod tests {
         assert_eq!(step(&rows, 0, -1), 2);
         let none = [Choice::new("a", "A").disabled()];
         assert_eq!(step(&none, 0, 1), 0);
+    }
+
+    #[cfg(feature = "test-support")]
+    mod popup {
+        use std::rc::Rc;
+
+        use gpui::{
+            AppContext as _, Bounds, Context, InteractiveElement, IntoElement, Modifiers,
+            ParentElement, Render, Styled, TestAppContext, Window, div, point, px, size,
+        };
+
+        use crate::forms::options::{Choice, Pick, Popup};
+        use crate::theme::Theme;
+
+        struct Stage {
+            picks: Vec<usize>,
+            behind: usize,
+        }
+
+        impl Render for Stage {
+            fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+                let view = cx.entity();
+                let pick: Pick = Rc::new(move |ix, _, cx| {
+                    view.update(cx, |stage, cx| {
+                        stage.picks.push(ix);
+                        cx.notify();
+                    });
+                });
+                let behind = cx.entity();
+                let rows = [Choice::new("a", "A"), Choice::new("b", "B").disabled()];
+                div()
+                    .size_full()
+                    .child(div().id("behind").absolute().inset_0().on_mouse_down(
+                        gpui::MouseButton::Left,
+                        move |_, _, cx| {
+                            behind.update(cx, |stage, cx| {
+                                stage.behind += 1;
+                                cx.notify();
+                            });
+                        },
+                    ))
+                    .child(
+                        Popup {
+                            id: "popup".into(),
+                            anchor: Bounds::new(
+                                point(px(20.0), px(20.0)),
+                                size(px(120.0), px(24.0)),
+                            ),
+                            rows: &rows,
+                            highlighted: None,
+                            checked: None,
+                            pick,
+                            dismiss: None,
+                            scroll: None,
+                            reveal: None,
+                        }
+                        .render(window, cx),
+                    )
+            }
+        }
+
+        #[gpui::test]
+        fn popup_blocks_clicks_on_disabled_rows_and_padding(cx: &mut TestAppContext) {
+            cx.update(Theme::init);
+            let (view, cx) = cx.add_window_view(|window, _| {
+                window.set_rem_size(px(8.0));
+                Stage {
+                    picks: Vec::new(),
+                    behind: 0,
+                }
+            });
+            cx.simulate_resize(size(px(320.0), px(480.0)));
+            cx.run_until_parked();
+
+            let enabled = cx.debug_bounds("option-row-option-0").expect("first row");
+            cx.simulate_click(enabled.center(), Modifiers::none());
+            assert_eq!(view.read_with(cx, |stage, _| stage.picks.clone()), [0]);
+
+            let disabled = cx
+                .debug_bounds("option-row-option-1")
+                .expect("disabled row");
+            cx.simulate_click(disabled.center(), Modifiers::none());
+
+            let list = cx.debug_bounds("option-list").expect("popup stays open");
+            cx.simulate_click(list.origin + point(px(1.0), px(1.0)), Modifiers::none());
+
+            assert_eq!(
+                view.read_with(cx, |stage, _| (stage.picks.clone(), stage.behind)),
+                (vec![0], 0)
+            );
+            assert!(cx.debug_bounds("option-list").is_some());
+        }
     }
 }

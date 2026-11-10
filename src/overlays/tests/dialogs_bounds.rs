@@ -1,12 +1,13 @@
 use super::{click, press, settle};
 use crate::{
-    forms::TextInput,
+    buttons::Button,
+    forms::{Input, TextInput},
     overlays::{AlertDialog, ConfirmDialog, Dialog, PromptDialog},
     primitives::{FocusScope, Severity},
     theme::Theme,
 };
 use gpui::{
-    AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
+    AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Render, Styled, TestAppContext, VisualTestContext, Window, div, point,
     px, size,
 };
@@ -18,6 +19,8 @@ enum Kind {
     Alert,
     Confirm,
     Prompt,
+    Short,
+    ShortForm,
 }
 
 struct Stage {
@@ -29,6 +32,7 @@ struct Stage {
     open: bool,
     events: Vec<String>,
     keep_open: bool,
+    behind: usize,
 }
 
 impl Render for Stage {
@@ -36,7 +40,17 @@ impl Render for Stage {
         let root = FocusScope::new(&self.root)
             .root()
             .size_full()
-            .child(div().id("before").track_focus(&self.before));
+            .child(div().id("before").track_focus(&self.before))
+            .child({
+                let owner = cx.entity();
+                div()
+                    .id("dialog-background")
+                    .absolute()
+                    .inset_0()
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        owner.update(cx, |stage, _| stage.behind += 1);
+                    })
+            });
         if !self.open {
             return root;
         }
@@ -87,6 +101,34 @@ impl Render for Stage {
                     owner.update(cx, |stage, _| stage.events.push(format!("submit {text}")));
                 })
                 .into_any_element(),
+            Kind::Short => Dialog::new("short", "Short", close)
+                .usable_bounds(self.bounds)
+                .child(div().h(px(400.)))
+                .action(move |_| {
+                    Button::new("short-action", "Act")
+                        .debug_selector(|| "short-action".into())
+                        .on_click(move |_, _, cx| {
+                            owner.update(cx, |stage, _| stage.events.push("action".into()));
+                        })
+                })
+                .into_any_element(),
+            Kind::ShortForm => Dialog::new("short-form", "Edit profile", close)
+                .detail("How others see you across the workspace.")
+                .usable_bounds(self.bounds)
+                .focus_first(self.field.read(cx).focus().clone())
+                .child(
+                    div()
+                        .debug_selector(|| "short-form-field".into())
+                        .child(Input::new(&self.field)),
+                )
+                .action(move |_| {
+                    Button::new("short-save", "Save")
+                        .debug_selector(|| "short-save".into())
+                        .on_click(move |_, _, cx| {
+                            owner.update(cx, |stage, _| stage.events.push("save".into()));
+                        })
+                })
+                .into_any_element(),
         };
         root.child(overlay)
     }
@@ -131,6 +173,7 @@ fn fixture_with_bounds(
         open: false,
         events: Vec::new(),
         keep_open,
+        behind: 0,
     });
     cx.simulate_resize(size(px(390.), px(844.)));
     let (before, field) =
@@ -149,7 +192,7 @@ fn fixture_with_bounds(
 fn content(view: &Entity<Stage>, cx: &mut VisualTestContext) -> Bounds<Pixels> {
     let (kind, usable) = view.read_with(cx, |stage, _| (stage.kind, stage.bounds));
     let selector = match kind {
-        Kind::Plain | Kind::Fullscreen => "plain-content",
+        Kind::Plain | Kind::Fullscreen | Kind::Short | Kind::ShortForm => "plain-content",
         Kind::Alert | Kind::Confirm => "dialog-message",
         Kind::Prompt => "prompt-dialog-field",
     };
@@ -225,6 +268,73 @@ fn prompt_resize_preserves_text_selection_focus_and_validation(cx: &mut TestAppC
     cx.simulate_input("-kept");
     press("enter", cx);
     closed(&view, &["close", "submit notes-kept"], cx);
+}
+
+#[gpui::test]
+fn fullscreen_blocks_presses_outside_its_usable_bounds(cx: &mut TestAppContext) {
+    let (view, cx) = fixture(cx, Kind::Fullscreen);
+    click(2., 2., cx);
+    assert_eq!(view.read_with(cx, |stage, _| stage.behind), 0);
+    assert!(view.read_with(cx, |stage, _| stage.open && stage.events.is_empty()));
+}
+
+#[gpui::test]
+fn a_short_bounded_dialog_keeps_its_action_reachable(cx: &mut TestAppContext) {
+    let usable = Bounds::new(point(px(20.), px(24.)), size(px(350.), px(140.)));
+    let (view, cx) = fixture_with_bounds(cx, Kind::Short, usable, false);
+    let action = cx.debug_bounds("short-action").expect("action row");
+    assert!(
+        action.top() >= usable.top() && action.bottom() <= usable.bottom(),
+        "action is inside usable bounds: {action:?}"
+    );
+    click(
+        f32::from(action.center().x),
+        f32::from(action.center().y),
+        cx,
+    );
+    assert_eq!(
+        view.read_with(cx, |stage, _| stage.events.clone()),
+        ["action"]
+    );
+}
+
+#[gpui::test]
+fn a_short_bounded_form_keeps_its_focused_field_and_action_visible(cx: &mut TestAppContext) {
+    let usable = Bounds::new(point(px(20.), px(24.)), size(px(350.), px(126.)));
+    let (view, cx) = fixture_with_bounds(cx, Kind::ShortForm, usable, false);
+    let field = cx.debug_bounds("short-form-field").expect("focused field");
+    let action = cx.debug_bounds("short-save").expect("save action");
+
+    for (name, bounds) in [("field", field), ("action", action)] {
+        assert!(
+            bounds.top() >= usable.top()
+                && bounds.bottom() <= usable.bottom()
+                && bounds.left() >= usable.left()
+                && bounds.right() <= usable.right(),
+            "{name} is visible inside usable bounds: {bounds:?}"
+        );
+    }
+    assert!(field.size.height >= px(48.), "field keeps a touch target");
+    assert!(
+        field.bottom() <= action.top(),
+        "field and action do not overlap"
+    );
+
+    let input = view.read_with(cx, |stage, _| stage.field.clone());
+    let focus = input.read_with(cx, |input, _| input.focus().clone());
+    assert!(cx.update(|window, _| focus.is_focused(window)));
+    cx.simulate_input("Ada");
+    input.read_with(cx, |input, _| assert_eq!(input.text(), "DraftAda"));
+
+    click(
+        f32::from(action.center().x),
+        f32::from(action.center().y),
+        cx,
+    );
+    assert_eq!(
+        view.read_with(cx, |stage, _| stage.events.clone()),
+        ["save"]
+    );
 }
 
 fn suppressed(view: &Entity<Stage>, cx: &mut VisualTestContext) {

@@ -67,6 +67,7 @@ fn gallery_all_six_wrapper_callers_forward_live_usable_bounds(cx: &mut TestAppCo
                     delta: ScrollDelta::Pixels(delta),
                     modifiers: Modifiers::none(),
                     touch_phase: phase,
+                    source: gpui::ScrollSource::Pointer,
                 });
             }
             draw(cx);

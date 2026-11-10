@@ -111,11 +111,11 @@ const SCRIPT: &[Step] = &[
 fn render(
     window: &mut Window,
     cx: &mut App,
-    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
 ) -> AnyElement {
     div()
         .child(images::viewer(cx))
-        .child(images::thumbnails(window, cx))
+        .child(images::thumbnails(window, cx, bounds))
         .child(edit::cropper(window, cx))
         .child(edit::upload(window, cx))
         .child(edit::annotator(window, cx))

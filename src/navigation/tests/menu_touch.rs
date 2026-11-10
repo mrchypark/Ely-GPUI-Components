@@ -45,6 +45,10 @@ fn the_open_panel_fits_the_screen_and_its_rows_stay_tappable(cx: &mut TestAppCon
     cx.simulate_resize(size(px(390.), px(844.)));
     cx.run_until_parked();
     let title = cx.debug_bounds("navigation-menu-title-0").unwrap();
+    assert!(
+        title.size.width >= px(48.) && title.size.height >= px(48.),
+        "the menu trigger is a touch target: {title:?}"
+    );
     let at = title.center();
     cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());

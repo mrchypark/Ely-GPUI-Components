@@ -281,6 +281,7 @@ fn replay_tabs_keep_entities_and_search_reports_errors_at_phone_width(cx: &mut T
         delta: ScrollDelta::Pixels(point(px(-500.), px(0.))),
         modifiers: Modifiers::none(),
         touch_phase: TouchPhase::Moved,
+        source: gpui::ScrollSource::Pointer,
     });
     redraw(cx);
     let after = cx.debug_bounds("terminal-replay-find-content").unwrap();

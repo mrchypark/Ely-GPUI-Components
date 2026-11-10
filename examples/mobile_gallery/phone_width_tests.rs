@@ -142,6 +142,7 @@ fn reveal_strip(selector: &'static str, cx: &mut VisualTestContext) {
                 delta: ScrollDelta::Pixels(point(px(0.), delta)),
                 modifiers: gpui::Modifiers::none(),
                 touch_phase: phase,
+                source: gpui::ScrollSource::Pointer,
             });
         }
         draw(cx);

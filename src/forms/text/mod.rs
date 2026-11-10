@@ -18,7 +18,7 @@ pub use edit::History;
 use edit::Snapshot;
 pub(crate) use edit::{from_utf16, to_utf16};
 pub use highlight::Highlight;
-pub use owner::TextInputOwner;
+pub use owner::{TextInputOwner, set_input_owner_reporter};
 
 use crate::theme::ActiveTheme;
 

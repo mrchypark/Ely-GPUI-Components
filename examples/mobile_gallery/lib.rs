@@ -23,6 +23,7 @@ mod reading_width_tests;
 pub mod step;
 #[path = "../gallery/ui.rs"]
 pub mod ui;
+
 mod view {
     include!("view.rs");
 
@@ -291,6 +292,7 @@ mod view {
                         delta: ScrollDelta::Pixels(point(px(0.), delta)),
                         modifiers: Modifiers::none(),
                         touch_phase: phase,
+                        source: gpui::ScrollSource::Pointer,
                     });
                 }
                 draw(cx);
@@ -381,6 +383,42 @@ mod tests {
             assert!(!view.select("not-a-gallery-page", cx));
             assert_eq!((view.current_slug(), view.visits()), before);
         });
+    }
+
+    #[gpui::test]
+    fn gallery_reflows_when_rotating_between_phone_and_tablet_sizes(cx: &mut TestAppContext) {
+        let _files = super::assets::prepare_test_files();
+        cx.update(|cx| {
+            ely_gpui_component::init_for_tests(cx);
+            super::init(cx);
+        });
+        let (view, cx) = cx.add_window_view(super::MobileGallery::new);
+        view.update(cx, |view, cx| {
+            assert!(view.select("layout", cx));
+        });
+        for (width, height) in [
+            (320., 640.),
+            (390., 844.),
+            (768., 1024.),
+            (1024., 768.),
+            (320., 640.),
+        ] {
+            cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(height)));
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            let content = cx.debug_bounds("gallery-content").expect("gallery content");
+            assert!(
+                content.size.width > gpui::px(0.) && content.size.height > gpui::px(0.),
+                "{width}x{height}: {content:?}"
+            );
+            assert!(
+                content.right() <= gpui::px(width) && content.bottom() <= gpui::px(height),
+                "{width}x{height}: {content:?}"
+            );
+        }
     }
 
     #[test]

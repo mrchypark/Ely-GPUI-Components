@@ -326,3 +326,107 @@ fn owner_probe_empty_commit_clears_real_marked_text(cx: &mut TestAppContext) {
     assert_eq!(candidate.marked_text_range(), None);
     assert_eq!(probe.query(&mut candidate), Some(owner));
 }
+
+#[gpui::test]
+fn app_owner_reporter_tracks_multiple_instances_and_activation(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.reduced_motion = true);
+    });
+    let probe = Probe::default();
+    let reporter = probe.clone();
+    cx.update(|cx| {
+        super::set_input_owner_reporter(move |owner| reporter.report(owner), cx);
+    });
+    let (root, cx) = cx.add_window_view(|window, cx| {
+        Fields(
+            (0..2)
+                .map(|_| cx.new(|cx| TextInput::new(window, cx)))
+                .collect(),
+        )
+    });
+    let fields = root.read_with(cx, |root, _| root.0.clone());
+    cx.update(|window, _| window.activate_window());
+    cx.run_until_parked();
+
+    focus(&fields[1], cx);
+    let mut b = handler(&fields[1], cx);
+    let before = probe.query(&mut b).expect("focused global reporter owner");
+    let mut a = handler(&fields[0], cx);
+    let unfocused = probe
+        .query(&mut a)
+        .expect("unfocused global reporter owner");
+    assert_ne!(before.editor, unfocused.editor);
+    assert!(before.focused);
+    assert!(!unfocused.focused);
+    assert!(before.activation > unfocused.activation);
+
+    focus(&fields[0], cx);
+    let mut a = handler(&fields[0], cx);
+    let focused = probe
+        .query(&mut a)
+        .expect("refocused global reporter owner");
+    let mut b = handler(&fields[1], cx);
+    let blurred = probe.query(&mut b).expect("blurred global reporter owner");
+    assert!(focused.focused);
+    assert!(!blurred.focused);
+    assert!(focused.activation > unfocused.activation);
+    assert!(blurred.activation > before.activation);
+
+    paint(cx);
+    assert!(
+        probe.owner.get().is_none(),
+        "the global reporter runs only inside an ownership query"
+    );
+}
+
+#[gpui::test]
+fn instance_owner_observer_takes_precedence_over_app_reporter(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.reduced_motion = true);
+    });
+    let instance = Probe::default();
+    let global = Probe::default();
+    let reporter = global.clone();
+    cx.update(|cx| {
+        super::set_input_owner_reporter(move |owner| reporter.report(owner), cx);
+    });
+    let observer = instance.clone();
+    let (root, cx) = cx.add_window_view(move |window, cx| {
+        let first = {
+            let observer = observer.clone();
+            cx.new(|cx| {
+                TextInput::new(window, cx).input_owner_observer(move |owner| observer.report(owner))
+            })
+        };
+        Fields(vec![first, cx.new(|cx| TextInput::new(window, cx))])
+    });
+    let fields = root.read_with(cx, |root, _| root.0.clone());
+    cx.update(|window, _| window.activate_window());
+    cx.run_until_parked();
+    focus(&fields[1], cx);
+
+    global.active.set(true);
+    let mut first = handler(&fields[0], cx);
+    let owned = instance
+        .query(&mut first)
+        .expect("the instance observer reports");
+    global.active.set(false);
+    assert_eq!(owned.editor, fields[0].entity_id());
+    assert!(global.owner.get().is_none(), "the app reporter did not run");
+
+    instance.active.set(true);
+    let second = fields[1].entity_id();
+    let mut second_handler = handler(&fields[1], cx);
+    let owned = global
+        .query(&mut second_handler)
+        .expect("the app reporter covers an instance without an observer");
+    instance.active.set(false);
+    assert_eq!(owned.editor, second);
+    assert!(owned.focused);
+    assert!(
+        instance.owner.get().is_none(),
+        "the instance observer did not run for another field"
+    );
+}

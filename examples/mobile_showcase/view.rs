@@ -110,7 +110,8 @@ impl Render for Showcase {
             } else {
                 Pixels::ZERO
             },
-        );
+        )
+        .intersect(&window.fully_visible_bounds());
         let keyboard_bottom = if self.keyboard {
             px(240.0)
         } else {

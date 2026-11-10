@@ -83,7 +83,7 @@ fn render(
         .child(anchored::popovers(window, cx, bounds))
         .child(anchored::hover_card(cx, bounds))
         .child(dialogs::dialogs(window, cx, bounds))
-        .child(guides::lightbox(window, cx))
+        .child(guides::lightbox(window, cx, bounds))
         .child(guides::tour(window, cx))
         .child(guides::toolbar(window, cx))
         .child(guides::peek(window, cx))

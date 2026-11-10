@@ -3,6 +3,7 @@ mod menu_touch;
 mod pages;
 mod stale;
 mod tabs;
+mod touch_targets;
 
 use gpui::{
     AppContext as _, Context, IntoElement, KeyUpEvent, Keystroke, Render, SharedString,
