@@ -328,7 +328,7 @@ mod tests {
     use gpui::size;
 
     #[test]
-    fn canvas_map_viewport_contract_keeps_pinch_anchor() {
+    fn viewport_fitting_keeps_pinch_anchor() {
         let frame = Frame::new(10.0, 20.0, 500.0, 300.0);
         let fitted = Viewport::fitting(frame, (320.0, 400.0), 16.0);
         let before = fitted.to_canvas((100.0, 100.0));
