@@ -1,14 +1,15 @@
 use ely_gpui_component::{
     buttons::{Button, ButtonVariant},
     forms::{Input, TextInput},
+    layout::reveal_when_focused_in_bounds,
     overlays::{AlertDialog, ConfirmDialog, Dialog, PromptDialog},
     primitives::Severity,
     theme::ActiveTheme,
     typography::Caption,
 };
 use gpui::{
-    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
-    prelude::*,
+    AnyElement, App, Axis, Entity, IntoElement, ParentElement, ScrollHandle, SharedString, Styled,
+    Window, div, prelude::*,
 };
 
 use crate::{
@@ -64,6 +65,10 @@ pub fn dialogs(
         });
         fields.read(cx).clone()
     };
+    let profile_scroll = window
+        .use_keyed_state("overlay-profile-scroll", cx, |_, _| ScrollHandle::new())
+        .read(cx)
+        .clone();
     let shut = {
         let open = open.clone();
         move |_: &mut Window, cx: &mut App| set(&open, None, cx)
@@ -79,14 +84,35 @@ pub fn dialogs(
         match which {
             Open::Profile => Dialog::new("profile", "Edit profile", shut.clone())
                 .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+                .body_scroll(&profile_scroll)
                 .detail("How others see you across the workspace.")
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_3()
-                        .child(Input::new(&name))
-                        .child(Input::new(&email)),
+                        .child(div().relative().child(Input::new(&name)).children(bounds.map(|area| {
+                            reveal_when_focused_in_bounds(
+                                "profile-name-reveal",
+                                &profile_scroll,
+                                &name.focus_handle(cx),
+                                Axis::Vertical,
+                                area,
+                                window,
+                                cx,
+                            )
+                        })))
+                        .child(div().relative().child(Input::new(&email)).children(bounds.map(|area| {
+                            reveal_when_focused_in_bounds(
+                                "profile-email-reveal",
+                                &profile_scroll,
+                                &email.focus_handle(cx),
+                                Axis::Vertical,
+                                area,
+                                window,
+                                cx,
+                            )
+                        }))),
                 )
                 .action(|close| {
                     Button::new("profile-cancel", "Cancel")

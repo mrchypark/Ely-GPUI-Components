@@ -2,8 +2,9 @@ use std::rc::Rc;
 
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Bounds, ElementId, Entity, FocusHandle, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement, Styled, WeakEntity, Window, anchored, div, point, prelude::*,
+    InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, Role, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window, anchored, div, point,
+    prelude::*,
 };
 use smallvec::SmallVec;
 
@@ -56,6 +57,7 @@ pub struct Dialog {
     scrim_closes: bool,
     fullscreen: bool,
     usable_bounds: Option<Bounds<Pixels>>,
+    body_scroll: Option<ScrollHandle>,
     first: Option<FocusHandle>,
     on_close: Run,
 }
@@ -78,6 +80,7 @@ impl Dialog {
             scrim_closes: true,
             fullscreen: false,
             usable_bounds: None,
+            body_scroll: None,
             first: None,
             on_close: Rc::new(on_close),
         }
@@ -117,6 +120,12 @@ impl Dialog {
     /// No content space closes once and returns focus; remove before explicitly reopening.
     pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
         self.usable_bounds = Some(bounds);
+        self
+    }
+
+    /// Tracks the scrollable body so callers can reveal their focused controls.
+    pub fn body_scroll(mut self, scroll: &ScrollHandle) -> Self {
+        self.body_scroll = Some(scroll.clone());
         self
     }
 
@@ -224,6 +233,7 @@ impl RenderOnce for Dialog {
         });
         let (escape, dismiss, button) = (close.clone(), close.clone(), close);
         let fullscreen = self.fullscreen;
+        let body_scroll = self.body_scroll.clone();
         // Below four touch rows, preserve the body and actions over the fixed heading.
         let compact = !fullscreen
             && !self.body.is_empty()
@@ -272,6 +282,9 @@ impl RenderOnce for Dialog {
                                 .flex_1()
                                 .min_h_0()
                                 .overflow_y_scroll()
+                                .when_some(body_scroll.clone(), |body, scroll| {
+                                    body.track_scroll(&scroll)
+                                })
                                 .p_6()
                                 .children(self.body),
                         ),
@@ -293,6 +306,7 @@ impl RenderOnce for Dialog {
                     .min_h_0()
                     .when(compact, |body| body.min_h(gpui::rems(3.)))
                     .overflow_y_scroll()
+                    .when_some(body_scroll, |body, scroll| body.track_scroll(&scroll))
                     .child(div().flex().flex_col().gap_5().children(self.body))
             });
             div()

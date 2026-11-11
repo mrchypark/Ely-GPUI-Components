@@ -2,14 +2,15 @@ use super::{click, press, settle};
 use crate::{
     buttons::Button,
     forms::{Input, TextInput},
+    layout::reveal_when_focused_in_bounds,
     overlays::{AlertDialog, ConfirmDialog, Dialog, PromptDialog},
     primitives::{FocusScope, Severity},
     theme::Theme,
 };
 use gpui::{
-    AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Pixels, Render, Styled, TestAppContext, VisualTestContext, Window, div, point,
-    px, size,
+    AppContext, Axis, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
+    MouseButton, ParentElement, Pixels, Render, ScrollHandle, Styled, TestAppContext,
+    VisualTestContext, Window, div, point, px, size,
 };
 #[derive(Clone, Copy)]
 enum Kind {
@@ -26,6 +27,8 @@ struct Stage {
     root: FocusHandle,
     before: FocusHandle,
     field: Entity<TextInput>,
+    second: Entity<TextInput>,
+    scroll: ScrollHandle,
     kind: Kind,
     bounds: Bounds<Pixels>,
     open: bool,
@@ -35,7 +38,7 @@ struct Stage {
 }
 
 impl Render for Stage {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let root = FocusScope::new(&self.root)
             .root()
             .size_full()
@@ -114,11 +117,43 @@ impl Render for Stage {
             Kind::ShortForm => Dialog::new("short-form", "Edit profile", close)
                 .detail("How others see you across the workspace.")
                 .usable_bounds(self.bounds)
+                .body_scroll(&self.scroll)
                 .focus_first(self.field.read(cx).focus().clone())
                 .child(
                     div()
-                        .debug_selector(|| "short-form-field".into())
-                        .child(Input::new(&self.field)),
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(
+                            div()
+                                .debug_selector(|| "short-form-field".into())
+                                .relative()
+                                .child(Input::new(&self.field))
+                                .child(reveal_when_focused_in_bounds(
+                                    "short-form-first-reveal",
+                                    &self.scroll,
+                                    &self.field.read(cx).focus().clone(),
+                                    Axis::Vertical,
+                                    self.bounds,
+                                    window,
+                                    cx,
+                                )),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(|| "short-form-second".into())
+                                .relative()
+                                .child(Input::new(&self.second))
+                                .child(reveal_when_focused_in_bounds(
+                                    "short-form-second-reveal",
+                                    &self.scroll,
+                                    &self.second.read(cx).focus().clone(),
+                                    Axis::Vertical,
+                                    self.bounds,
+                                    window,
+                                    cx,
+                                )),
+                        ),
                 )
                 .action(move |_| {
                     Button::new("short-save", "Save")
@@ -167,6 +202,8 @@ fn fixture_with_bounds(
         root: cx.focus_handle(),
         before: cx.focus_handle(),
         field: cx.new(|cx| TextInput::new(window, cx)),
+        second: cx.new(|cx| TextInput::new(window, cx)),
+        scroll: ScrollHandle::new(),
         kind,
         bounds,
         open: false,
@@ -298,7 +335,7 @@ fn a_short_bounded_dialog_keeps_its_action_reachable(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_short_bounded_form_keeps_its_focused_field_and_action_visible(cx: &mut TestAppContext) {
+fn a_short_bounded_form_reveals_each_focused_field_and_action(cx: &mut TestAppContext) {
     let usable = Bounds::new(point(px(20.), px(24.)), size(px(350.), px(126.)));
     let (view, cx) = fixture_with_bounds(cx, Kind::ShortForm, usable, false);
     let field = cx.debug_bounds("short-form-field").expect("focused field");
@@ -324,6 +361,22 @@ fn a_short_bounded_form_keeps_its_focused_field_and_action_visible(cx: &mut Test
     assert!(cx.update(|window, _| focus.is_focused(window)));
     cx.simulate_input("Ada");
     input.read_with(cx, |input, _| assert_eq!(input.text(), "DraftAda"));
+
+    let second = view.read_with(cx, |stage, _| stage.second.clone());
+    let second_focus = second.read_with(cx, |input, _| input.focus().clone());
+    cx.update(|window, cx| second_focus.focus(window, cx));
+    draw(cx);
+    let second_bounds = cx.debug_bounds("short-form-second").expect("second field");
+    assert!(
+        second_bounds.top() >= usable.top() && second_bounds.bottom() <= usable.bottom(),
+        "second field is visible inside usable bounds: {second_bounds:?}"
+    );
+    assert!(
+        second_bounds.bottom() <= action.top(),
+        "second field and action do not overlap"
+    );
+    cx.simulate_input("Lovelace");
+    second.read_with(cx, |second, _| assert_eq!(second.text(), "Lovelace"));
 
     click(
         f32::from(action.center().x),
