@@ -103,6 +103,7 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
     let theme = cx.theme();
     let colors = &theme.colors;
     let indent = theme.tree_indent();
+    let chevron_width = theme.touch_minimum(indent.to_pixels(window.rem_size()));
     let (note, ink) = match &item.shown {
         Shown::Node { note, tone, .. } => (note.clone(), tone.map(|tone| tone.colors(colors).1)),
         Shown::Loading => (None, None),
@@ -124,10 +125,11 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
     let chevron = div()
         .debug_selector(|| format!("tree-chevron-{key}"))
         .flex_none()
-        .w(indent)
+        .w(chevron_width)
         .ml(indent * item.depth as f32)
         .flex()
         .justify_center()
+        .when(theme.touch_mode, |slot| theme.touch_target(slot).items_center())
         .when(opens, |slot| {
             slot.child(Disclosure::new(
                 (rows.id.clone(), format!("chevron-{key}")),
@@ -210,8 +212,14 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
                 .zip(rows.check.clone())
                 .map(|((state, turns), check)| {
                     let key = key.clone();
-                    div()
+                    let selector = key.clone();
+                    theme
+                        .touch_target(div())
+                        .debug_selector(move || format!("tree-check-{selector}"))
                         .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
                         .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                             cx.stop_propagation();
                             check(&key, window, cx);

@@ -49,7 +49,7 @@ impl Desk {
         let edit = Menu::new()
             .item(
                 MenuItem::new("Cut")
-                    .keys("secondary-x")
+                    .keys("secondary-shift-x")
                     .on_click(run("cut")),
             )
             .item(MenuItem::new("Copy").disabled(true).on_click(run("copy")))
@@ -180,6 +180,23 @@ fn the_keyboard_opens_walks_past_disabled_rows_and_runs(cx: &mut TestAppContext)
     press("down", cx);
     press("enter", cx);
     assert_eq!(ran(&view, cx), ["paste"], "the release left the menu shut");
+}
+
+#[gpui::test]
+fn touch_menu_gives_long_key_hint_space_back_to_the_action(cx: &mut TestAppContext) {
+    let (view, cx) = desk(cx);
+    cx.simulate_resize(size(px(220.), px(640.)));
+    cx.update(|window, cx| window.focus_next(cx));
+    press("enter", cx);
+    assert!(cx.debug_bounds("menu-key-hint").is_some());
+
+    cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    settle(cx);
+    assert!(cx.debug_bounds("menu-key-hint").is_none());
+    let row = cx.debug_bounds("menu-row-Cut").expect("touch action stays visible");
+    cx.simulate_click(row.center(), Modifiers::none());
+    settle(cx);
+    assert_eq!(ran(&view, cx), ["cut"]);
 }
 
 #[gpui::test]

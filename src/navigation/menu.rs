@@ -283,6 +283,7 @@ impl RenderOnce for NavigationMenu {
             .flex()
             .items_center()
             .gap_1()
+            .when(theme.touch_mode, |menu| menu.w_full().min_w_0().flex_wrap())
             .on_key_down(move |event, window, cx| {
                 let key = event.keystroke.key.as_str();
                 let current = marked(keys.read(cx), &key_entries);

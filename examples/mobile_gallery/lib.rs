@@ -362,21 +362,29 @@ mod tests {
                 assert_eq!(view.current_slug(), page.slug);
                 assert_eq!(view.visits(), index as u64 + 2);
             });
-            cx.update(|window, cx| {
-                window.refresh();
-                window.draw(cx).clear(cx);
-            });
-            // debug_bounds takes a static selector; the bounded catalog has 44 entries.
-            let selector = selectors[index];
-            let bounds = cx
-                .debug_bounds(selector)
-                .unwrap_or_else(|| panic!("{} did not render", page.slug));
-            assert!(
-                bounds.size.width > gpui::px(0.) && bounds.size.height > gpui::px(0.),
-                "{} has empty layout",
-                page.slug
-            );
-            assert!(cx.debug_bounds("gallery-content").is_some());
+            for (width, height) in [(320., 640.), (640., 280.), (768., 1024.), (1024., 768.)] {
+                cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(height)));
+                cx.update(|window, cx| {
+                    window.refresh();
+                    window.draw(cx).clear(cx);
+                });
+                let bounds = cx
+                    .debug_bounds(selectors[index])
+                    .unwrap_or_else(|| panic!("{} did not render at {width}×{height}", page.slug));
+                assert!(bounds.size.width > gpui::px(0.) && bounds.size.height > gpui::px(0.));
+                let content = cx.debug_bounds("gallery-content").expect("gallery content");
+                assert!(
+                    content.size.height > gpui::px(0.)
+                        && content.right() <= gpui::px(width)
+                        && content.bottom() <= gpui::px(height),
+                    "{} at {width}×{height}: {content:?}",
+                    page.slug
+                );
+                view.read_with(cx, |view, _| {
+                    assert_eq!(view.current_slug(), page.slug);
+                    assert_eq!(view.visits(), index as u64 + 2);
+                });
+            }
         }
         view.update(cx, |view, cx| {
             let before = (view.current_slug(), view.visits());
@@ -393,6 +401,27 @@ mod tests {
             super::init(cx);
         });
         let (view, cx) = cx.add_window_view(super::MobileGallery::new);
+        for (width, columns) in [(320., 1), (768., 2), (1024., 3), (320., 1)] {
+            cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(640.)));
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            let cells = [
+                "gallery-page-primitives",
+                "gallery-page-typography",
+                "gallery-page-layout",
+            ]
+            .map(|selector| cx.debug_bounds(selector).expect(selector));
+            assert_eq!(
+                cells
+                    .iter()
+                    .filter(|cell| cell.top() == cells[0].top())
+                    .count(),
+                columns,
+                "catalog width {width}: {cells:?}"
+            );
+        }
         view.update(cx, |view, cx| {
             assert!(view.select("layout", cx));
         });

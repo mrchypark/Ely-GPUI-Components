@@ -8,7 +8,7 @@ use ely_gpui_component::{
     typography::Caption,
 };
 use gpui::{
-    AnyElement, App, Axis, Entity, IntoElement, ParentElement, ScrollHandle, SharedString, Styled,
+    AnyElement, App, Axis, Entity, Focusable, IntoElement, ParentElement, ScrollHandle, SharedString, Styled,
     Window, div, prelude::*,
 };
 

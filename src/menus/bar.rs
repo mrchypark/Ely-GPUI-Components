@@ -148,6 +148,7 @@ impl RenderOnce for MenuBar {
                 .flex()
                 .items_center()
                 .h(theme.control_height(ControlSize::Sm))
+                .map(|head| theme.touch_target(head))
                 .px_2()
                 .rounded(theme.radius(Radius::Md))
                 .border_1()
@@ -205,6 +206,7 @@ impl RenderOnce for MenuBar {
             .flex()
             .items_center()
             .gap_0p5()
+            .when(theme.touch_mode, |bar| bar.w_full().min_w_0().flex_wrap())
             .on_key_down(move |event, _, cx| {
                 if !room {
                     return;

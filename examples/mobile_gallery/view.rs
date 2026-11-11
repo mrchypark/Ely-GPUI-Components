@@ -127,6 +127,7 @@ impl Render for MobileGallery {
         )
         .intersect(&window.fully_visible_bounds());
         let colors = cx.theme().colors.clone();
+        let compact_height = available.size.height < px(320.);
         let page = &pages::ALL[self.page];
         let specimens = stories(page.slug);
         let mut navigation = div().flex().flex_wrap().gap_2();
@@ -218,7 +219,18 @@ impl Render for MobileGallery {
                 ),
         ));
         let body = if self.catalog {
-            let mut list = div().flex().flex_col().gap_2();
+            let columns = if available.size.width >= px(900.) {
+                3
+            } else if available.size.width >= px(600.) {
+                2
+            } else {
+                1
+            };
+            let mut list = div()
+                .debug_selector(|| "gallery-catalog-grid".into())
+                .grid()
+                .grid_cols(columns)
+                .gap_2();
             for page in pages::ALL {
                 let slug = page.slug;
                 let entity = cx.entity();
@@ -226,11 +238,13 @@ impl Render for MobileGallery {
                     div()
                         .min_h(px(48.))
                         .debug_selector(move || format!("gallery-page-{slug}"))
-                        .child(Button::new(slug, page.title).on_click(move |_, _, cx| {
-                            entity.update(cx, |view, cx| {
-                                view.select(slug, cx);
-                            })
-                        })),
+                        .child(Button::new(slug, page.title).full_width().on_click(
+                            move |_, _, cx| {
+                                entity.update(cx, |view, cx| {
+                                    view.select(slug, cx);
+                                })
+                            },
+                        )),
                 );
             }
             list.into_any_element()
@@ -260,6 +274,45 @@ impl Render for MobileGallery {
                 )
                 .into_any_element()
         };
+        let secondary = div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .gap_2()
+            .children((!self.catalog).then_some(story_navigation))
+            .children((!self.catalog).then(|| {
+                div()
+                    .debug_selector(|| "gallery-story-label".into())
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .child(match self.story {
+                        Some(index) => format!(
+                            "{}/{} · {}",
+                            index + 1,
+                            specimens.len(),
+                            specimens[index].title
+                        ),
+                        None => {
+                            format!("All {} stories · Story › opens the first", specimens.len())
+                        }
+                    })
+            }))
+            .child(
+                div()
+                    .debug_selector(|| "gallery-status".into())
+                    .child(format!(
+                        "{} · {}/{} · visits {}",
+                        page.slug,
+                        self.page + 1,
+                        pages::ALL.len(),
+                        self.visits
+                    )),
+            );
+        let (header, scroll_header) = if compact_height {
+            (None, Some(secondary))
+        } else {
+            (Some(secondary), None)
+        };
         div()
             .size_full()
             .track_focus(&self.focus)
@@ -278,36 +331,7 @@ impl Render for MobileGallery {
                     .p_2()
                     .overflow_hidden()
                     .child(navigation)
-                    .children((!self.catalog).then_some(story_navigation))
-                    .children((!self.catalog).then(|| {
-                        div()
-                            .debug_selector(|| "gallery-story-label".into())
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .child(match self.story {
-                                Some(index) => format!(
-                                    "{}/{} · {}",
-                                    index + 1,
-                                    specimens.len(),
-                                    specimens[index].title
-                                ),
-                                None => format!(
-                                    "All {} stories · Story › opens the first",
-                                    specimens.len()
-                                ),
-                            })
-                    }))
-                    .child(
-                        div()
-                            .debug_selector(|| "gallery-status".into())
-                            .child(format!(
-                                "{} · {}/{} · visits {}",
-                                page.slug,
-                                self.page + 1,
-                                pages::ALL.len(),
-                                self.visits
-                            )),
-                    )
+                    .children(header)
                     .child(
                         div()
                             .id("gallery-content")
@@ -318,6 +342,7 @@ impl Render for MobileGallery {
                             .overflow_y_scroll()
                             .overflow_x_scroll()
                             .track_scroll(&self.scroll)
+                            .children(scroll_header)
                             .child(body),
                     ),
             )

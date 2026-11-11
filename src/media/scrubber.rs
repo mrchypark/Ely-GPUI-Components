@@ -225,17 +225,18 @@ impl RenderOnce for Scrubber {
             };
             time_tip(hovered, text, cx)
         });
-        let knob = (hover.is_some() || focused).then(|| {
-            div()
-                .absolute()
-                .left(relative(share(at)))
-                .top(relative(0.5))
-                .size_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(div().flex_none().size(thumb).rounded_full().bg(played))
-        });
+        let knob = (hover.is_some() || focused || (theme.touch_mode && self.on_seek.is_some()))
+            .then(|| {
+                div()
+                    .absolute()
+                    .left(relative(share(at)))
+                    .top(relative(0.5))
+                    .size_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(div().flex_none().size(thumb).rounded_full().bg(played))
+            });
         let measured = track.clone();
         let rail = div()
             .debug_selector(|| "scrubber-rail".into())
@@ -244,7 +245,7 @@ impl RenderOnce for Scrubber {
             .flex()
             .gap_0p5()
             .items_center()
-            .h(thumb)
+            .h(theme.touch_minimum(thumb.to_pixels(window.rem_size())))
             .children(lanes)
             .child(
                 canvas(

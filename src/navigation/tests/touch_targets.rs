@@ -1,6 +1,6 @@
 use gpui::{
     AppContext as _, Context, Entity, InteractiveElement, IntoElement, Modifiers, ParentElement,
-    Render, ScrollHandle, SharedString, Styled, TestAppContext, Window, div, point, px,
+    Render, ScrollHandle, SharedString, Styled, TestAppContext, Window, div, point, px, size,
 };
 
 use super::setup;
@@ -28,6 +28,8 @@ impl Render for TouchNavigation {
             .child(
                 NavigationMenu::new("target-menu")
                     .entry("File", [Choice::new("new", "New")])
+                    .entry("Edit", [Choice::new("cut", "Cut")])
+                    .entry("View", [Choice::new("zoom", "Zoom")])
                     .on_select(|_, _, _| {}),
             )
             .child(
@@ -93,9 +95,12 @@ fn touch_navigation_controls_keep_thumb_sized_hit_areas(cx: &mut TestAppContext)
             picked: None,
         }
     });
+    cx.simulate_resize(size(px(110.), px(844.)));
     cx.run_until_parked();
 
     let menu = cx.debug_bounds("navigation-menu-title-0").unwrap();
+    let menu_last = cx.debug_bounds("navigation-menu-title-2").unwrap();
+    assert!(menu_last.top() >= menu.bottom(), "{menu:?}, {menu_last:?}");
     let crumb = cx.debug_bounds("touch-crumb").unwrap();
     let overflow = cx.debug_bounds("touch-overflow").unwrap();
     let toc = cx.debug_bounds("touch-toc").unwrap();

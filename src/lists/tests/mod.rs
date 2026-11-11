@@ -10,8 +10,8 @@ use gpui::{
 };
 
 use super::{
-    DirEntry, DirectoryListing, InfiniteList, ListItem, SelectableList, SortableList, SwipeAction,
-    SwipeableListItem, VirtualList,
+    DirEntry, DirectoryListing, InfiniteList, ListItem, Outline, SelectableList, SortableList,
+    SwipeAction, SwipeableListItem, VirtualList,
 };
 use crate::{
     primitives::{IconName, Measure},
@@ -145,6 +145,31 @@ fn a_finger_picks_a_row_and_the_row_keeps_a_finger_sized_target(cx: &mut TestApp
     cx.simulate_mouse_up(bounds.center(), MouseButton::Left, Modifiers::none());
     settle(cx);
     assert_eq!(picks(&view, cx), ["b"], "the tap picked the row");
+}
+
+#[gpui::test]
+fn an_outline_row_keeps_a_finger_sized_target(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    struct TestOutline;
+    impl Render for TestOutline {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(px(240.0)).child(
+                Outline::new("outline")
+                    .item("one", "One", 1)
+                    .on_select(|_, _, _| {}),
+            )
+        }
+    }
+    let (_, cx) = cx.add_window_view(|_, _| TestOutline);
+    settle(cx);
+
+    let bounds = cx.debug_bounds("outline-item-one").expect("the outline row");
+    assert!(
+        bounds.size.height >= px(48.),
+        "an outline row must be finger-sized, got {:?}",
+        bounds.size.height
+    );
 }
 
 #[gpui::test]

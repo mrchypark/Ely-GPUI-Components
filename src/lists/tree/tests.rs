@@ -240,3 +240,20 @@ fn guides_run_unbroken_under_the_parents_chevron(cx: &mut TestAppContext) {
     assert_eq!(lib.bottom(), ui.top(), "one row's guide meets the next");
     assert_eq!(lib.size.height, px(28.0), "a guide takes its row's height");
 }
+
+#[gpui::test]
+fn touch_controls_keep_finger_sized_targets(cx: &mut TestAppContext) {
+    let (_, cx) = explorer(true, cx);
+    cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    settle(cx);
+
+    for selector in ["tree-chevron-src", "tree-check-src"] {
+        let bounds = cx
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("no {selector}"));
+        assert!(
+            bounds.size.width >= px(48.) && bounds.size.height >= px(48.),
+            "{selector} must be finger-sized, got {bounds:?}"
+        );
+    }
+}

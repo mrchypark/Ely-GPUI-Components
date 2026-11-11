@@ -180,3 +180,17 @@ fn bar_no_room_closes_restores_focus_and_requires_fresh_activation(cx: &mut Test
     assert!(cx.update(|window, _| before.is_focused(window)));
     assert_eq!(view.read_with(cx, |view, _| view.ran), 0);
 }
+
+#[gpui::test]
+fn touch_titles_are_thumb_sized_and_wrap(cx: &mut TestAppContext) {
+    let (_, cx) = fixture(cx);
+    let first = cx.debug_bounds("menu-bar-title-0").unwrap();
+    let second = cx.debug_bounds("menu-bar-title-1").unwrap();
+    assert!(first.size.height >= px(48.) && second.size.height >= px(48.));
+
+    cx.simulate_resize(size(px(90.), px(844.)));
+    settle(cx);
+    let first = cx.debug_bounds("menu-bar-title-0").unwrap();
+    let second = cx.debug_bounds("menu-bar-title-1").unwrap();
+    assert!(second.top() >= first.bottom(), "{first:?}, {second:?}");
+}

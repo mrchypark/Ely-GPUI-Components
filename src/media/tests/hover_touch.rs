@@ -135,7 +135,10 @@ fn a_press_alone_puts_the_tip_over_the_scrubber(cx: &mut TestAppContext) {
         "no tip before the press"
     );
 
-    let at = across("scrubber-rail", 0.25, cx);
+    let rail = cx.debug_bounds("scrubber-rail").expect("scrubber rail");
+    assert!(rail.size.height >= px(48.));
+    let mut at = across("scrubber-rail", 0.25, cx);
+    at.y = rail.top() + px(4.);
     cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
     settle(cx);
 
