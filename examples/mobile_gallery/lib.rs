@@ -401,7 +401,14 @@ mod tests {
             super::init(cx);
         });
         let (view, cx) = cx.add_window_view(super::MobileGallery::new);
-        for (width, columns) in [(320., 1), (768., 2), (1024., 3), (320., 1)] {
+        for (width, columns) in [
+            (320., 1),
+            (599., 1),
+            (600., 2),
+            (899., 2),
+            (900., 3),
+            (320., 1),
+        ] {
             cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(640.)));
             cx.update(|window, cx| {
                 window.refresh();

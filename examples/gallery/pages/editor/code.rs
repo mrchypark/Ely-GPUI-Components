@@ -81,10 +81,15 @@ fn line_of(text: &str, needle: &str) -> usize {
 }
 
 /// A bordered box an editor fills.
-pub(super) fn framed(width: f32, height: f32, cx: &App) -> Div {
+pub(super) fn framed(width: f32, height: f32, window: &Window, cx: &App) -> Div {
     let theme = cx.theme();
+    let width = if theme.touch_mode {
+        (window.fully_visible_bounds().size.width - px(16.)).clamp(px(1.), px(width))
+    } else {
+        px(width)
+    };
     div()
-        .w(px(width))
+        .w(width)
         .h(px(height))
         .rounded(theme.radius(Radius::Md))
         .border_1()
@@ -180,7 +185,7 @@ pub fn editor(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     )
     .child(crumbs)
-    .child(probe("editor-main", framed(840.0, 460.0, cx).child(editor)))
+    .child(probe("editor-main", framed(840.0, 460.0, window, cx).child(editor)))
     .child(Caption::new(format!("Ln {line}, Col {column}")))
 }
 
@@ -242,7 +247,7 @@ pub fn looks(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     )
     .child(row().gap_4().child(shapes).child(counting))
-    .child(framed(840.0, 260.0, cx).child(editor))
+    .child(framed(840.0, 260.0, window, cx).child(editor))
 }
 
 pub fn changes(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
@@ -296,8 +301,8 @@ pub fn changes(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     )
     .child(row().child(toggle))
-    .child(framed(840.0, 300.0, cx).child(editor))
-    .child(framed(840.0, 180.0, cx).child(readonly))
+    .child(framed(840.0, 300.0, window, cx).child(editor))
+    .child(framed(840.0, 180.0, window, cx).child(readonly))
     .child(
         row()
             .gap_4()

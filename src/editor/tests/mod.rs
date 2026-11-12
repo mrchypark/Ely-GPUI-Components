@@ -20,6 +20,48 @@ pub(super) fn editor<'a>(
 }
 
 #[gpui::test]
+fn a_narrow_editor_reveals_the_long_line_and_caret(cx: &mut TestAppContext) {
+    let text = format!("short\n{}!", "long line ".repeat(24));
+    let (editor, cx) = editor(&text, cx);
+    cx.simulate_resize(gpui::size(gpui::px(320.), gpui::px(420.)));
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    editor.update(cx, |editor, cx| {
+        let end = text.len();
+        editor.select([end..end], cx);
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    editor.update(cx, |editor, cx| {
+        assert_eq!(editor.primary().head, text.len());
+        let list = editor.scroll.0.borrow().base_handle.clone();
+        assert!(list.offset().x < gpui::px(0.));
+        assert!(list.max_offset().x > gpui::px(0.));
+        let tail = editor.metrics.left + editor.metrics.advance * 241.0;
+        assert_eq!(editor.offset_in(1, tail, cx), Some(text.len()));
+        assert!(
+            tail >= list.bounds().left() && tail < list.bounds().right(),
+            "{tail:?}"
+        );
+        editor.motion(super::cursor::Motion::LineStart, false, cx);
+    });
+    assert_eq!(
+        editor.read_with(cx, |editor, _| editor
+            .scroll
+            .0
+            .borrow()
+            .base_handle
+            .offset()
+            .x),
+        gpui::px(0.)
+    );
+}
+
+#[gpui::test]
 fn typed_pairs_close_and_one_undo_takes_back_the_burst(cx: &mut TestAppContext) {
     let (editor, cx) = editor("let x = ", cx);
     editor.update(cx, |editor, cx| {

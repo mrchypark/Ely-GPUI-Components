@@ -5,6 +5,7 @@ use std::ops::Range;
 pub struct Buffer {
     text: String,
     starts: Vec<usize>,
+    longest: usize,
 }
 
 fn starts(text: &str) -> Vec<usize> {
@@ -13,11 +14,27 @@ fn starts(text: &str) -> Vec<usize> {
         .collect()
 }
 
+fn longest(text: &str) -> usize {
+    text.split('\n')
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0)
+}
+
 impl Buffer {
     pub fn new(text: impl Into<String>) -> Self {
         let text = text.into();
         let starts = starts(&text);
-        Self { text, starts }
+        let longest = longest(&text);
+        Self {
+            text,
+            starts,
+            longest,
+        }
+    }
+
+    pub(crate) fn longest_line(&self) -> usize {
+        self.longest
     }
 
     pub fn text(&self) -> &str {
@@ -107,6 +124,7 @@ impl Buffer {
         );
         self.text.replace_range(range, text);
         self.starts = starts(&self.text);
+        self.longest = longest(&self.text);
     }
 }
 

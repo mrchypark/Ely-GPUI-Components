@@ -1,8 +1,8 @@
-use gpui::{Context, ScrollStrategy};
+use gpui::{Context, Pixels, ScrollStrategy};
 
 use super::{
     cursor::{Motion, Selection, merged, moved},
-    layout::{Row, hidden, rows},
+    layout::{Row, Shown, hidden, rows},
     state::CodeEditor,
     syntax::folds,
 };
@@ -168,6 +168,38 @@ impl CodeEditor {
             ScrollStrategy::Top
         };
         self.scroll.scroll_to_item(self.primary_row(), strategy);
+        self.reveal_column(cx);
         cx.notify();
+    }
+
+    pub(crate) fn reveal_column(&self, cx: &Context<Self>) {
+        let width = self.metrics.width;
+        let advance = self.metrics.advance;
+        if width <= Pixels::ZERO || advance <= Pixels::ZERO {
+            return;
+        }
+        let head = self.primary().head;
+        let (line, column) = self.buffer.point(head);
+        let text = self.row_text(line);
+        let shown = Shown::new(text, self.notes(line, cx), Vec::new());
+        let column = shown.column(text, column.min(text.chars().count()));
+        let caret = advance * (self.gutter_columns() + 1 + column) as f32;
+        let state = self.scroll.0.borrow();
+        let mut offset = state.base_handle.offset();
+        let left = -offset.x;
+        let next = if column == 0 {
+            Pixels::ZERO
+        } else if caret < left {
+            (caret - advance).max(Pixels::ZERO)
+        } else if caret + advance > left + width {
+            caret + advance - width
+        } else {
+            return;
+        };
+        if next == left {
+            return;
+        }
+        offset.x = -next;
+        state.base_handle.set_offset(offset);
     }
 }

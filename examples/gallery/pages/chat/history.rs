@@ -118,7 +118,8 @@ pub fn conversations_section(
     .child(probe(
         "chat-history",
         div()
-            .w(px(300.))
+            .w_full()
+            .max_w(px(300.))
             .h(px(520.))
             .flex()
             .flex_col()

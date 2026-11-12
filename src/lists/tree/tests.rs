@@ -202,6 +202,33 @@ fn f2_renames_a_node(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn touch_rename_cancels_and_commits_without_a_hardware_key(cx: &mut TestAppContext) {
+    let (view, cx) = explorer(false, cx);
+    cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    settle(cx);
+    let tap = |target: &'static str, cx: &mut VisualTestContext| {
+        let bounds = cx.debug_bounds(target).expect(target);
+        assert!(bounds.size.width >= px(48.) && bounds.size.height >= px(48.));
+        cx.simulate_click(bounds.center(), Modifiers::none());
+        settle(cx);
+    };
+    tap("tree-rename-lib", cx);
+    assert!(cx.debug_bounds("tree-rename-ui").is_none());
+    cx.simulate_input("discarded.rs");
+    tap("tree-rename-cancel-lib", cx);
+    assert!(read(&view, cx, |explorer| explorer.heard.is_empty()));
+
+    tap("tree-rename-lib", cx);
+    cx.simulate_input("main.rs");
+    tap("tree-rename-done-lib", cx);
+    assert_eq!(
+        read(&view, cx, |explorer| explorer.heard.clone()),
+        ["rename lib main.rs"]
+    );
+    assert!(cx.debug_bounds("tree-rename-done-lib").is_none());
+}
+
+#[gpui::test]
 fn a_drop_in_a_folders_middle_moves_the_node_inside(cx: &mut TestAppContext) {
     let (view, cx) = explorer(false, cx);
     cx.simulate_mouse_down(row(4), MouseButton::Left, Modifiers::none());

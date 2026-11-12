@@ -132,7 +132,7 @@ pub fn find(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     )
     .child(
-        framed(840.0, 320.0, cx)
+        framed(840.0, 320.0, window, cx)
             .relative()
             .child(editor)
             .child(div().absolute().top_1().right_4().child(widget)),

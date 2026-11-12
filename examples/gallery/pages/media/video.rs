@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use ely_gpui_component::media::{Cue, Scrubber, SubtitleEditor, VideoPlayer, VideoThumbnailStrip};
+use ely_gpui_component::{media::{Cue, Scrubber, SubtitleEditor, VideoPlayer, VideoThumbnailStrip}, typography::Caption};
 use gpui::{
     App, Entity, IntoElement, ParentElement, SharedString, Styled, TaskExt as _, Window, div, px,
 };
@@ -181,6 +181,7 @@ pub fn strip(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let state = state(window, cx);
     let now = state.read(cx).clone();
     let (seek, cut) = (state.clone(), state.clone());
+    let width = (window.fully_visible_bounds().size.width - px(16.)).clamp(px(1.), px(640.));
     let frames = (0..8).map(|ix| picture(FRAMES[ix * 3 / 8]));
     section(
         "VideoThumbnailStrip",
@@ -189,7 +190,7 @@ pub fn strip(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(probe(
         "media-strip",
-        div().w(px(640.)).child(
+        div().w(width).child(
             VideoThumbnailStrip::new("media-strip", frames, LENGTH, now.at)
                 .trim(now.trim.0, now.trim.1)
                 .on_seek(move |at, _, cx| seek.update(cx, |now, cx| {
@@ -202,6 +203,11 @@ pub fn strip(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 })),
         ),
     ))
+    .child(Caption::new(format!(
+        "Trim: {:.1}s to {:.1}s",
+        now.trim.0.as_secs_f32(),
+        now.trim.1.as_secs_f32(),
+    )))
 }
 
 pub fn subtitles(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {

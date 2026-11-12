@@ -8,7 +8,7 @@ use gpui::{
 
 use super::{
     Choice,
-    options::{OnValues, float, option_row, surface},
+    options::{OnValues, float, float_height, option_row, surface},
     select::{field_button, field_text},
 };
 use crate::{
@@ -217,6 +217,13 @@ impl RenderOnce for Cascader {
         let (enter, key_roots, key_start) = (pick.clone(), roots.clone(), start.clone());
         let lists = open.then(|| {
             let columns = columns(&roots, &trail);
+            let visible = window.fully_visible_bounds();
+            let width = (theme.tooltip_max_width() * 0.75).to_pixels(window.rem_size());
+            let stacked = theme.touch_mode && width * columns.len() as f32 > visible.size.width;
+            let height = theme
+                .list_max_height()
+                .to_pixels(window.rem_size())
+                .min((visible.bottom() - anchor.bottom()).max(anchor.top() - visible.top()));
             let deepest = columns.iter().map(|column| column.len()).max().unwrap_or(0);
             let lists = columns.iter().enumerate().map(|(level, column)| {
                 let rows = column.iter().enumerate().map(|(ix, node)| {
@@ -267,32 +274,46 @@ impl RenderOnce for Cascader {
                 div()
                     .id(("column", level))
                     .debug_selector(move || format!("cascade-column-{level}"))
-                    .w(theme.tooltip_max_width() * 0.75)
-                    .max_h(theme.list_max_height())
-                    .overflow_y_scroll()
+                    .when(stacked, |list| list.w_full().flex_none())
+                    .when(!stacked, |list| {
+                        list.w(width)
+                            .max_h(theme.list_max_height())
+                            .overflow_y_scroll()
+                    })
                     .p_1()
                     .flex()
                     .flex_col()
                     .when(level > 0, |list| {
-                        list.border_l_1().border_color(colors.border)
+                        if stacked {
+                            list.border_t_1().border_color(colors.border)
+                        } else {
+                            list.border_l_1().border_color(colors.border)
+                        }
                     })
                     .children(rows)
             });
             let close = state.clone();
-            float(
-                self.id.clone(),
-                anchor,
-                deepest,
-                surface((self.id.clone(), "columns"), cx)
-                    .flex()
-                    .on_mouse_down_out(move |_, _, cx| {
-                        let trail = close.read(cx).trail.clone();
-                        show(&close, false, trail, cx)
-                    })
-                    .children(lists),
-                window,
-                cx,
-            )
+            let panel = surface((self.id.clone(), "columns"), cx)
+                .occlude()
+                .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                .flex()
+                .when(stacked, |panel| {
+                    panel
+                        .flex_col()
+                        .w(width.min(visible.size.width))
+                        .max_h(height)
+                        .overflow_y_scroll()
+                })
+                .on_mouse_down_out(move |_, _, cx| {
+                    let trail = close.read(cx).trail.clone();
+                    show(&close, false, trail, cx)
+                })
+                .children(lists);
+            if stacked {
+                float_height(self.id.clone(), anchor, height, panel, window, cx)
+            } else {
+                float(self.id.clone(), anchor, deepest, panel, window, cx)
+            }
         });
         field_button(self.id, &focus, self.size, false, window, cx)
             .on_click(move |event, _, cx| {

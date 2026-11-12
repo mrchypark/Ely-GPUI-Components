@@ -12,24 +12,30 @@ use crate::{
 /// A conversation, and what its menu asked for.
 struct Chats {
     deleted: Vec<SharedString>,
+    selected: Vec<SharedString>,
 }
 
 impl Render for Chats {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let owner = cx.entity();
+        let selected = owner.clone();
         let conversation = Conversation {
             key: SharedString::from("conv"),
             title: SharedString::from("Lift blends"),
             at: Timestamp::UNIX_EPOCH,
             pinned: false,
         };
-        div()
-            .w(px(320.))
-            .child(ConversationItem::new("conv", conversation).actions(
-                |_, _, _| {},
-                |_, _, _| {},
-                move |key, _, cx| owner.update(cx, |state, _| state.deleted.push(key.clone())),
-            ))
+        div().w(px(320.)).child(
+            ConversationItem::new("conv", conversation)
+                .on_select(move |key, _, cx| {
+                    selected.update(cx, |state, _| state.selected.push(key.clone()));
+                })
+                .actions(
+                    |_, _, _| {},
+                    |_, _, _| {},
+                    move |key, _, cx| owner.update(cx, |state, _| state.deleted.push(key.clone())),
+                ),
+        )
     }
 }
 
@@ -50,8 +56,18 @@ fn a_conversation_keeps_its_menu_in_touch_mode(cx: &mut TestAppContext) {
     });
     let (view, cx) = cx.add_window_view(|_, _| Chats {
         deleted: Vec::new(),
+        selected: Vec::new(),
     });
     settle(cx);
+    let row = cx.debug_bounds("conversation-row conv").unwrap();
+    assert!(row.size.height >= px(48.));
+    let at = gpui::point(row.left() + px(4.), row.bottom() - px(3.));
+    cx.simulate_click(at, Modifiers::none());
+    settle(cx);
+    assert_eq!(
+        view.read_with(cx, |state, _| state.selected.clone()),
+        ["conv"]
+    );
     let trigger = cx
         .debug_bounds("conversation-actions-touch conv")
         .expect("the conversation keeps its menu");
@@ -83,6 +99,10 @@ fn a_conversation_keeps_its_menu_in_touch_mode(cx: &mut TestAppContext) {
         ["conv"],
         "the menu reaches its action"
     );
+    assert_eq!(
+        view.read_with(cx, |state, _| state.selected.clone()),
+        ["conv"]
+    );
 }
 
 #[gpui::test]
@@ -93,6 +113,7 @@ fn a_conversation_hides_its_menu_on_the_desktop(cx: &mut TestAppContext) {
     });
     let (_, cx) = cx.add_window_view(|_, _| Chats {
         deleted: Vec::new(),
+        selected: Vec::new(),
     });
     settle(cx);
     assert!(

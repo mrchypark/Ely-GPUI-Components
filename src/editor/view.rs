@@ -1,9 +1,9 @@
 use std::ops::Range;
 
 use gpui::{
-    AnyElement, Bounds, Context, ElementInputHandler, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Render, Styled, StyledText, Window,
-    canvas, div, fill, font, point, size, uniform_list,
+    AnyElement, Bounds, Context, ElementInputHandler, InteractiveElement, IntoElement,
+    ListHorizontalSizingBehavior, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement,
+    Pixels, Render, Styled, StyledText, Window, canvas, div, fill, font, point, size, uniform_list,
 };
 
 use super::{
@@ -23,6 +23,7 @@ pub(crate) struct Frame {
     pub brackets: Vec<Bracket>,
     pub advance: Pixels,
     pub line: Pixels,
+    pub content_width: Pixels,
     pub matched: Option<(usize, usize)>,
     pub occurrences: Vec<Range<usize>>,
     /// The minimap's box, from its last paint.
@@ -71,12 +72,14 @@ impl CodeEditor {
         if headers.is_empty() {
             return None;
         }
+        let x = self.scroll.0.borrow().base_handle.offset().x;
         let rows = headers.into_iter().map(|line| {
             let text = self.buffer.line(line).to_string();
             let styles = syntax::colors(&text, cx);
             let jump = cx.entity();
             div()
                 .id(("sticky", line))
+                .ml(x)
                 .h(self.frame.line)
                 .flex()
                 .items_center()
@@ -113,6 +116,7 @@ impl CodeEditor {
                 .top_0()
                 .left_0()
                 .right_0()
+                .overflow_hidden()
                 .bg(colors.surface)
                 .border_b_1()
                 .border_color(colors.border)
@@ -214,7 +218,9 @@ impl CodeEditor {
         let state = self.scroll.0.borrow();
         let viewport = state.base_handle.bounds().size.height;
         let top = (self.frame.line * row - viewport / 2.0).max(Pixels::ZERO);
-        state.base_handle.set_offset(point(Pixels::ZERO, -top));
+        state
+            .base_handle
+            .set_offset(point(state.base_handle.offset().x, -top));
         drop(state);
         cx.notify();
     }
@@ -250,6 +256,26 @@ impl Render for CodeEditor {
             }
             _ => Vec::new(),
         };
+        let mut columns = self.buffer.longest_line();
+        if !self.marks.hints.is_empty() || self.marks.ghost.is_some() {
+            let decorated = self
+                .marks
+                .hints
+                .iter()
+                .map(|hint| hint.offset)
+                .chain(self.marks.ghost.iter().map(|ghost| ghost.offset))
+                .map(|offset| self.buffer.line_of(offset))
+                .collect::<std::collections::BTreeSet<_>>();
+            for line in decorated {
+                let extra: usize = self
+                    .notes(line, cx)
+                    .iter()
+                    .map(|(_, text, _)| text.chars().count())
+                    .sum();
+                columns = columns.max(self.row_text(line).chars().count() + extra);
+            }
+        }
+        let content_width = advance * (self.gutter_columns() + columns + 2) as f32;
         let minimap = self.frame.minimap;
         self.frame = Frame {
             rows: rows(&self.buffer, &hide, &self.marks),
@@ -257,6 +283,7 @@ impl Render for CodeEditor {
             brackets: found_brackets,
             advance,
             line,
+            content_width,
             matched,
             occurrences,
             minimap,
@@ -276,6 +303,7 @@ impl Render for CodeEditor {
                 range.map(|ix| editor.row(ix, window, cx)).collect()
             }),
         )
+        .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
         .track_scroll(&self.scroll)
         .size_full();
         let (top, focus, input) = (cx.entity(), self.focus.clone(), cx.entity());
@@ -295,13 +323,21 @@ impl Render for CodeEditor {
         let body = div()
             .relative()
             .flex_1()
+            .min_w_0()
             .h_full()
             .child(list)
             .children(sticky)
             .child(
                 canvas(
-                    move |bounds, _, cx| {
-                        top.update(cx, |editor, _| editor.metrics.top = bounds.origin.y);
+                    move |bounds, window, cx| {
+                        top.update(cx, |editor, cx| {
+                            editor.metrics.top = bounds.origin.y;
+                            if editor.metrics.width != bounds.size.width {
+                                editor.metrics.width = bounds.size.width;
+                                editor.reveal_column(cx);
+                                window.request_animation_frame();
+                            }
+                        });
                     },
                     |_, _, _, _| {},
                 )

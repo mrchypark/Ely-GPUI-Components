@@ -92,6 +92,7 @@ pub(crate) struct Metrics {
     pub left: Pixels,
     pub top: Pixels,
     pub advance: Pixels,
+    pub width: Pixels,
     pub line: Pixels,
 }
 

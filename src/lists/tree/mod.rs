@@ -263,6 +263,7 @@ impl RenderOnce for Tree {
                 },
             ) as OnKey
         });
+        let can_rename = self.on_rename.is_some();
         let rename: OnRow = {
             let (nav, editing, shown, on_rename) =
                 (nav.clone(), editing.clone(), shown.clone(), self.on_rename);
@@ -273,7 +274,11 @@ impl RenderOnce for Tree {
                     return;
                 };
                 let key = key.clone();
-                nav.update(cx, |nav, _| nav.renaming = Some(key.clone()));
+                nav.update(cx, |nav, _| {
+                    nav.cursor = ix;
+                    nav.anchor = ix;
+                    nav.renaming = Some(key.clone());
+                });
                 editing.update(cx, |editing, _| {
                     editing.on_commit = Some(Rc::new(move |name, window, cx| {
                         on_rename(&key, name, window, cx)
@@ -315,6 +320,7 @@ impl RenderOnce for Tree {
             toggle: toggle.clone(),
             check: check.clone(),
             activate: activate.clone(),
+            rename: can_rename.then(|| rename.clone()),
             on_move: self.on_move,
         };
         let list = uniform_list((id.clone(), "rows"), count, move |range, window, cx| {

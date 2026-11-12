@@ -228,9 +228,11 @@ fn a_pointer_keeps_the_preview_it_clicked(cx: &mut TestAppContext) {
     );
 }
 
-struct Tree;
+#[derive(Default)]
+struct Tree(Vec<gpui::SharedString>);
 impl Render for Tree {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
         div().flex().child(
             Cascader::new(
                 "cascader",
@@ -240,7 +242,7 @@ impl Render for Tree {
                     Cascade::new("eu", "Europe"),
                 ],
             )
-            .on_change(|_, _, _| {}),
+            .on_change(move |path, _, cx| view.update(cx, |tree, _| tree.0 = path.to_vec())),
         )
     }
 }
@@ -256,7 +258,7 @@ fn a_tap_on_a_cascade_parent_opens_the_next_level_in_touch_mode(cx: &mut TestApp
     });
     let (_, cx) = cx.add_window_view(|window, _| {
         window.set_rem_size(px(8.));
-        Tree
+        Tree::default()
     });
     cx.run_until_parked();
     let field = cx.debug_bounds("field-root").unwrap();
@@ -279,5 +281,26 @@ fn a_tap_on_a_cascade_parent_opens_the_next_level_in_touch_mode(cx: &mut TestApp
     assert!(
         cx.debug_bounds("cascade-column-2").is_some(),
         "the tap opens the next level"
+    );
+}
+
+#[gpui::test]
+fn a_deep_cascader_stays_tappable_at_phone_width(cx: &mut TestAppContext) {
+    touch_theme(cx);
+    let (view, cx) = cx.add_window_view(|_, _| Tree::default());
+    cx.simulate_resize(gpui::size(px(320.), px(640.)));
+    cx.run_until_parked();
+    for target in ["field-root", "cascade-row-1-0", "cascade-row-2-0"] {
+        let row = cx.debug_bounds(target).expect(target);
+        assert!(
+            row.left() >= px(0.) && row.right() <= px(320.),
+            "{target}: {row:?}"
+        );
+        cx.simulate_click(row.center(), Modifiers::none());
+        cx.run_until_parked();
+    }
+    assert_eq!(
+        view.read_with(cx, |tree, _| tree.0.clone()),
+        ["asia", "jp", "tyo"]
     );
 }

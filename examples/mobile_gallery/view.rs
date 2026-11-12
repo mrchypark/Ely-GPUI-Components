@@ -399,9 +399,9 @@ mod story_tests {
         let _files = crate::assets::prepare_test_files();
         init(cx);
         let (view, cx) = cx.add_window_view(MobileGallery::new);
-        cx.simulate_resize(size(px(390.), px(844.)));
         for page in pages::ALL {
             for story in stories(page.slug) {
+                cx.simulate_resize(size(px(320.), px(640.)));
                 view.update(cx, |view, cx| {
                     view.scroll.set_offset(point(px(-100.), px(-200.)));
                     assert!(view.select_story(page.slug, &story.slug, cx));
@@ -409,10 +409,13 @@ mod story_tests {
                     assert_eq!(view.current_story_slug(), Some(story.slug.as_str()));
                     assert_eq!(view.scroll.offset(), point(px(0.), px(0.)));
                 });
-                // A second frame also checks that Story's match bookkeeping never accumulates.
-                for _ in 0..2 {
+                // Resize the mounted story without selecting it again.
+                for (width, height) in [(320., 640.), (640., 280.), (768., 1024.), (1024., 768.)] {
+                    cx.simulate_resize(size(px(width), px(height)));
                     draw(cx);
                     view.update(cx, |view, _| {
+                        assert_eq!(view.current_slug(), page.slug);
+                        assert_eq!(view.current_story_slug(), Some(story.slug.as_str()));
                         assert!(
                             view.story_error.is_none(),
                             "{}/{}: {:?}",
@@ -426,7 +429,7 @@ mod story_tests {
                     assert!(body.size.width > px(0.) && body.size.height > px(0.));
                     assert!(
                         content.contains(&(body.origin + point(px(1.), px(1.)))),
-                        "{}/{} not revealed: {body:?} in {content:?}",
+                        "{}/{} not revealed at {width}×{height}: {body:?} in {content:?}",
                         page.slug,
                         story.slug
                     );

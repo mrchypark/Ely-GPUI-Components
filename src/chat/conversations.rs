@@ -175,14 +175,17 @@ impl RenderOnce for ConversationItem {
         let shown = self.active || focus.contains_focused(window, cx);
         let theme = cx.theme();
         let colors = theme.colors.clone();
+        let row_id = self.id.clone();
         div()
             .id(self.id.clone())
+            .debug_selector(move || format!("conversation-row {row_id}"))
             .group(group.clone())
             .track_focus(&focus)
             .flex()
             .items_center()
             .gap_1()
             .h(theme.control_height(ControlSize::Md))
+            .when(pressable, |row| theme.touch_target(row))
             .pl_2()
             .pr_0p5()
             .rounded(theme.radius(Radius::Md))

@@ -65,7 +65,9 @@ impl RenderOnce for ActionBar {
             .flex()
             .items_center()
             .gap_2()
-            .when(theme.touch_mode, |el| el.gap(theme.touch_spacing()));
+            .when(theme.touch_mode, |el| {
+                el.max_w_full().flex_wrap().gap(theme.touch_spacing())
+            });
         let bar = if self.floating {
             bar.p_1p5()
                 .rounded_full()

@@ -1,10 +1,10 @@
 use std::{rc::Rc, time::Duration};
 
 use gpui::{
-    App, Bounds, CursorStyle, DragMoveEvent, ElementId, EmptyView, EntityId, ImageSource,
-    InteractiveElement, IntoElement, MouseButton, ObjectFit, ParentElement, Pixels, RenderOnce,
-    StatefulInteractiveElement, Styled, Window, canvas, div, img, prelude::*, relative,
-    transparent_black,
+    App, Bounds, CursorStyle, DispatchPhase, DragMoveEvent, ElementId, EmptyView, EntityId,
+    ImageSource, InteractiveElement, IntoElement, MouseButton, ObjectFit, ParentElement, Pixels,
+    RenderOnce, StatefulInteractiveElement, Styled, TouchDragEvent, TouchPhase, Window, canvas,
+    div, img, prelude::*, relative, transparent_black,
 };
 
 use super::scrubber::{OnTime, along, clock, time_at};
@@ -64,6 +64,7 @@ struct Hold(EntityId);
 struct Strip {
     bounds: Bounds<Pixels>,
     held: Option<End>,
+    touch_held: Option<End>,
 }
 
 /// A video's frames laid along its length under a playhead, and with a trim, the part kept between two handles. A press seeks and a drag scrubs; a handle's drag moves its end. With focus, the arrows step the playhead a frame's span, and I and O set the trim's ends at the playhead.
@@ -151,6 +152,11 @@ impl RenderOnce for VideoThumbnailStrip {
         let sizes = theme.media();
         let (tall, handle) = (sizes.strip, sizes.trim_handle);
         let reach = handle.to_pixels(window.rem_size());
+        let reach = if theme.touch_mode {
+            theme.touch_minimum(reach * 2.0) / 2.0
+        } else {
+            reach
+        };
         let frames = self.frames.into_iter().enumerate().map(|(ix, frame)| {
             div().flex_1().min_w_0().h_full().overflow_hidden().child(
                 img(frame)
@@ -217,6 +223,63 @@ impl RenderOnce for VideoThumbnailStrip {
             .border_color(colors.on_media)
             .debug_selector(|| "strip-playhead".into());
         let measured = strip.clone();
+        let touch = strip.clone();
+        let touch_trim = self.on_trim.clone().zip(trim);
+        let touch_target = theme
+            .touch_mode
+            .then_some(touch_trim)
+            .flatten()
+            .map(|(set, trim)| {
+                canvas(
+                    |_, _, _| {},
+                    move |bounds, _, window, _| {
+                        window.on_mouse_event(move |event: &TouchDragEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble {
+                                return;
+                            }
+                            let held = match event.phase {
+                                TouchPhase::Started => {
+                                    if window.default_prevented()
+                                        || !bounds.contains(&event.start_position)
+                                    {
+                                        return;
+                                    }
+                                    let Some(at) = along(bounds, event.start_position) else {
+                                        return;
+                                    };
+                                    let held = end_at(
+                                        trim,
+                                        at,
+                                        f32::from(reach / bounds.size.width),
+                                        length,
+                                    );
+                                    if held.is_some() {
+                                        touch.update(cx, |strip, _| strip.touch_held = held);
+                                        window.prevent_default();
+                                        cx.stop_propagation();
+                                    }
+                                    held
+                                }
+                                TouchPhase::Moved => touch.read(cx).touch_held,
+                                TouchPhase::Ended | TouchPhase::Cancelled => {
+                                    let held = touch.update(cx, |strip, _| strip.touch_held.take());
+                                    if event.phase == TouchPhase::Cancelled {
+                                        return;
+                                    }
+                                    held
+                                }
+                            };
+                            if let Some(end) = held
+                                && let Some(at) = along(bounds, event.position)
+                            {
+                                set(trimmed(trim, end, time_at(at, length), length), window, cx);
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .inset_0()
+            });
         let row = div()
             .relative()
             .h(tall)
@@ -242,7 +305,8 @@ impl RenderOnce for VideoThumbnailStrip {
                 .size_full(),
             )
             .children(kept)
-            .child(playhead);
+            .child(playhead)
+            .children(touch_target);
         let (on_seek, on_trim) = (self.on_seek, self.on_trim);
         let act = move |held: Option<End>, time: Duration, window: &mut Window, cx: &mut App| match (
             held, trim, &on_trim, &on_seek,

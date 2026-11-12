@@ -11,10 +11,11 @@ use super::{
     model::{Row, Shown, TreeNode, can_drop, check_state, find, place_at},
 };
 use crate::{
+    buttons::{ButtonVariant, IconButton},
     forms::{Editing, Input, check_mark},
     lists::select::Pick,
     motion::{self, Spinner},
-    primitives::{Disclosure, DragGhost, Icon},
+    primitives::{Disclosure, DragGhost, Icon, IconName},
     theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
     typography::Ellipsis,
 };
@@ -35,6 +36,7 @@ pub(super) struct Rows {
     pub toggle: OnToggle,
     pub check: Option<OnKey>,
     pub activate: OnRow,
+    pub rename: Option<OnRow>,
     pub on_move: Option<OnMove>,
 }
 
@@ -94,6 +96,7 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
     });
     let nav = rows.nav.read(cx);
     let renaming = nav.renaming.as_ref() == Some(&key);
+    let rename_active = nav.renaming.is_some();
     let landing = nav
         .drop
         .as_ref()
@@ -129,7 +132,9 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
         .ml(indent * item.depth as f32)
         .flex()
         .justify_center()
-        .when(theme.touch_mode, |slot| theme.touch_target(slot).items_center())
+        .when(theme.touch_mode, |slot| {
+            theme.touch_target(slot).items_center()
+        })
         .when(opens, |slot| {
             slot.child(Disclosure::new(
                 (rows.id.clone(), format!("chevron-{key}")),
@@ -145,6 +150,7 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
             let editing = rows.editing.clone();
             div()
                 .flex_1()
+                .min_w_0()
                 .on_key_down(move |event, window, cx| {
                     if event.keystroke.key == "escape" {
                         cx.stop_propagation();
@@ -161,6 +167,52 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
             .child(Ellipsis::new(label.clone()))
             .into_any_element(),
     };
+    let rename_controls = rows
+        .rename
+        .as_ref()
+        .filter(|_| theme.touch_mode && (!rename_active || renaming))
+        .map(|rename| {
+            let action = |name: &'static str, label: &'static str, icon| {
+                let key = key.clone();
+                IconButton::new((rows.id.clone(), format!("{name}-{key}")), icon)
+                    .debug_selector(move || format!("tree-{name}-{key}"))
+                    .size(ControlSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip(label)
+            };
+            let controls = div()
+                .flex_none()
+                .flex()
+                .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default());
+            if renaming {
+                let (done, cancel) = (rows.editing.clone(), rows.editing.clone());
+                controls
+                    .child(
+                        action("rename-done", "Save name", IconName::Check).on_click(
+                            move |_, window, cx| {
+                                cx.stop_propagation();
+                                done.update(cx, |edit, cx| edit.finish(false, window, cx));
+                            },
+                        ),
+                    )
+                    .child(
+                        action("rename-cancel", "Cancel rename", IconName::X).on_click(
+                            move |_, window, cx| {
+                                cx.stop_propagation();
+                                cancel.update(cx, |edit, cx| edit.finish(true, window, cx));
+                            },
+                        ),
+                    )
+            } else {
+                let rename = rename.clone();
+                controls.child(action("rename", "Rename", IconName::Pencil).on_click(
+                    move |_, window, cx| {
+                        cx.stop_propagation();
+                        rename(ix, window, cx);
+                    },
+                ))
+            }
+        });
     let line = |at: DropAt| {
         div()
             .absolute()
@@ -229,7 +281,7 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
         )
         .children(icon.map(|icon| Icon::new(icon).size(IconSize::Sm).color(colors.fg_muted)))
         .child(body)
-        .children(note.map(|note| {
+        .children(note.filter(|_| !theme.touch_mode || !renaming).map(|note| {
             div()
                 .debug_selector(|| "tree-note".into())
                 .flex_none()
@@ -238,6 +290,7 @@ fn row(rows: &Rows, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement 
                 .text_color(ink.unwrap_or(colors.fg_subtle))
                 .child(Ellipsis::new(note))
         }))
+        .children(rename_controls)
         .children(landing.filter(|at| *at != DropAt::Inside).map(line))
         .when(rows.current == Some(ix), |row| {
             row.child(
