@@ -41,6 +41,7 @@ struct KeyboardField {
     focus: FocusHandle,
     keyboard: bool,
     tail_height: f32,
+    scroll_height: f32,
 }
 
 impl Render for KeyboardField {
@@ -52,7 +53,7 @@ impl Render for KeyboardField {
         div()
             .id("scroll")
             .w(px(300.))
-            .h(px(400.))
+            .h(px(self.scroll_height))
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
             .child(div().h(px(250.)))
@@ -81,6 +82,7 @@ fn keyboard_reveals_same_focused_field_once(cx: &mut TestAppContext) {
             focus,
             keyboard: false,
             tail_height: 510.,
+            scroll_height: 400.,
         }
     });
     cx.run_until_parked();
@@ -105,12 +107,38 @@ fn keyboard_reveals_same_focused_field_once(cx: &mut TestAppContext) {
     assert!(cx.update(|window, _| focus.is_focused(window)));
 }
 
+#[gpui::test]
+fn focused_field_reveals_after_its_scroll_viewport_shrinks(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
+        KeyboardField {
+            scroll: ScrollHandle::new(),
+            focus,
+            keyboard: false,
+            tail_height: 510.,
+            scroll_height: 400.,
+        }
+    });
+    cx.run_until_parked();
+    let scroll = view.read_with(cx, |view, _| view.scroll.clone());
+    assert_eq!(scroll.offset().y, px(0.));
+    view.update(cx, |view, cx| {
+        view.scroll_height = 200.;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    assert_eq!(scroll.offset().y, px(-90.));
+}
+
 fn limited_scroll_reveal(cx: &mut TestAppContext, tail_height: f32, reach: f32) {
     let (view, cx) = cx.add_window_view(|_, cx| KeyboardField {
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
         keyboard: false,
         tail_height,
+        scroll_height: 400.,
     });
     cx.run_until_parked();
     let scroll = view.read_with(cx, |view, _| view.scroll.clone());

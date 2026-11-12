@@ -32,6 +32,69 @@ pub fn usable_bounds(
     )
 }
 
+fn above_below(
+    frame: Bounds<Pixels>,
+    keyboard: Bounds<Pixels>,
+    gap: Pixels,
+) -> [Bounds<Pixels>; 2] {
+    let above = (keyboard.top() - gap).clamp(frame.top(), frame.bottom());
+    let below = (keyboard.bottom() + gap).clamp(frame.top(), frame.bottom());
+    [
+        Bounds::new(frame.origin, size(frame.size.width, above - frame.top())),
+        Bounds::new(
+            point(frame.left(), below),
+            size(frame.size.width, frame.bottom() - below),
+        ),
+    ]
+}
+
+/// The largest rectangle in the viewport that clears a floating keyboard.
+pub fn keyboard_clear_bounds(frame: Bounds<Pixels>, keyboard: Bounds<Pixels>) -> Bounds<Pixels> {
+    let hit = frame.intersect(&keyboard);
+    if hit.size.width <= Pixels::ZERO || hit.size.height <= Pixels::ZERO {
+        return frame;
+    }
+    let [above, below] = above_below(frame, hit, Pixels::ZERO);
+    let left = Bounds::new(
+        frame.origin,
+        size(hit.left() - frame.left(), frame.size.height),
+    );
+    let right = Bounds::new(
+        point(hit.right(), frame.top()),
+        size(frame.right() - hit.right(), frame.size.height),
+    );
+    let area = |b: &Bounds<Pixels>| f32::from(b.size.width) * f32::from(b.size.height);
+    [left, right, below, above]
+        .into_iter()
+        .max_by(|a, b| area(a).total_cmp(&area(b)))
+        .unwrap()
+}
+
+/// The nearest region a vertically scrolling field can use around a floating keyboard.
+pub fn keyboard_reveal_region(
+    field: Bounds<Pixels>,
+    frame: Bounds<Pixels>,
+    keyboard: Option<Bounds<Pixels>>,
+    gap: Pixels,
+) -> Option<Bounds<Pixels>> {
+    let Some(keyboard) = keyboard.filter(|keyboard| {
+        let hit = frame.intersect(keyboard);
+        hit.size.width > Pixels::ZERO && hit.size.height > Pixels::ZERO
+    }) else {
+        return Some(frame);
+    };
+    if field.right() <= keyboard.left() || field.left() >= keyboard.right() {
+        return Some(frame);
+    }
+    above_below(frame, keyboard, gap)
+        .into_iter()
+        .filter(|region| region.size.height >= field.size.height)
+        .min_by(|a, b| {
+            let shift = |region| f32::from(reveal_offset(field, region).y).abs();
+            shift(*a).total_cmp(&shift(*b))
+        })
+}
+
 /// The caller chooses its breakpoint in logical pixels, independently of the operating system.
 pub fn is_compact(available: Bounds<Pixels>, breakpoint: Pixels) -> bool {
     available.size.width < breakpoint
@@ -99,6 +162,36 @@ mod tests {
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> Bounds<Pixels> {
         Bounds::new(point(px(x), px(y)), size(px(w), px(h)))
+    }
+
+    #[test]
+    fn floating_keyboard_keeps_space_beside_it_and_reveals_only_overlapping_fields() {
+        let frame = rect(0., 0., 400., 300.);
+        let keyboard = rect(200., 80., 200., 140.);
+        assert_eq!(
+            keyboard_clear_bounds(frame, keyboard),
+            rect(0., 0., 200., 300.)
+        );
+        assert_eq!(
+            keyboard_clear_bounds(frame, rect(0., 300., 400., 100.)),
+            frame
+        );
+        assert_eq!(
+            keyboard_reveal_region(rect(20., 100., 100., 30.), frame, Some(keyboard), px(10.)),
+            Some(frame)
+        );
+        assert_eq!(
+            keyboard_reveal_region(rect(230., 92., 100., 30.), frame, Some(keyboard), px(10.)),
+            Some(rect(0., 0., 400., 70.))
+        );
+        assert_eq!(
+            keyboard_reveal_region(rect(230., 195., 100., 30.), frame, Some(keyboard), px(10.)),
+            Some(rect(0., 230., 400., 70.))
+        );
+        assert!(
+            keyboard_reveal_region(rect(0., 90., 400., 120.), frame, Some(frame), px(10.))
+                .is_none()
+        );
     }
 
     #[test]

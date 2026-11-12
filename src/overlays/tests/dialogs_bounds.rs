@@ -389,6 +389,35 @@ fn a_short_bounded_form_reveals_each_focused_field_and_action(cx: &mut TestAppCo
     );
 }
 
+#[gpui::test]
+fn a_very_short_form_scrolls_its_actions_instead_of_clipping_inputs(cx: &mut TestAppContext) {
+    let usable = Bounds::new(point(px(20.), px(24.)), size(px(350.), px(86.)));
+    let (view, cx) = fixture_with_bounds(cx, Kind::ShortForm, usable, false);
+    let assert_visible = |cx: &mut VisualTestContext, selector| {
+        let bounds = cx.debug_bounds(selector).expect("visible control");
+        assert!(
+            bounds.top() >= usable.top() && bounds.bottom() <= usable.bottom(),
+            "{selector}: {bounds:?}"
+        );
+        bounds
+    };
+    assert_visible(cx, "short-form-field");
+    let second = view.read_with(cx, |stage, _| stage.second.clone());
+    let second_focus = second.read_with(cx, |input, _| input.focus().clone());
+    cx.update(|window, cx| second_focus.focus(window, cx));
+    draw(cx);
+    assert_visible(cx, "short-form-second");
+    let scroll = view.read_with(cx, |stage, _| stage.scroll.clone());
+    scroll.set_offset(point(px(0.), -scroll.max_offset().y));
+    draw(cx);
+    let save = assert_visible(cx, "short-save");
+    click(f32::from(save.center().x), f32::from(save.center().y), cx);
+    assert_eq!(
+        view.read_with(cx, |stage, _| stage.events.clone()),
+        ["save"]
+    );
+}
+
 fn suppressed(view: &Entity<Stage>, cx: &mut VisualTestContext) {
     draw(cx);
     for selector in ["plain-content", "dialog-message", "prompt-dialog-field"] {

@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, CursorStyle, DragMoveEvent, ElementId, EmptyView, EntityId, ImageSource,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, RenderOnce,
-    StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*, relative,
-    transparent_black,
+    App, Bounds, CursorStyle, DispatchPhase, DragMoveEvent, ElementId, EmptyView, EntityId,
+    ImageSource, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point,
+    RenderOnce, StatefulInteractiveElement, Styled, TouchDragEvent, TouchPhase, Window, canvas,
+    div, prelude::*, relative, transparent_black,
 };
 
 use super::crop::{Crop, Grip, dragged, grip_at};
@@ -24,12 +24,13 @@ const NUDGE: (f32, f32) = (0.01, 0.1);
 /// A crop's drag, marked with its cropper.
 struct Hold(EntityId);
 
-/// The stage's bounds, what the press holds, and where the pointer was last.
+/// The stage's bounds, the mouse and touch holds, and where each was last.
 #[derive(Default)]
 struct Stage {
     bounds: Bounds<Pixels>,
     held: Option<Grip>,
     from: Point<Pixels>,
+    touch: Option<(Grip, Point<Pixels>)>,
 }
 
 /// A picture and a box to crop it by, the picture's shape from the host, inset by half a handle so handles on its edge stay whole. Drag the box to move it and its handles to size it; with an aspect, only its corners size it and it keeps that shape. The arrows move it a hundredth of the picture, a tenth with Shift. The host keeps the crop; `Crop::fitted` gives a box of a new aspect.
@@ -163,8 +164,9 @@ impl RenderOnce for ImageCropper {
             .when(editable, |body| body.children(marks));
         let (measure, pressed, moving, keyed) =
             (stage.clone(), stage.clone(), stage.clone(), crop.clone());
-        let (drag_change, key_change) = (change.clone(), change);
+        let (drag_change, touch_change, key_change) = (change.clone(), change.clone(), change);
         let pressed_crop = crop.clone();
+        let touch_crop = crop.clone();
         let picture = framed(self.ratio, cx)
             .debug_selector(|| "image-cropper".into())
             .child(Image::new((self.id.clone(), "picture"), self.source).size_full())
@@ -215,6 +217,11 @@ impl RenderOnce for ImageCropper {
                                 f32::from(stage.bounds.size.width),
                                 f32::from(stage.bounds.size.height),
                             );
+                            if w <= 0.0 || h <= 0.0 {
+                                stage.held = None;
+                                stage.from = event.position;
+                                return;
+                            }
                             let at = event.position - stage.bounds.origin;
                             let spot = (f32::from(at.x) / w, f32::from(at.y) / h);
                             let reach = (f32::from(hit) / w, f32::from(hit) / h);
@@ -236,6 +243,9 @@ impl RenderOnce for ImageCropper {
                             return;
                         };
                         let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+                        if w <= 0.0 || h <= 0.0 {
+                            return;
+                        }
                         let by = (f32::from(at.x - from.x) / w, f32::from(at.y - from.y) / h);
                         let before = keyed.read(cx).value;
                         let next = dragged(before, grip, by, LEAST, shape);
@@ -261,6 +271,101 @@ impl RenderOnce for ImageCropper {
                         log::info!("image cropper: moved to {:.2}, {:.2}", next.x, next.y);
                         key_change(next, window, cx);
                     })
+                    .children(theme.touch_mode.then(|| {
+                        let touch = stage;
+                        canvas(
+                            |_, _, _| {},
+                            move |bounds, _, window, _| {
+                                let (w, h) =
+                                    (f32::from(bounds.size.width), f32::from(bounds.size.height));
+                                if w <= 0.0 || h <= 0.0 {
+                                    return;
+                                }
+                                let claim_crop = touch_crop.clone();
+                                let apply =
+                                    move |from: Point<Pixels>,
+                                          at: Point<Pixels>,
+                                          grip: Grip,
+                                          window: &mut Window,
+                                          cx: &mut App| {
+                                        let by = (
+                                            f32::from(at.x - from.x) / w,
+                                            f32::from(at.y - from.y) / h,
+                                        );
+                                        let before = touch_crop.read(cx).value;
+                                        let next = dragged(before, grip, by, LEAST, shape);
+                                        if next != before {
+                                            touch_change(next, window, cx);
+                                        }
+                                    };
+                                window.on_mouse_event(
+                                    move |event: &TouchDragEvent, phase, window, cx| {
+                                        if phase != DispatchPhase::Bubble {
+                                            return;
+                                        }
+                                        let spot = |at: Point<Pixels>| {
+                                            let at = at - bounds.origin;
+                                            (f32::from(at.x) / w, f32::from(at.y) / h)
+                                        };
+                                        if event.phase == TouchPhase::Started {
+                                            touch.update(cx, |stage, _| stage.touch = None);
+                                            if window.default_prevented()
+                                                || !bounds.contains(&event.start_position)
+                                            {
+                                                return;
+                                            }
+                                            let now = claim_crop.read(cx).value;
+                                            let reach = (f32::from(hit) / w, f32::from(hit) / h);
+                                            let Some(grip) = grip_at(
+                                                now,
+                                                spot(event.start_position),
+                                                reach,
+                                                shape.is_some(),
+                                            ) else {
+                                                return;
+                                            };
+                                            touch.update(cx, |stage, _| {
+                                                stage.touch = Some((grip, event.position));
+                                            });
+                                            window.prevent_default();
+                                            cx.stop_propagation();
+                                            apply(
+                                                event.start_position,
+                                                event.position,
+                                                grip,
+                                                window,
+                                                cx,
+                                            );
+                                            return;
+                                        }
+                                        if event.phase == TouchPhase::Cancelled {
+                                            touch.update(cx, |stage, _| stage.touch = None);
+                                            return;
+                                        }
+                                        let held = if event.phase == TouchPhase::Moved {
+                                            touch.update(cx, |stage, _| {
+                                                let held = stage.touch;
+                                                if let Some((grip, _)) = held {
+                                                    stage.touch = Some((grip, event.position));
+                                                }
+                                                held
+                                            })
+                                        } else {
+                                            touch.update(cx, |stage, _| stage.touch.take())
+                                        };
+                                        if let Some((grip, from)) = held {
+                                            apply(from, event.position, grip, window, cx);
+                                        }
+                                    },
+                                );
+                            },
+                        )
+                        .absolute()
+                        .top(side / 2.0)
+                        .left(side / 2.0)
+                        .right(side / 2.0)
+                        .bottom(side / 2.0)
+                    }))
             })
     }
 }

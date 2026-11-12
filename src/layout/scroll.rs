@@ -66,15 +66,20 @@ fn focus_revealer(
     window: &mut Window,
     cx: &mut App,
 ) -> Canvas<()> {
-    let shown = window.use_keyed_state(id, cx, |_, _| (false, None));
+    let shown = window.use_keyed_state(id, cx, |_, _| None);
     let (scroll, focus) = (scroll.clone(), focus.clone());
     canvas(
         move |bounds, window, cx| {
-            let (focused, held) = (focus.is_focused(window), *shown.read(cx));
-            if focused && (!held.0 || held.1 != visible) {
-                shown.update(cx, |shown, _| *shown = (true, visible));
+            let frame = scroll.bounds();
+            let current = (visible, frame, scroll.max_offset());
+            let focused = focus.is_focused(window);
+            if focused
+                && frame.size.width > Pixels::ZERO
+                && frame.size.height > Pixels::ZERO
+                && *shown.read(cx) != Some(current)
+            {
+                shown.update(cx, |shown, _| *shown = Some(current));
                 let moved = if let Some(mut visible) = visible {
-                    let frame = scroll.bounds();
                     match axis {
                         Axis::Horizontal => {
                             visible.origin.y = frame.origin.y;
@@ -104,8 +109,8 @@ fn focus_revealer(
                     log::info!("scroll: a focused stop came into view");
                     window.request_animation_frame();
                 }
-            } else if !focused && held.0 {
-                shown.update(cx, |shown, _| *shown = (false, None));
+            } else if !focused && shown.read(cx).is_some() {
+                shown.update(cx, |shown, _| *shown = None);
             }
         },
         |_, _, _, _| {},

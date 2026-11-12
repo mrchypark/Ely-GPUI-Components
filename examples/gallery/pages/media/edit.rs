@@ -59,6 +59,7 @@ pub fn cropper(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         crop.w * 100.0,
         crop.h * 100.0
     );
+    let width = (window.fully_visible_bounds().size.width - px(48.)).clamp(px(1.), px(560.));
     section(
         "ImageCropper",
         "A box to crop a picture by. Drag it to move it and its handles to size it; with a shape, only its corners size it. The arrows move it, Shift further.",
@@ -66,7 +67,7 @@ pub fn cropper(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(
         div()
-            .w(px(560.))
+            .w(width)
             .flex()
             .flex_col()
             .gap_3()
@@ -79,7 +80,7 @@ pub fn cropper(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             }))
             .child(probe(
                 "media-cropper",
-                div().w(px(560.)).child(
+                div().w(width).child(
                     ImageCropper::new("media-cropper", picture(ATRIUM), 1.5, crop)
                         .aspect(aspect)
                         .on_change(move |crop, _, cx| {

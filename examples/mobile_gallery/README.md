@@ -8,7 +8,7 @@ Use `lib.rs` as the crate-root `[lib].path` in the parent-owned task-local overl
 2. Register this crate's `assets::GalleryAssets` with the application.
 3. Call `assets::prepare_files(&app_private_asset_directory)?` once before rendering. Pass an app-private writable subdirectory obtained at runtime (iOS sandbox/Android files directory). No random install path or host path is compiled in. Failure must propagate and stop gallery launch. Extraction writes only the named gallery files; the adapter owns cleanup when finished. Do not remove while the gallery is running.
 4. Initialize Ely, then call this crate's `init(&mut App)` (keybindings, i18n, touch_mode=true). Create `cx.new(|cx| MobileGallery::new(window, cx))`.
-5. Feed native safe area and keyboard obstruction via `set_insets(ViewportInsets, Pixels, &mut Context<Self>)`.
+5. Feed native safe area and keyboard obstruction via `set_insets(ViewportInsets, Pixels, &mut Context<Self>)`. Pass an undocked keyboard rectangle to `set_floating_keyboard` and clear it on dismissal.
 
 `ELY_GALLERY_ASSETS` is no longer used. `asset!` produces `gallery-assets/<name>` keys. The 122 existing files (~2.8MiB on disk) are bundled with include_bytes via embedded.rs, with no new dependency or duplicate asset files. GalleryAssets serves them through GPUI Resource::Embedded and delegates Ely fonts/icons/custom mark to the existing source. Gallery picture/resource helpers and direct GPUI string sources use embedded keys. Legacy document/chat string media APIs require physical paths: those example callsites use assets::file and the extracted runtime directory. Desktop/web assets::file is identity, preserving their original paths/URLs. Runtime materialization avoids modifying product media APIs or GPUI.
 

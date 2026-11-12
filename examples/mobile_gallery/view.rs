@@ -1,6 +1,6 @@
 use ely_gpui_component::{
     buttons::Button,
-    layout::{ViewportInsets, usable_bounds},
+    layout::{ViewportInsets, keyboard_clear_bounds, usable_bounds},
     theme::ActiveTheme,
 };
 use gpui::{
@@ -49,6 +49,7 @@ pub struct MobileGallery {
     scroll: ScrollHandle,
     insets: ViewportInsets,
     keyboard: Pixels,
+    floating_keyboard: Option<Bounds<Pixels>>,
 }
 
 impl MobileGallery {
@@ -65,6 +66,7 @@ impl MobileGallery {
             scroll: ScrollHandle::new(),
             insets: ViewportInsets::default(),
             keyboard: px(0.),
+            floating_keyboard: None,
         }
     }
 
@@ -73,6 +75,18 @@ impl MobileGallery {
         self.insets = insets;
         self.keyboard = keyboard;
         cx.notify();
+    }
+
+    /// Supply the floating keyboard rectangle in logical window coordinates.
+    pub fn set_floating_keyboard(
+        &mut self,
+        keyboard: Option<Bounds<Pixels>>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.floating_keyboard != keyboard {
+            self.floating_keyboard = keyboard;
+            cx.notify();
+        }
     }
 
     /// Stable automation entry, shared with touch navigation. Unknown slugs leave state intact.
@@ -254,7 +268,10 @@ impl Render for MobileGallery {
             if let Some(index) = self.story {
                 cx.set_global(crate::ui::Story::new(specimens[index].title.clone().into()));
             }
-            let rendered = (page.render)(window, cx, Some(available));
+            let overlay_bounds = self.floating_keyboard.map_or(available, |keyboard| {
+                keyboard_clear_bounds(available, keyboard)
+            });
+            let rendered = (page.render)(window, cx, Some(overlay_bounds));
             self.story_error = self
                 .story
                 .and_then(|_| cx.remove_global::<crate::ui::Story>().missing(slug));

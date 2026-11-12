@@ -299,15 +299,34 @@ impl RenderOnce for Dialog {
                 }))
         } else {
             let margin = theme.titlebar_height().to_pixels(window.rem_size());
+            let scroll_actions = compact
+                && theme.touch_mode
+                && self.usable_bounds.is_some_and(|bounds| {
+                    bounds.size.height < theme.touch_minimum(Pixels::ZERO) * 2.0 + window.rem_size()
+                });
+            let (body_actions, fixed_actions) = if scroll_actions {
+                (actions, None)
+            } else {
+                (None, actions)
+            };
             let body = (!self.body.is_empty()).then(|| {
                 div()
                     .id((self.id.clone(), "body"))
                     .flex_1()
                     .min_h_0()
-                    .when(compact, |body| body.min_h(gpui::rems(3.)))
+                    .when(compact && !scroll_actions, |body| {
+                        body.min_h(gpui::rems(3.))
+                    })
                     .overflow_y_scroll()
                     .when_some(body_scroll, |body, scroll| body.track_scroll(&scroll))
-                    .child(div().flex().flex_col().gap_5().children(self.body))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_5()
+                            .children(self.body)
+                            .children(body_actions),
+                    )
             });
             div()
                 .id(self.id.clone())
@@ -345,7 +364,7 @@ impl RenderOnce for Dialog {
                         .when(!compact, |content| content.child(heading))
                         .children(body),
                 )
-                .children(actions)
+                .children(fixed_actions)
         };
         let arrive =
             Animation::new(motion::duration(motion::BASE, cx)).with_easing(motion::ease_out_cubic);

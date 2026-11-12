@@ -40,3 +40,15 @@ menus still show shortcuts. Validate component-specific native
 gestures (drag, resize, selection and pinch), accessibility, large text, RTL and
 OS-backed services separately. A mobile gallery fixture may simulate an OS
 service. It does not establish that the service works on the target OS.
+
+## Image crop and keyboard follow-up
+
+- Android emulator and iPad simulator: the image crop follows a finger drag.
+  The gallery constrains the picture to the available width.
+- Android emulator at 1600×720 physical pixels: with the software keyboard
+  open, scrolling exposes both fields and the Save action in the profile
+  dialog. Focusing the second field keeps it visible; Save closes the dialog.
+- iPad simulator: moving the floating keyboard onto the former field
+  position relocates the profile dialog. The focused field and Save remain
+  visible. The host supplies the keyboard rectangle; Ely chooses the layout.
+- The layout, media, dialog, and input ownership regression tests passed.
