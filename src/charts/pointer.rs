@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, Div, Entity, HoverListenerMode, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point,
-    ScrollEvent, ScrollSource, Stateful, StatefulInteractiveElement, Styled, Window, canvas, fill,
-    prelude::*, size,
+    App, Bounds, DispatchPhase, Div, Entity, HoverListenerMode, InteractiveElement, IntoElement,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels,
+    Point, ScrollEvent, ScrollSource, Stateful, StatefulInteractiveElement, Styled, TouchDragEvent,
+    TouchPhase, Window, canvas, fill, prelude::*, size,
 };
 
 use super::{
@@ -267,23 +267,7 @@ pub(crate) fn answer(
     let tap_pressed = state.clone();
     let move_geometry = geometry.clone();
     let end_brush = move |_: &MouseUpEvent, _: &mut Window, cx: &mut App| {
-        released.update(cx, |state, cx| {
-            let Some((a, b)) = state.brush.take() else {
-                return;
-            };
-            let middle = rect.y + rect.h / 2.0;
-            let end = |x: f32| {
-                let place = (x.clamp(rect.x, rect.x + rect.w), middle);
-                pick_at(pick, place, rect, false, span, &[], 0.0)
-            };
-            if let (Some(from), Some(to)) = (end(a.min(b)), end(a.max(b)))
-                && to > from
-            {
-                state.span = Some((from, to));
-                log::info!("chart: zoomed to {from}..={to}");
-            }
-            cx.notify();
-        })
+        finish_brush(&released, pick, rect, span, cx);
     };
     root.on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
         let place = local(event.position, moved.read(cx).bounds);
@@ -412,7 +396,59 @@ pub(crate) fn answer(
     })
     .when(zoomable, |root| {
         let pinch_cat = state.clone();
+        let touch = state.clone();
         root.cursor_crosshair()
+            .child(
+                canvas(
+                    |_, _, _| {},
+                    move |_, _, window, _| {
+                        let touch = touch.clone();
+                        window.on_mouse_event(move |ev: &TouchDragEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble {
+                                return;
+                            }
+                            let bounds = touch.read(cx).bounds;
+                            let start = local(ev.start_position, bounds);
+                            let at = local(ev.position, bounds);
+                            if ev.phase == TouchPhase::Started {
+                                if window.default_prevented()
+                                    || !rect.contains(start)
+                                    || (at.0 - start.0).abs() <= (at.1 - start.1).abs()
+                                {
+                                    return;
+                                }
+                                touch.update(cx, |state, cx| {
+                                    state.brush =
+                                        Some((start.0, at.0.clamp(rect.x, rect.x + rect.w)));
+                                    state.hover = None;
+                                    cx.notify();
+                                });
+                                window.prevent_default();
+                                cx.stop_propagation();
+                            } else if ev.phase == TouchPhase::Cancelled {
+                                touch.update(cx, |state, cx| {
+                                    state.brush = None;
+                                    cx.notify();
+                                });
+                            } else if touch.read(cx).brush.is_some() {
+                                touch.update(cx, |state, cx| {
+                                    if let Some(brush) = state.brush.as_mut() {
+                                        brush.1 = at.0.clamp(rect.x, rect.x + rect.w);
+                                    }
+                                    cx.notify();
+                                });
+                                if ev.phase == TouchPhase::Ended {
+                                    finish_brush(&touch, pick, rect, span, cx);
+                                }
+                                cx.stop_propagation();
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .inset_0()
+                .size_full(),
+            )
             .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
                 let place = local(event.position, pressed.read(cx).bounds);
                 pressed.update(cx, |state, cx| {
@@ -455,6 +491,32 @@ pub(crate) fn answer(
             .on_mouse_up(MouseButton::Left, end_brush.clone())
             .on_mouse_up_out(MouseButton::Left, end_brush)
     })
+}
+
+fn finish_brush(state: &Entity<State>, pick: Pick, rect: Rect, span: (usize, usize), cx: &mut App) {
+    state.update(cx, |state, cx| {
+        let Some((a, b)) = state.brush.take() else {
+            return;
+        };
+        let end = |x: f32| {
+            pick_at(
+                pick,
+                (x.clamp(rect.x, rect.x + rect.w), rect.y + rect.h / 2.0),
+                rect,
+                false,
+                span,
+                &[],
+                0.0,
+            )
+        };
+        if let (Some(from), Some(to)) = (end(a.min(b)), end(a.max(b)))
+            && to > from
+        {
+            state.span = Some((from, to));
+            log::info!("chart: zoomed to {from}..={to}");
+        }
+        cx.notify();
+    });
 }
 
 #[cfg(test)]
@@ -511,8 +573,8 @@ mod tests {
                         .h(px(200.0))
                         .debug_selector(|| "chart-root".into()),
                     &self.state,
-                    (Pick::Point, false, false),
-                    (rect, (0, 2), 0.0),
+                    (Pick::Point, false, true),
+                    (rect, (0, 10), 0.0),
                     Rc::new(Geometry::default()),
                 )
                 .child(measure(self.state.clone(), |state| &mut state.bounds))
@@ -570,6 +632,66 @@ mod tests {
             cx.simulate_mouse_move(point(px(350.0), px(220.0)), None, Modifiers::none());
             settle(cx);
             assert!(cx.debug_bounds("hover-tooltip").is_none());
+        }
+
+        #[gpui::test]
+        fn touch_drag_zooms_horizontally_but_leaves_vertical_scroll(cx: &mut TestAppContext) {
+            use gpui::{TouchDragEvent, TouchPhase};
+            cx.update(|cx| {
+                Theme::init(cx);
+                Theme::update(cx, |theme| theme.touch_mode = true);
+            });
+            let (view, cx) = cx.add_window_view(|_, cx| HoverProbe::new(cx));
+            cx.simulate_resize(gpui::size(px(400.0), px(240.0)));
+            settle(cx);
+            let send = |phase, start_position, position, cx: &mut gpui::VisualTestContext| {
+                cx.simulate_event(TouchDragEvent {
+                    phase,
+                    start_position,
+                    position,
+                });
+                settle(cx);
+            };
+            let start = point(px(60.0), px(80.0));
+            let end = point(px(240.0), px(90.0));
+            send(TouchPhase::Started, start, end, cx);
+            send(TouchPhase::Ended, start, end, cx);
+            assert_eq!(
+                view.read_with(cx, |view, cx| view.state.read(cx).span),
+                Some((2, 8))
+            );
+            view.update(cx, |view, cx| {
+                view.state.update(cx, |state, _| state.span = None)
+            });
+            let vertical = point(px(65.0), px(160.0));
+            send(TouchPhase::Started, start, vertical, cx);
+            send(TouchPhase::Ended, start, vertical, cx);
+            assert_eq!(
+                view.read_with(cx, |view, cx| view.state.read(cx).span),
+                None
+            );
+        }
+
+        #[gpui::test]
+        fn pinch_zooms_category_range(cx: &mut TestAppContext) {
+            cx.update(|cx| {
+                Theme::init(cx);
+                Theme::update(cx, |theme| theme.touch_mode = true);
+            });
+            let (view, cx) = cx.add_window_view(|_, cx| HoverProbe::new(cx));
+            cx.simulate_resize(gpui::size(px(400.0), px(240.0)));
+            settle(cx);
+            cx.simulate_event(gpui::PinchEvent {
+                position: point(px(150.0), px(100.0)),
+                delta: 0.6,
+                phase: gpui::TouchPhase::Moved,
+                modifiers: Modifiers::none(),
+            });
+            settle(cx);
+            let span = view
+                .read_with(cx, |view, cx| view.state.read(cx).span)
+                .unwrap();
+            assert!(span.1 - span.0 < 10);
         }
     }
 

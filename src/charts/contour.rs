@@ -1120,7 +1120,7 @@ mod tests {
             click_count: 2,
             first_mouse: false,
         });
-        vc.simulate_event(MouseUpEvent {
+        vc.simulate_event(gpui::MouseUpEvent {
             button: MouseButton::Left,
             position: rect_center,
             modifiers: Modifiers::none(),
