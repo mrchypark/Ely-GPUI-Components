@@ -2,8 +2,9 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, Div, Entity, HoverListenerMode, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PathBuilder, Pixels, Point, Stateful,
-    StatefulInteractiveElement, Styled, Window, canvas, fill, prelude::*, size,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point,
+    ScrollEvent, ScrollSource, Stateful, StatefulInteractiveElement, Styled, Window, canvas, fill,
+    prelude::*, size,
 };
 
 use super::{
@@ -218,6 +219,39 @@ fn pick_hover(
     });
 }
 
+type NormView = ((f64, f64), (f64, f64));
+
+fn zoom_xy_view(current: Option<NormView>, (tx, ty): (f64, f64), factor: f64) -> Option<NormView> {
+    let ((ux0, ux1), (uy0, uy1)) = current.unwrap_or(((0.0, 1.0), (0.0, 1.0)));
+    let cx = ux0 + (ux1 - ux0) * tx.clamp(0.0, 1.0);
+    let cy = uy0 + (uy1 - uy0) * ty.clamp(0.0, 1.0);
+    let nx0 = cx + (ux0 - cx) * factor;
+    let nx1 = cx + (ux1 - cx) * factor;
+    let ny0 = cy + (uy0 - cy) * factor;
+    let ny1 = cy + (uy1 - cy) * factor;
+    if (nx1 - nx0).abs() < 1e-4 || (ny1 - ny0).abs() < 1e-4 {
+        return current;
+    }
+    if (nx1 - nx0) > 10.0 || (ny1 - ny0) > 10.0 {
+        return None;
+    }
+    Some(((nx0, nx1), (ny0, ny1)))
+}
+
+fn pan_xy_view(
+    current: Option<NormView>,
+    (dx_px, dy_px): (f32, f32),
+    rect: Rect,
+) -> Option<NormView> {
+    if rect.w <= 1.0 || rect.h <= 1.0 {
+        return current;
+    }
+    let ((ux0, ux1), (uy0, uy1)) = current.unwrap_or(((0.0, 1.0), (0.0, 1.0)));
+    let sx = (ux1 - ux0) * f64::from(-dx_px / rect.w);
+    let sy = (uy1 - uy0) * f64::from(dy_px / rect.h);
+    Some(((ux0 + sx, ux1 + sx), (uy0 + sy, uy1 + sy)))
+}
+
 /// Wires the pointer: hover picks, and on a zoomable plot a drag brushes a span and a double press shows all.
 pub(crate) fn answer(
     root: Stateful<Div>,
@@ -227,6 +261,8 @@ pub(crate) fn answer(
     geometry: Rc<Geometry>,
 ) -> Stateful<Div> {
     let (moved, left, pressed, released) =
+        (state.clone(), state.clone(), state.clone(), state.clone());
+    let (dot_down, dot_up, dot_scroll, dot_pinch) =
         (state.clone(), state.clone(), state.clone(), state.clone());
     let tap_pressed = state.clone();
     let move_geometry = geometry.clone();
@@ -252,6 +288,19 @@ pub(crate) fn answer(
     root.on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
         let place = local(event.position, moved.read(cx).bounds);
         moved.update(cx, |state, cx| {
+            if pick == Pick::Dot
+                && event.pressed_button == Some(MouseButton::Left)
+                && let Some(last) = state.drag_last
+            {
+                let (dx, dy) = (place.0 - last.0, place.1 - last.1);
+                if dx.hypot(dy) > 1.5 {
+                    state.xy_view = pan_xy_view(state.xy_view, (dx, dy), rect);
+                    state.drag_last = Some(place);
+                    state.hover = None;
+                    cx.notify();
+                    return;
+                }
+            }
             if event.pressed_button == Some(MouseButton::Left)
                 && let Some(brush) = state.brush.as_mut()
             {
@@ -295,7 +344,74 @@ pub(crate) fn answer(
             })
         }
     })
+    .when(pick == Pick::Dot, |root| {
+        let dot_up_out = dot_up.clone();
+        root.on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
+            let place = local(event.position, dot_down.read(cx).bounds);
+            dot_down.update(cx, |state, cx| {
+                if event.click_count >= 2 {
+                    state.xy_view = None;
+                    state.drag_last = None;
+                    cx.notify();
+                } else if rect.contains(place) {
+                    state.drag_last = Some(place);
+                }
+            });
+        })
+        .on_mouse_up(MouseButton::Left, move |_, _, cx| {
+            dot_up.update(cx, |state, _| state.drag_last = None);
+        })
+        .on_mouse_up_out(MouseButton::Left, move |_, _, cx| {
+            dot_up_out.update(cx, |state, _| state.drag_last = None);
+        })
+        .on_scroll(move |ev: &ScrollEvent, _, cx| {
+            let place = local(ev.position, dot_scroll.read(cx).bounds);
+            if !rect.contains(place) || rect.w <= 1.0 || rect.h <= 1.0 {
+                return;
+            }
+            let delta = ev.delta.pixel_delta(Pixels::from(16.0));
+            dot_scroll.update(cx, |state, cx| {
+                if ev.source == ScrollSource::Touch {
+                    let (dx, dy) = (f32::from(delta.x), f32::from(delta.y));
+                    if dx.abs() >= 0.1 || dy.abs() >= 0.1 {
+                        state.xy_view = pan_xy_view(state.xy_view, (dx, dy), rect);
+                        state.hover = None;
+                        cx.notify();
+                    }
+                } else {
+                    let dy = f32::from(delta.y);
+                    if dy.abs() >= 0.05 {
+                        let factor = (1.0 - f64::from(dy) * 0.002).clamp(0.2, 5.0);
+                        let tx = f64::from((place.0 - rect.x) / rect.w);
+                        let ty = f64::from((rect.y + rect.h - place.1) / rect.h);
+                        state.xy_view = zoom_xy_view(state.xy_view, (tx, ty), factor);
+                        cx.notify();
+                    }
+                }
+            });
+            cx.stop_propagation();
+        })
+        .on_pinch(move |ev: &PinchEvent, _, cx| {
+            let place = local(ev.position, dot_pinch.read(cx).bounds);
+            if !rect.contains(place) || rect.w <= 1.0 || rect.h <= 1.0 {
+                return;
+            }
+            let scale = ev.delta.exp().clamp(0.2, 5.0);
+            if (scale - 1.0).abs() > 1e-4 {
+                dot_pinch.update(cx, |state, cx| {
+                    state.drag_last = None;
+                    state.brush = None;
+                    let tx = f64::from((place.0 - rect.x) / rect.w);
+                    let ty = f64::from((rect.y + rect.h - place.1) / rect.h);
+                    state.xy_view = zoom_xy_view(state.xy_view, (tx, ty), 1.0 / f64::from(scale));
+                    cx.notify();
+                });
+                cx.stop_propagation();
+            }
+        })
+    })
     .when(zoomable, |root| {
+        let pinch_cat = state.clone();
         root.cursor_crosshair()
             .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
                 let place = local(event.position, pressed.read(cx).bounds);
@@ -308,6 +424,33 @@ pub(crate) fn answer(
                     }
                     cx.notify();
                 })
+            })
+            .on_pinch(move |ev: &PinchEvent, _, cx| {
+                let scale = ev.delta.exp().clamp(0.25, 4.0);
+                if (scale - 1.0).abs() <= 1e-4 {
+                    return;
+                }
+                pinch_cat.update(cx, |state, cx| {
+                    state.brush = None;
+                    let total = span.1 + 1;
+                    let (cur_a, cur_b) = state.span.unwrap_or(span);
+                    let cur_len = (cur_b.saturating_sub(cur_a) + 1).max(2) as f32;
+                    let next_len = (cur_len / scale).round() as usize;
+                    if next_len >= total {
+                        state.span = None;
+                    } else {
+                        let next_len = next_len.max(2);
+                        let mid = (cur_a + cur_b) / 2;
+                        let half = next_len / 2;
+                        let from = mid.saturating_sub(half).min(total.saturating_sub(next_len));
+                        let to = (from + next_len - 1).min(total.saturating_sub(1));
+                        if to > from {
+                            state.span = Some((from, to));
+                        }
+                    }
+                    cx.notify();
+                });
+                cx.stop_propagation();
             })
             .on_mouse_up(MouseButton::Left, end_brush.clone())
             .on_mouse_up_out(MouseButton::Left, end_brush)
@@ -432,6 +575,7 @@ mod tests {
 
     #[test]
     fn the_pointer_picks_bands_points_and_dots() {
+        use crate::charts::series::Symbol;
         let frame = Rect {
             x: 0.0,
             y: 0.0,
@@ -461,6 +605,7 @@ mod tests {
             ink: Ink::Series(0),
             center: (10.0, 10.0),
             radius: 2.0,
+            symbol: Symbol::Circle,
             key: 7,
         }];
         assert_eq!(

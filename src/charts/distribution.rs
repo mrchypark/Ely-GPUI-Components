@@ -11,6 +11,7 @@ use super::{
     plot::{Layout, Pick, Plot, Scene, Tips},
     scale::{Band, Linear, compact, nice},
     series::Series,
+    series::Symbol,
     series::drawable,
     stats::{Step, bins, density, five, steps},
 };
@@ -356,6 +357,7 @@ impl BoxPlot {
                         ink: Ink::Series(0),
                         center: (middle, scale.at(outlier)),
                         radius: width / 16.0,
+                        symbol: Symbol::Circle,
                         key: ix,
                     });
                 }

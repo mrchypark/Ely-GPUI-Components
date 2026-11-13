@@ -408,7 +408,7 @@ mod story_tests {
                 assert!(addresses.insert((page.slug, story.slug.as_str())));
             }
         }
-        assert_eq!(addresses.len(), 624, "update the specimen inventory");
+        assert_eq!(addresses.len(), 625, "update the specimen inventory");
     }
 
     #[gpui::test]

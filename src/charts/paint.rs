@@ -5,7 +5,7 @@ use gpui::{
 
 use super::{
     geometry::{Geometry, Ink, Rect},
-    series::tangents,
+    series::{Curve, Symbol, tangents},
 };
 use crate::theme::Palette;
 
@@ -74,7 +74,7 @@ pub(crate) struct Pen {
     pub stroke: Pixels,
     pub hairline: Pixels,
     pub corner: Pixels,
-    pub smooth: bool,
+    pub curve: Curve,
     pub horizontal: bool,
 }
 
@@ -85,25 +85,176 @@ pub(crate) fn trace(
     smooth: bool,
     origin: Point<Pixels>,
 ) {
+    trace_curve(
+        path,
+        points,
+        if smooth {
+            Curve::Monotone
+        } else {
+            Curve::Linear
+        },
+        origin,
+    );
+}
+
+pub(crate) fn trace_curve(
+    path: &mut PathBuilder,
+    points: &[(f32, f32)],
+    curve: Curve,
+    origin: Point<Pixels>,
+) {
     let Some(first) = points.first() else {
         return;
     };
-    path.move_to(at(origin, *first));
-    if !smooth || points.len() < 3 {
-        points[1..]
-            .iter()
-            .for_each(|next| path.line_to(at(origin, *next)));
+    if matches!(curve, Curve::Basis) && points.len() >= 3 {
+        let expanded = sample_basis(points);
+        path.move_to(at(origin, expanded[0]));
+        for &pt in &expanded[1..] {
+            path.line_to(at(origin, pt));
+        }
         return;
     }
-    let slopes = tangents(points);
-    for ix in 0..points.len() - 1 {
-        let ((x0, y0), (x1, y1)) = (points[ix], points[ix + 1]);
-        let third = (x1 - x0) / 3.0;
-        path.cubic_bezier_to(
-            at(origin, (x1, y1)),
-            at(origin, (x0 + third, y0 + slopes[ix] * third)),
-            at(origin, (x1 - third, y1 - slopes[ix + 1] * third)),
-        );
+    path.move_to(at(origin, *first));
+    if points.len() < 2 {
+        return;
+    }
+    match curve {
+        Curve::Linear => {
+            for next in &points[1..] {
+                path.line_to(at(origin, *next));
+            }
+        }
+        Curve::Step => {
+            for pair in points.windows(2) {
+                let ((x0, y0), (x1, y1)) = (pair[0], pair[1]);
+                let xm = (x0 + x1) * 0.5;
+                path.line_to(at(origin, (xm, y0)));
+                path.line_to(at(origin, (xm, y1)));
+                path.line_to(at(origin, (x1, y1)));
+            }
+        }
+        Curve::StepBefore => {
+            for pair in points.windows(2) {
+                let ((x0, _), (x1, y1)) = (pair[0], pair[1]);
+                path.line_to(at(origin, (x0, y1)));
+                path.line_to(at(origin, (x1, y1)));
+            }
+        }
+        Curve::StepAfter => {
+            for pair in points.windows(2) {
+                let ((_, y0), (x1, y1)) = (pair[0], pair[1]);
+                path.line_to(at(origin, (x1, y0)));
+                path.line_to(at(origin, (x1, y1)));
+            }
+        }
+        Curve::Monotone if points.len() >= 3 => {
+            let slopes = tangents(points);
+            for ix in 0..points.len() - 1 {
+                let ((x0, y0), (x1, y1)) = (points[ix], points[ix + 1]);
+                let third = (x1 - x0) / 3.0;
+                path.cubic_bezier_to(
+                    at(origin, (x1, y1)),
+                    at(origin, (x0 + third, y0 + slopes[ix] * third)),
+                    at(origin, (x1 - third, y1 - slopes[ix + 1] * third)),
+                );
+            }
+        }
+        Curve::Cardinal if points.len() >= 3 => {
+            let n = points.len();
+            for ix in 0..n - 1 {
+                let p0 = points[ix.saturating_sub(1)];
+                let p1 = points[ix];
+                let p2 = points[ix + 1];
+                let p3 = points[(ix + 2).min(n - 1)];
+                let c1 = (p1.0 + (p2.0 - p0.0) / 6.0, p1.1 + (p2.1 - p0.1) / 6.0);
+                let c2 = (p2.0 - (p3.0 - p1.0) / 6.0, p2.1 - (p3.1 - p1.1) / 6.0);
+                path.cubic_bezier_to(at(origin, p2), at(origin, c1), at(origin, c2));
+            }
+        }
+        _ => {
+            for next in &points[1..] {
+                path.line_to(at(origin, *next));
+            }
+        }
+    }
+}
+
+pub(crate) fn sample_basis(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
+    let n = points.len();
+    if n < 3 {
+        return points.to_vec();
+    }
+    let get = |i: isize| -> (f32, f32) { points[i.clamp(0, (n - 1) as isize) as usize] };
+    let mut out = Vec::with_capacity((n + 1) * 8);
+    for i in -1..(n as isize - 1) {
+        let (p0, p1, p2, p3) = (get(i), get(i + 1), get(i + 2), get(i + 3));
+        for step in 0..8 {
+            let t = step as f32 / 8.0;
+            let t2 = t * t;
+            let t3 = t2 * t;
+            let b0 = (1.0 - t).powi(3) / 6.0;
+            let b1 = (3.0 * t3 - 6.0 * t2 + 4.0) / 6.0;
+            let b2 = (-3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0) / 6.0;
+            let b3 = t3 / 6.0;
+            out.push((
+                b0 * p0.0 + b1 * p1.0 + b2 * p2.0 + b3 * p3.0,
+                b0 * p0.1 + b1 * p1.1 + b2 * p2.1 + b3 * p3.1,
+            ));
+        }
+    }
+    if let Some(&last) = points.last() {
+        out.push(last);
+    }
+    out
+}
+
+pub(crate) fn symbol_vertices(symbol: Symbol, (cx, cy): (f32, f32), r: f32) -> Vec<(f32, f32)> {
+    match symbol {
+        Symbol::Circle => Vec::new(),
+        Symbol::Square => vec![
+            (cx - r, cy - r),
+            (cx + r, cy - r),
+            (cx + r, cy + r),
+            (cx - r, cy + r),
+        ],
+        Symbol::Diamond => vec![
+            (cx, cy - r * 1.25),
+            (cx + r * 1.1, cy),
+            (cx, cy + r * 1.25),
+            (cx - r * 1.1, cy),
+        ],
+        Symbol::Triangle => {
+            let h = r * 1.2;
+            vec![
+                (cx, cy - h),
+                (cx + h * 0.95, cy + h * 0.75),
+                (cx - h * 0.95, cy + h * 0.75),
+            ]
+        }
+        Symbol::Cross => {
+            let w = r * 0.36;
+            vec![
+                (cx - w, cy - r),
+                (cx + w, cy - r),
+                (cx + w, cy - w),
+                (cx + r, cy - w),
+                (cx + r, cy + w),
+                (cx + w, cy + w),
+                (cx + w, cy + r),
+                (cx - w, cy + r),
+                (cx - w, cy + w),
+                (cx - r, cy + w),
+                (cx - r, cy - w),
+                (cx - w, cy - w),
+            ]
+        }
+        Symbol::Star => (0..10)
+            .map(|i| {
+                let rad = if i % 2 == 0 { r * 1.3 } else { r * 0.52 };
+                let a = std::f32::consts::PI * i as f32 / 5.0 - std::f32::consts::FRAC_PI_2;
+                (cx + rad * a.cos(), cy + rad * a.sin())
+            })
+            .collect(),
     }
 }
 
@@ -164,7 +315,7 @@ pub(crate) fn paint(
             continue;
         };
         let mut area = PathBuilder::fill();
-        trace(&mut area, &line.points, pen.smooth, origin);
+        trace_curve(&mut area, &line.points, pen.curve, origin);
         floor
             .iter()
             .rev()
@@ -174,7 +325,7 @@ pub(crate) fn paint(
     }
     for line in geometry.lines.iter().filter(|line| line.points.len() > 1) {
         let mut path = PathBuilder::stroke(pen.stroke);
-        trace(&mut path, &line.points, pen.smooth, origin);
+        trace_curve(&mut path, &line.points, pen.curve, origin);
         finish(path, line.ink.color(colors), window);
     }
     let seam = f32::from(pen.hairline);
@@ -221,12 +372,24 @@ pub(crate) fn paint(
     }
     for dot in &geometry.dots {
         let color = dot.ink.color(colors);
-        ring(
-            at(origin, dot.center),
-            Pixels::from(dot.radius),
-            (color.opacity(0.6), color),
-            pen.hairline,
-            window,
-        );
+        let poly = symbol_vertices(dot.symbol, dot.center, dot.radius);
+        if poly.is_empty() {
+            ring(
+                at(origin, dot.center),
+                Pixels::from(dot.radius),
+                (color.opacity(0.6), color),
+                pen.hairline,
+                window,
+            );
+        } else {
+            let mut fill_p = PathBuilder::fill();
+            let mut edge_p = PathBuilder::stroke(pen.hairline);
+            trace(&mut fill_p, &poly, false, origin);
+            trace(&mut edge_p, &poly, false, origin);
+            fill_p.close();
+            edge_p.close();
+            finish(fill_p, color.opacity(0.6), window);
+            finish(edge_p, color, window);
+        }
     }
 }

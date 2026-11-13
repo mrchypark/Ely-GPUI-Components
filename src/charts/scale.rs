@@ -1,5 +1,15 @@
 /// Shares past this many ranges lie off any screen; the bound keeps their pixels in `f32`.
 const FAR: f64 = 1e4;
+const LOG_FLOOR: f64 = 1e-12;
+
+/// Continuous axis mapping mode for cartesian and scatter charts.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) enum ScaleMode {
+    #[default]
+    Linear,
+    Log(f64),
+    Symlog(f64),
+}
 
 /// A linear map from a domain of values onto a range of pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -38,6 +48,237 @@ impl Linear {
             ((value / 2.0 - low) / (high - low)).clamp(-FAR, FAR)
         };
         self.range.0 + (self.range.1 - self.range.0) * share as f32
+    }
+}
+
+/// A logarithmic map from a strictly positive domain onto pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Log {
+    pub domain: (f64, f64),
+    pub range: (f32, f32),
+    pub base: f64,
+}
+
+impl Log {
+    pub(crate) fn new(domain: (f64, f64), range: (f32, f32), base: f64) -> Self {
+        assert!(
+            domain.0.is_finite() && domain.1.is_finite() && domain.0 > 0.0 && domain.1 > 0.0,
+            "a log scale needs a finite positive domain"
+        );
+        assert!(
+            base.is_finite() && base > 0.0 && (base - 1.0).abs() > 1e-12,
+            "a log scale base must be positive and not 1"
+        );
+        Self {
+            domain,
+            range,
+            base,
+        }
+    }
+
+    pub(crate) fn at(&self, value: f64) -> f32 {
+        let l0 = self.domain.0.log(self.base);
+        let l1 = self.domain.1.log(self.base);
+        let share = if (l1 - l0).abs() < 1e-15 {
+            0.5
+        } else {
+            let safe = value.max(LOG_FLOOR);
+            ((safe.log(self.base) - l0) / (l1 - l0)).clamp(-FAR, FAR)
+        };
+        self.range.0 + (self.range.1 - self.range.0) * share as f32
+    }
+
+    pub(crate) fn value(&self, at: f32) -> f64 {
+        let span = self.range.1 - self.range.0;
+        let share = if span == 0.0 {
+            0.5
+        } else {
+            (f64::from(at) - f64::from(self.range.0)) / f64::from(span)
+        };
+        let l0 = self.domain.0.log(self.base);
+        let l1 = self.domain.1.log(self.base);
+        self.base.powf(l0 + (l1 - l0) * share)
+    }
+}
+
+/// A symmetric logarithmic map supporting negative values and zero.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Symlog {
+    pub domain: (f64, f64),
+    pub range: (f32, f32),
+    pub constant: f64,
+}
+
+impl Symlog {
+    pub(crate) fn new(domain: (f64, f64), range: (f32, f32), constant: f64) -> Self {
+        assert!(
+            domain.0.is_finite() && domain.1.is_finite(),
+            "a symlog scale needs a finite domain"
+        );
+        assert!(
+            constant.is_finite() && constant > 0.0,
+            "a symlog constant must be finite and positive"
+        );
+        Self {
+            domain,
+            range,
+            constant,
+        }
+    }
+
+    fn forward(&self, x: f64) -> f64 {
+        x.signum() * (1.0 + x.abs() / self.constant).ln()
+    }
+
+    fn inverse(&self, u: f64) -> f64 {
+        u.signum() * self.constant * (u.abs().exp() - 1.0)
+    }
+
+    pub(crate) fn at(&self, value: f64) -> f32 {
+        let u0 = self.forward(self.domain.0);
+        let u1 = self.forward(self.domain.1);
+        let share = if (u1 - u0).abs() < 1e-15 {
+            0.5
+        } else {
+            ((self.forward(value) - u0) / (u1 - u0)).clamp(-FAR, FAR)
+        };
+        self.range.0 + (self.range.1 - self.range.0) * share as f32
+    }
+
+    pub(crate) fn value(&self, at: f32) -> f64 {
+        let span = self.range.1 - self.range.0;
+        let share = if span == 0.0 {
+            0.5
+        } else {
+            (f64::from(at) - f64::from(self.range.0)) / f64::from(span)
+        };
+        let u0 = self.forward(self.domain.0);
+        let u1 = self.forward(self.domain.1);
+        self.inverse(u0 + (u1 - u0) * share)
+    }
+}
+
+/// Unified continuous scale dispatching Linear, Log, or Symlog.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum ValueScale {
+    Linear(Linear),
+    Log(Log),
+    Symlog(Symlog),
+}
+
+impl ValueScale {
+    pub(crate) fn new(mode: ScaleMode, domain: (f64, f64), range: (f32, f32)) -> Self {
+        match mode {
+            ScaleMode::Linear => Self::Linear(Linear::new(domain, range)),
+            ScaleMode::Log(base) => Self::Log(Log::new(domain, range, base)),
+            ScaleMode::Symlog(constant) => Self::Symlog(Symlog::new(domain, range, constant)),
+        }
+    }
+
+    pub(crate) fn at(&self, value: f64) -> f32 {
+        match self {
+            Self::Linear(s) => s.at(value),
+            Self::Log(s) => s.at(value),
+            Self::Symlog(s) => s.at(value),
+        }
+    }
+
+    pub(crate) fn value(&self, at: f32) -> f64 {
+        match self {
+            Self::Linear(s) => s.value(at),
+            Self::Log(s) => s.value(at),
+            Self::Symlog(s) => s.value(at),
+        }
+    }
+}
+
+pub(crate) fn nice_log(low: f64, high: f64, base: f64, count: usize) -> ((f64, f64), Vec<f64>) {
+    let (low, high) = (low.min(high).max(LOG_FLOOR), low.max(high).max(LOG_FLOOR));
+    let (low, high) = if (high / low) <= 1.0 + 1e-12 {
+        ((low / base).max(LOG_FLOOR), high * base)
+    } else {
+        (low, high)
+    };
+    let e_min = low.log(base).floor() as i32;
+    let e_max = high.log(base).ceil() as i32;
+    let start = base.powi(e_min).max(LOG_FLOOR);
+    let end = base.powi(e_max);
+    let span_decades = (e_max - e_min).max(1) as usize;
+    let step = (span_decades / count.max(1)).max(1);
+    let mut ticks = Vec::new();
+    let mut e = e_min;
+    while e <= e_max {
+        let v = base.powi(e);
+        if v.is_finite() {
+            ticks.push(v);
+        }
+        e += step as i32;
+    }
+    if ticks.len() < 3 && (base - 10.0).abs() < 1e-9 {
+        let mut detailed = Vec::new();
+        for p in e_min..e_max {
+            let decade = base.powi(p);
+            for mult in [1.0, 2.0, 5.0] {
+                let v = decade * mult;
+                if v >= start * 0.999 && v <= end * 1.001 {
+                    detailed.push(v);
+                }
+            }
+        }
+        detailed.push(end);
+        if detailed.len() >= 2 {
+            ticks = detailed;
+        }
+    }
+    ((start, end), ticks)
+}
+
+pub(crate) fn nice_symlog(
+    low: f64,
+    high: f64,
+    constant: f64,
+    count: usize,
+) -> ((f64, f64), Vec<f64>) {
+    let (domain, mut ticks) = nice(low, high, count);
+    if domain.0 < 0.0 && domain.1 > 0.0 && !ticks.iter().any(|t| t.abs() < 1e-9) {
+        ticks.push(0.0);
+    }
+    let max_abs = domain.0.abs().max(domain.1.abs());
+    if max_abs > constant * 20.0 {
+        let mut log_ticks = Vec::new();
+        if domain.0 <= 0.0 && domain.1 >= 0.0 {
+            log_ticks.push(0.0);
+        }
+        let max_exp = (max_abs / constant).log10().ceil() as i32;
+        for exp in 0..=max_exp {
+            let mag = constant * 10f64.powi(exp);
+            if mag >= domain.0 && mag <= domain.1 {
+                log_ticks.push(mag);
+            }
+            if -mag >= domain.0 && -mag <= domain.1 {
+                log_ticks.push(-mag);
+            }
+        }
+        log_ticks.sort_by(f64::total_cmp);
+        log_ticks.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+        if log_ticks.len() >= 2 {
+            ticks = log_ticks;
+        }
+    }
+    ticks.sort_by(f64::total_cmp);
+    (domain, ticks)
+}
+
+pub(crate) fn nice_for(
+    mode: ScaleMode,
+    low: f64,
+    high: f64,
+    count: usize,
+) -> ((f64, f64), Vec<f64>) {
+    match mode {
+        ScaleMode::Linear => nice(low, high, count),
+        ScaleMode::Log(base) => nice_log(low, high, base, count),
+        ScaleMode::Symlog(constant) => nice_symlog(low, high, constant, count),
     }
 }
 
@@ -190,5 +431,21 @@ mod tests {
         assert_eq!(band.middle(3), 350.0);
         assert_eq!(band.index(399.0), Some(3));
         assert_eq!(band.index(-1.0), None);
+    }
+
+    #[test]
+    fn log_and_symlog_scales_map_and_invert_across_decades() {
+        let log = Log::new((1.0, 1000.0), (0.0, 300.0), 10.0);
+        assert!((log.at(10.0) - 100.0).abs() < 1e-3);
+        assert!((log.at(100.0) - 200.0).abs() < 1e-3);
+        assert!((log.value(150.0) - 10f64.powf(1.5)).abs() < 1e-6);
+        let (dom, ticks) = nice_log(3.0, 850.0, 10.0, 4);
+        assert_eq!(dom, (1.0, 1000.0));
+        assert!(ticks.contains(&10.0) && ticks.contains(&100.0));
+
+        let symlog = Symlog::new((-100.0, 100.0), (0.0, 200.0), 1.0);
+        assert!((symlog.at(0.0) - 100.0).abs() < 1e-3);
+        assert!(((symlog.at(25.0) - 100.0) - (100.0 - symlog.at(-25.0))).abs() < 1e-3);
+        assert!((symlog.value(symlog.at(-42.0)) + 42.0).abs() < 1e-4);
     }
 }

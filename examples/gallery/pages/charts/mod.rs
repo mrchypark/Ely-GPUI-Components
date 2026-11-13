@@ -83,5 +83,6 @@ fn render(
         .child(flows::relations(cx))
         .child(flows::targets(cx))
         .child(cartesian::realtime(window, cx))
+        .child(cartesian::advanced(window, cx))
         .into_any_element()
 }

@@ -7,6 +7,37 @@ pub struct Series {
     pub(crate) values: Vec<f64>,
 }
 
+/// Line and area curve interpolation styles.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Curve {
+    #[default]
+    Linear,
+    /// Monotone cubic interpolation that preserves local extrema without overshoot.
+    Monotone,
+    /// Uniform cubic B-spline approximation.
+    Basis,
+    /// Cardinal / Catmull-Rom cubic spline through control points.
+    Cardinal,
+    /// Horizontal-vertical step changing midway between X positions.
+    Step,
+    /// Vertical change first, then horizontal run.
+    StepBefore,
+    /// Horizontal run first, then vertical change.
+    StepAfter,
+}
+
+/// Point marker symbol shapes for scatter and bubble plots.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Symbol {
+    #[default]
+    Circle,
+    Square,
+    Diamond,
+    Triangle,
+    Cross,
+    Star,
+}
+
 /// The largest value a chart draws: sums and pixels of such values stay within `f32`.
 pub const LIMIT: f64 = 1e30;
 
@@ -35,6 +66,7 @@ pub struct Points {
     pub(crate) name: SharedString,
     pub(crate) points: Vec<(f64, f64)>,
     pub(crate) sizes: Option<Vec<f64>>,
+    pub(crate) symbol: Symbol,
 }
 
 impl Points {
@@ -51,7 +83,14 @@ impl Points {
             name: name.into(),
             points,
             sizes: None,
+            symbol: Symbol::Circle,
         }
+    }
+
+    /// Set the marker symbol shape used for every point in this cloud.
+    pub fn symbol(mut self, symbol: Symbol) -> Self {
+        self.symbol = symbol;
+        self
     }
 
     /// A size for each point, drawn as its area; makes a bubble chart.
@@ -92,6 +131,34 @@ pub(crate) fn stacked(series: &[&[f64]]) -> Vec<Vec<(f64, f64)>> {
                     *base += value;
                     (bottom, *base)
                 })
+                .collect()
+        })
+        .collect()
+}
+
+/// Stacked spans centered symmetrically around zero for streamgraphs.
+pub(crate) fn stream_stacked(series: &[&[f64]]) -> Vec<Vec<(f64, f64)>> {
+    let base = stacked(series);
+    let count = series.first().map_or(0, |values| values.len());
+    if count == 0 || base.is_empty() {
+        return base;
+    }
+    let offsets: Vec<f64> = (0..count)
+        .map(|ix| {
+            let mut low = f64::INFINITY;
+            let mut high = f64::NEG_INFINITY;
+            for run in &base {
+                low = low.min(run[ix].0).min(run[ix].1);
+                high = high.max(run[ix].0).max(run[ix].1);
+            }
+            -(low + high) * 0.5
+        })
+        .collect();
+    base.into_iter()
+        .map(|run| {
+            run.into_iter()
+                .enumerate()
+                .map(|(ix, (a, b))| (a + offsets[ix], b + offsets[ix]))
                 .collect()
         })
         .collect()
@@ -207,6 +274,14 @@ mod tests {
             [
                 vec![(0.0, 2.0), (0.0, -1.0)],
                 vec![(2.0, 5.0), (-1.0, -3.0)]
+            ]
+        );
+        let stream = stream_stacked(&[&[2.0, 4.0], &[4.0, 2.0]]);
+        assert_eq!(
+            stream,
+            [
+                vec![(-3.0, -1.0), (-3.0, 1.0)],
+                vec![(-1.0, 3.0), (1.0, 3.0)]
             ]
         );
         assert_eq!(extent([3.0, -2.0, 7.0].into_iter()), (-2.0, 7.0));

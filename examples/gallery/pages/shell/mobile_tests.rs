@@ -90,7 +90,7 @@ fn mobile_shell_resolves_all_24_catalog_stories_without_claiming_os_support(
         all.iter()
             .map(|page| page["stories"].as_array().unwrap().len())
             .sum::<usize>(),
-        624
+        625
     );
     let stories = all.iter().find(|page| page["slug"] == "shell").unwrap()["stories"]
         .as_array()

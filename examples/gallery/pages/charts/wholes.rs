@@ -1,5 +1,6 @@
 use ely_gpui_component::charts::{
-    CalendarHeatmap, HeatmapChart, PieChart, RadarChart, Series, Slice, Sunburst, Treemap,
+    CalendarHeatmap, CirclePacking, GeoChart, GeoPoint, GeoProjection, GeoRegion, HeatmapChart,
+    PieChart, PolarChart, RadarChart, Series, Slice, Sunburst, TreeChart, TreeLayoutMode, Treemap,
 };
 use gpui::{App, IntoElement, ParentElement, Styled, div, px};
 use jiff::civil::date;
@@ -98,7 +99,43 @@ pub fn parts(cx: &mut App) -> impl IntoElement + use<> {
             .flex()
             .gap_6()
             .child(probe("treemap", div().w(px(420.)).child(treemap)))
-            .child(probe("sunburst", div().w(px(300.)).child(Sunburst::new("teams", teams)))),
+            .child(probe("sunburst", div().w(px(300.)).child(Sunburst::new("teams", teams.clone())))),
+    )
+    .child(
+        div()
+            .flex()
+            .flex_wrap()
+            .gap_6()
+            .child(div().w(px(360.)).max_w_full().child(CirclePacking::new("packing", teams.clone())))
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    PolarChart::new("polar-traffic")
+                        .slice("Search", 412.0)
+                        .slice("Direct", 288.0)
+                        .slice("Social", 164.0)
+                        .slice("Email", 91.0)
+                        .slice("Referral", 136.0),
+                ),
+            ),
+    )
+    .child(
+        div()
+            .flex()
+            .flex_wrap()
+            .gap_6()
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    TreeChart::from_slices("radial-tree", teams.clone())
+                        .mode(TreeLayoutMode::RadialTree),
+                ),
+            )
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    TreeChart::from_slices("dendrogram", teams)
+                        .mode(TreeLayoutMode::Cluster)
+                        .horizontal(true),
+                ),
+            ),
     )
 }
 
@@ -141,4 +178,16 @@ pub fn heatmaps(cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(probe("load", div().w(px(560.)).child(week)))
     .child(probe("year", div().w(px(720.)).child(CalendarHeatmap::new("commits", date(2026, 1, 1), commits))))
+    .child(
+        div().w(px(720.)).max_w_full().child(
+            GeoChart::new("globe-regions")
+                .projection(GeoProjection::Orthographic)
+                .rotate(-127.0, -36.0)
+                .region(GeoRegion::new("East Asia", 82.0, [(100.0, 20.0), (145.0, 20.0), (145.0, 48.0), (100.0, 48.0)]))
+                .region(GeoRegion::new("Oceania", 44.0, [(112.0, -42.0), (155.0, -42.0), (155.0, -10.0), (112.0, -10.0)]))
+                .point(GeoPoint::new("Seoul", 126.97, 37.56, 98.0))
+                .point(GeoPoint::new("Tokyo", 139.69, 35.68, 92.0))
+                .point(GeoPoint::new("Singapore", 103.82, 1.35, 76.0)),
+        ),
+    )
 }

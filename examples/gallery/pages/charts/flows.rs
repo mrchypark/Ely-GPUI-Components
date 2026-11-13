@@ -1,6 +1,6 @@
 use ely_gpui_component::charts::{
     Bullet, BulletChart, ChordDiagram, FunnelChart, GanttChart, NetworkGraph, ParallelCoordinates,
-    ProgressChart, SankeyChart, Task,
+    ParallelSetsChart, ProgressChart, SankeyChart, SurfaceChart, Task,
 };
 use gpui::{App, IntoElement, ParentElement, Styled, div, px};
 use jiff::civil::date;
@@ -48,6 +48,29 @@ pub fn flows(cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(probe("sankey", div().w(px(720.)).child(budget)))
     .child(probe("funnel", div().w(px(720.)).child(signups)))
+    .child(
+        div()
+            .flex()
+            .flex_wrap()
+            .gap_6()
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    ParallelSetsChart::new("parallel-sets", ["Channel", "Plan", "Retained"])
+                        .ribbon(["Organic", "Pro", "Yes"], 180.0)
+                        .ribbon(["Organic", "Free", "Yes"], 140.0)
+                        .ribbon(["Paid", "Pro", "Yes"], 95.0)
+                        .ribbon(["Paid", "Free", "No"], 110.0),
+                ),
+            )
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    SurfaceChart::from_fn("surface-wave", 18, 18, (-3.0, 3.0), (-3.0, 3.0), |x, y| {
+                        let r = (x * x + y * y).sqrt();
+                        if r < 1e-4 { 1.0 } else { r.sin() / r }
+                    }),
+                ),
+            ),
+    )
 }
 
 pub fn schedule(cx: &mut App) -> impl IntoElement + use<> {

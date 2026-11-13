@@ -22,9 +22,12 @@ use jiff::civil::date;
 use super::axes::PAD;
 use super::{
     AreaChart, BarChart, BoxPlot, Bullet, BulletChart, CalendarHeatmap, ChartLegend, ChordDiagram,
-    FunnelChart, GanttChart, HeatmapChart, Histogram, LineChart, NetworkGraph, ParallelCoordinates,
-    PieChart, Points, ProgressChart, RadarChart, RealtimeChart, SankeyChart, ScatterChart, Series,
-    Slice, Sunburst, Task, Treemap, ViolinPlot, WaterfallChart,
+    CirclePacking, ContourChart, Curve, DifferenceChart, FunnelChart, GanttChart, GeoChart,
+    GeoPoint, GeoProjection, GeoRegion, HeatmapChart, HexbinChart, Histogram, HorizonChart,
+    LineChart, NetworkGraph, ParallelCoordinates, ParallelSetsChart, PieChart, Points, PolarChart,
+    ProgressChart, RadarChart, RadialLineChart, RealtimeChart, RidgelineChart, SankeyChart,
+    ScatterChart, Series, Slice, Sunburst, SurfaceChart, Symbol, Task, TreeChart, TreeLayoutMode,
+    Treemap, ViolinPlot, WaterfallChart,
 };
 use crate::{layout::tests::narrow_width, theme::Theme};
 
@@ -334,12 +337,136 @@ fn every_chart_fills_a_column_its_block_measures_by_content(cx: &mut TestAppCont
                 .row("a", [1.0])
                 .into_any_element()
         }),
+        narrow_width(cx, "chart-root", |_, _| {
+            HexbinChart::new("hexbin")
+                .points([(1.0, 2.0), (1.5, 2.5), (8.0, 9.0)])
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            ContourChart::from_points("contour", [(1.0, 2.0), (2.0, 3.0), (4.0, 5.0)])
+                .grid_size(10, 10)
+                .levels(3)
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            RidgelineChart::new("ridgeline")
+                .group("a", [1.0, 2.0, 3.0])
+                .group("b", [2.0, 3.0, 4.0])
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            DifferenceChart::new("diff", ["a", "b"])
+                .primary(Series::new("p", [3.0, 1.0]))
+                .baseline(Series::new("b", [1.0, 3.0]))
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            PolarChart::new("polar")
+                .slice("a", 4.0)
+                .slice("b", 8.0)
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            CirclePacking::new("pack", [Slice::new("a", 2.0), Slice::new("b", 4.0)])
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            HorizonChart::new("horizon", ["a", "b", "c"])
+                .series(Series::new("s", [-4.0, 2.0, 8.0]))
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            RadialLineChart::new("radial-line", ["Jan", "Apr", "Jul", "Oct"])
+                .series(Series::new("Temp", [4.0, 14.0, 26.0, 12.0]))
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            TreeChart::new(
+                "tree",
+                Slice::new("root", 0.0).children([Slice::new("a", 1.0), Slice::new("b", 2.0)]),
+            )
+            .mode(TreeLayoutMode::RadialTree)
+            .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            GeoChart::new("geo")
+                .projection(GeoProjection::Orthographic)
+                .region(GeoRegion::new(
+                    "Block",
+                    10.0,
+                    [(-10.0, -10.0), (20.0, -10.0), (20.0, 20.0), (-10.0, 20.0)],
+                ))
+                .point(GeoPoint::new("Seoul", 126.97, 37.56, 9.5))
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            SurfaceChart::from_grid("surface", 4, 4, (0..16).map(|i| (i as f64).sin()))
+                .into_any_element()
+        }),
+        narrow_width(cx, "chart-root", |_, _| {
+            ParallelSetsChart::new("parsets", ["Class", "Survived"])
+                .ribbon(["First", "Yes"], 120.0)
+                .ribbon(["Third", "No"], 240.0)
+                .into_any_element()
+        }),
     ];
     assert_eq!(
         widths,
-        [px(240.0); 22],
+        [px(240.0); 34],
         "each chart spans the card inside its padding"
     );
+}
+
+#[gpui::test]
+fn log_symlog_streamgraph_and_voronoi_render_and_export(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        let log_line = LineChart::new("log", ["1", "2", "3"])
+            .series(Series::new("Traffic", [10.0, 100.0, 1000.0]))
+            .y_log(10.0);
+        assert!(log_line.svg(320.0, 200.0, cx).contains("<path"));
+
+        let symlog_line = LineChart::new("symlog", ["A", "B", "C"])
+            .series(Series::new("Balance", [-100.0, 0.0, 250.0]))
+            .y_symlog(1.0);
+        assert!(symlog_line.svg(320.0, 200.0, cx).contains("<path"));
+
+        let stream = AreaChart::new("stream", ["Q1", "Q2", "Q3"])
+            .series(Series::new("A", [10.0, 20.0, 15.0]))
+            .series(Series::new("B", [15.0, 10.0, 25.0]))
+            .stream()
+            .smooth();
+        assert!(stream.svg(320.0, 200.0, cx).contains("<path"));
+
+        let voronoi = ScatterChart::new("voronoi")
+            .points(Points::new(
+                "Sites",
+                [(1.0, 10.0), (10.0, 100.0), (100.0, 1000.0)],
+            ))
+            .x_log(10.0)
+            .y_log(10.0)
+            .voronoi();
+        let vsvg = voronoi.svg(320.0, 200.0, cx);
+        assert!(vsvg.contains("<circle") && vsvg.contains("<line"));
+
+        for curve in [
+            Curve::Step,
+            Curve::StepBefore,
+            Curve::StepAfter,
+            Curve::Basis,
+            Curve::Cardinal,
+        ] {
+            let c_line = LineChart::new("curve", ["A", "B", "C", "D"])
+                .series(Series::new("S", [1.0, 4.0, 2.0, 5.0]))
+                .curve(curve);
+            assert!(c_line.svg(300.0, 180.0, cx).contains("<path"));
+        }
+
+        let symbols = ScatterChart::new("symbols")
+            .points(Points::new("D", [(1.0, 2.0), (3.0, 4.0)]).symbol(Symbol::Diamond))
+            .points(Points::new("S", [(2.0, 5.0)]).symbol(Symbol::Star));
+        assert!(symbols.svg(300.0, 180.0, cx).contains("<path"));
+    });
 }
 
 /// A sideways bar chart `wide` across with one band named `name`.
