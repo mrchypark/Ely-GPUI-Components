@@ -289,6 +289,151 @@ fn a_full_enter_press_opens_a_multi_select_and_keeps_it_open(cx: &mut TestAppCon
     assert_eq!(view.read_with(cx, |view, _| view.chosen.clone()), ["a"]);
 }
 
+struct DisabledMulti {
+    chosen: Vec<SharedString>,
+    disabled: bool,
+    changes: usize,
+    next: Entity<TextInput>,
+}
+
+impl Render for DisabledMulti {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        div()
+            .flex()
+            .flex_col()
+            .child(
+                MultiSelect::new("disabled-multi", abc(false))
+                    .selected(self.chosen.clone())
+                    .disabled(self.disabled)
+                    .on_change(move |next, _, cx| {
+                        view.update(cx, |view, cx| {
+                            view.chosen = next.to_vec();
+                            view.changes += 1;
+                            cx.notify();
+                        });
+                    }),
+            )
+            .child(crate::forms::Input::new(&self.next))
+    }
+}
+
+#[gpui::test]
+fn disabling_an_open_multi_select_closes_it_and_blocks_changes(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|window, cx| DisabledMulti {
+        chosen: vec!["a".into()],
+        disabled: false,
+        changes: 0,
+        next: cx.new(|cx| TextInput::new(window, cx)),
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.focus_next(cx));
+    cx.simulate_keystrokes("enter");
+    release("enter", cx);
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("option-list").is_some());
+
+    view.update(cx, |view, cx| {
+        view.disabled = true;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("option-list").is_none());
+    let chip = cx.debug_bounds("multi-chip-0").expect("selected chip");
+    cx.simulate_click(
+        point(chip.right() - px(4.), chip.center().y),
+        Modifiers::none(),
+    );
+    let field = cx.debug_bounds("multi-select-root").expect("multi select");
+    cx.simulate_click(field.center(), Modifiers::none());
+    cx.simulate_keystrokes("backspace enter space down");
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("option-list").is_none());
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.chosen, ["a"]);
+        assert_eq!(view.changes, 0);
+    });
+    cx.update(|window, cx| {
+        window.blur(cx);
+        window.focus_next(cx);
+        assert!(view.read(cx).next.read(cx).focus().is_focused(window));
+    });
+    view.update(cx, |view, cx| {
+        view.disabled = false;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let chip = cx.debug_bounds("multi-chip-0").expect("enabled chip");
+    cx.simulate_click(
+        point(chip.right() - px(10.), chip.center().y),
+        Modifiers::none(),
+    );
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert!(view.chosen.is_empty());
+        assert_eq!(view.changes, 1);
+    });
+}
+
+struct MultiWithDisabledChoice {
+    chosen: Vec<SharedString>,
+    changes: usize,
+}
+
+impl Render for MultiWithDisabledChoice {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        MultiSelect::new("multi-disabled-choice", abc(true))
+            .selected(self.chosen.clone())
+            .on_change(move |next, _, cx| {
+                view.update(cx, |view, cx| {
+                    view.chosen = next.to_vec();
+                    view.changes += 1;
+                    cx.notify();
+                });
+            })
+    }
+}
+
+#[gpui::test]
+fn disabled_selected_choice_cannot_be_removed_by_chip_or_backspace(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| MultiWithDisabledChoice {
+        chosen: vec!["a".into(), "b".into()],
+        changes: 0,
+    });
+    cx.run_until_parked();
+    let disabled_chip = cx
+        .debug_bounds("multi-chip-1")
+        .expect("disabled selected chip");
+    cx.simulate_click(
+        point(disabled_chip.right() - px(4.), disabled_chip.center().y),
+        Modifiers::none(),
+    );
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.chosen, ["a", "b"]);
+        assert_eq!(view.changes, 0);
+    });
+    cx.update(|window, cx| {
+        window.blur(cx);
+        window.focus_next(cx);
+    });
+    cx.simulate_keystrokes("backspace");
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.chosen, ["b"]);
+        assert_eq!(view.changes, 1);
+    });
+    cx.simulate_keystrokes("backspace");
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.chosen, ["b"]);
+        assert_eq!(view.changes, 1);
+    });
+}
+
 struct Typed {
     state: Entity<TextInput>,
     chosen: Option<SharedString>,

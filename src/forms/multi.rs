@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, Role,
     SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
@@ -13,6 +13,7 @@ use super::{
 };
 use crate::{
     data_display::Tag,
+    i18n,
     primitives::{Icon, IconName, tab_stop},
     theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
 };
@@ -25,6 +26,7 @@ pub struct MultiSelect {
     selected: Vec<SharedString>,
     placeholder: SharedString,
     size: ControlSize,
+    disabled: bool,
     on_change: Option<OnValues>,
 }
 
@@ -36,6 +38,7 @@ impl MultiSelect {
             selected: Vec::new(),
             placeholder: SharedString::from("Choose…"),
             size: ControlSize::default(),
+            disabled: false,
             on_change: None,
         }
     }
@@ -55,6 +58,11 @@ impl MultiSelect {
         self
     }
 
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
     pub fn on_change(
         mut self,
         handler: impl Fn(&[SharedString], &mut Window, &mut App) + 'static,
@@ -67,22 +75,29 @@ impl MultiSelect {
 impl RenderOnce for MultiSelect {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         assert!(
-            !self.choices.is_empty(),
+            self.disabled || !self.choices.is_empty(),
             "multi select {:?} has no choices",
             self.id
         );
-        let focus = tab_stop((self.id.clone(), "focus").into(), true, window, cx);
-        let focused = focus.is_focused(window);
+        let disabled = self.disabled;
+        let focus = tab_stop((self.id.clone(), "focus").into(), !disabled, window, cx);
+        let focused = !disabled && focus.is_focused(window);
         let picker =
             window.use_keyed_state((self.id.clone(), "picker"), cx, |_, _| Picker::default());
-        if picker.read(cx).open && !focused {
+        if picker.read(cx).open && (disabled || !focused) {
             picker.update(cx, |picker, _| picker.open = false);
         }
         let (choices, selected) = (Rc::new(self.choices), Rc::new(self.selected));
         let start = choices
             .iter()
             .position(|choice| !choice.disabled && selected.contains(&choice.value))
-            .unwrap_or_else(|| step(&choices, choices.len() - 1, 1));
+            .unwrap_or_else(|| {
+                if choices.is_empty() {
+                    0
+                } else {
+                    step(&choices, choices.len() - 1, 1)
+                }
+            });
         if picker.read(cx).highlighted >= choices.len() {
             picker.update(cx, |picker, _| picker.highlighted = start);
         }
@@ -129,13 +144,21 @@ impl RenderOnce for MultiSelect {
             .map(|(ix, choice)| {
                 let (choices, selected, commit) =
                     (choices.clone(), selected.clone(), commit.clone());
-                Tag::new(
+                let tag = Tag::new(
                     (self.id.clone(), format!("chip-{ix}")),
                     choice.label.clone(),
-                )
-                .on_remove(move |window, cx| {
-                    commit(&chosen(&choices, &selected, ix, true), window, cx)
-                })
+                );
+                let tag = if disabled || choice.disabled {
+                    tag
+                } else {
+                    tag.on_remove(move |window, cx| {
+                        commit(&chosen(&choices, &selected, ix, true), window, cx)
+                    })
+                };
+                div()
+                    .debug_selector(move || format!("multi-chip-{ix}"))
+                    .when(disabled, |chip| chip.opacity(0.5))
+                    .child(tag)
             })
             .collect();
         let (click, keys, rows, close) = (
@@ -146,8 +169,13 @@ impl RenderOnce for MultiSelect {
         );
         let (enter, last, erase) = (toggle.clone(), selected.clone(), commit);
         div()
+            .debug_selector(|| "multi-select-root".into())
             .id(self.id.clone())
             .track_focus(&focus)
+            .role(Role::ComboBox)
+            .when(disabled, |field| {
+                field.aria_description(i18n::text(cx, "state.unavailable", &[]))
+            })
             .relative()
             .flex()
             .flex_wrap()
@@ -164,20 +192,35 @@ impl RenderOnce for MultiSelect {
             } else {
                 colors.border_strong
             })
-            .bg(colors.surface)
+            .bg(if disabled {
+                colors.sunken
+            } else {
+                colors.surface
+            })
+            .when(disabled, |field| field.text_color(colors.fg_disabled))
             .text_size(theme.text_size(TextSize::Base))
-            .cursor_pointer()
+            .when(!disabled, |field| field.cursor_pointer())
             .on_click(move |event, _, cx| {
-                if matches!(event, ClickEvent::Mouse(_)) {
+                if !disabled && matches!(event, ClickEvent::Mouse(_)) {
                     Picker::show(&click, !open, start, cx)
                 }
             })
             .on_key_down(move |event, window, cx| {
+                if disabled {
+                    return;
+                }
                 let at = keys.read(cx).highlighted;
                 let key = event.keystroke.key.as_str();
                 if key == "backspace" && !last.is_empty() {
                     cx.stop_propagation();
-                    erase(&last[..last.len() - 1], window, cx);
+                    if let Some(index) = last.iter().rposition(|value| {
+                        rows.iter()
+                            .any(|choice| choice.value == *value && !choice.disabled)
+                    }) {
+                        let mut next = last.as_ref().clone();
+                        next.remove(index);
+                        erase(&next, window, cx);
+                    }
                 } else if !open {
                     if matches!(key, "down" | "up" | "enter" | "space") {
                         cx.stop_propagation();
@@ -199,7 +242,11 @@ impl RenderOnce for MultiSelect {
                 field.child(
                     div()
                         .pl_2()
-                        .text_color(colors.fg_subtle)
+                        .text_color(if disabled {
+                            colors.fg_disabled
+                        } else {
+                            colors.fg_subtle
+                        })
                         .child(self.placeholder),
                 )
             })
