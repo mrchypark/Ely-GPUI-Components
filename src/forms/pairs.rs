@@ -310,6 +310,7 @@ impl RenderOnce for KeyValueInput {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let placeholders = [SharedString::from("Key"), SharedString::from("Value")];
         let state = rows_state(&self.id, &self.seed, &placeholders, window, cx);
+        let mut newly_disabled = Vec::new();
         state.update(cx, |rows, cx| {
             rows.on_change = self.on_change.clone();
             rows.control_disabled = self.disabled;
@@ -320,10 +321,16 @@ impl RenderOnce for KeyValueInput {
                 for (field, _) in row {
                     if field.read(cx).is_disabled() != disabled {
                         field.update(cx, |field, cx| field.set_disabled(disabled, cx));
+                        if disabled {
+                            newly_disabled.push(field.read(cx).focus().clone());
+                        }
                     }
                 }
             }
         });
+        if newly_disabled.iter().any(|focus| focus.is_focused(window)) {
+            window.blur(cx);
+        }
         render_rows(&self.id, state, "Add pair", cx)
     }
 }

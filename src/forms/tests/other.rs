@@ -199,6 +199,41 @@ impl Render for PairFixture {
 }
 
 #[gpui::test]
+fn pairs_disabling_focused_row_blurs_only_that_field(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| PairFixture {
+        changes: Vec::new(),
+        disabled: false,
+        all_disabled: false,
+    });
+    cx.update(|window, _| {
+        window.resize(gpui::size(px(390.), px(844.)));
+        window.activate_window();
+    });
+    cx.run_until_parked();
+    let target = cx.debug_bounds("pairs-field-1-1").unwrap();
+    cx.simulate_click(target.center(), Modifiers::none());
+    let focused = cx.update(|window, cx| window.focused(cx)).expect("pair focused");
+    view.update(cx, |view, cx| { view.disabled = true; cx.notify(); });
+    cx.run_until_parked();
+    assert!(cx.update(|window, cx| window.focused(cx).is_none()));
+    cx.simulate_click(target.center(), Modifiers::none());
+    assert!(cx.update(|window, cx| window.focused(cx).is_none()));
+    view.update(cx, |view, cx| { view.disabled = false; cx.notify(); });
+    cx.run_until_parked();
+    cx.simulate_click(target.center(), Modifiers::none());
+    assert_eq!(cx.update(|window, cx| window.focused(cx)), Some(focused));
+    cx.simulate_input("x");
+    assert!(view.read_with(cx, |view, _| view.changes.last().unwrap()[1].1.contains('x')));
+    let other = cx.debug_bounds("pairs-field-0-1").unwrap();
+    cx.simulate_click(other.center(), Modifiers::none());
+    let other_focus = cx.update(|window, cx| window.focused(cx)).expect("other pair focused");
+    view.update(cx, |view, cx| { view.disabled = true; cx.notify(); });
+    cx.run_until_parked();
+    assert_eq!(cx.update(|window, cx| window.focused(cx)), Some(other_focus));
+}
+
+#[gpui::test]
 fn pairs_disabled_row_survives_shifts_and_control_toggle(cx: &mut TestAppContext) {
     setup(cx);
     let (view, cx) = cx.add_window_view(|_, _| PairFixture { changes: Vec::new(), disabled: true, all_disabled: true });
