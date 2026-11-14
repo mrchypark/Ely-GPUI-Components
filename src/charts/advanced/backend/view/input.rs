@@ -15,6 +15,19 @@ use super::super::constants::DOUBLE_CLICK_PIN_GRACE_MS;
 use super::super::geometry::{distance_sq, normalized_rect};
 use super::super::hover::{compute_hover_target, hover_target_within_threshold};
 use super::super::state::{ClickState, DragMode, DragState, PinToggle, PlotUiState};
+
+#[derive(Clone, Copy)]
+pub(super) struct PlotDrag {
+    pub(super) owner: gpui::EntityId,
+}
+
+pub(super) fn reset_link_state(state: &mut PlotUiState) {
+    state.link_view_seq = 0;
+    state.link_cursor_seq = 0;
+    state.link_brush_seq = 0;
+    state.linked_cursor_x = None;
+    state.linked_brush_x = None;
+}
 use super::scroll::revert_pin_toggle;
 use super::{PlotEvent, PlotView, ViewportCenter, apply_manual_view, screen_point};
 
@@ -418,18 +431,11 @@ impl PlotView {
 
     pub(super) fn on_mouse_up_out(
         &mut self,
-        _ev: &MouseUpEvent,
+        ev: &MouseUpEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.state
-            .write()
-            .expect("plot state lock")
-            .clear_interaction();
-        self.publish_cursor_link(None);
-        cx.emit(PlotEvent::CursorX(None));
-        self.defer_cursor(None, window, cx);
-        cx.notify();
+        self.on_mouse_up(ev, window, cx);
     }
 }
 
@@ -439,4 +445,28 @@ pub(super) fn is_drag_button_held(mode: DragMode, pressed_button: Option<MouseBu
         DragMode::Pan | DragMode::ZoomX | DragMode::ZoomY => MouseButton::Left,
     };
     pressed_button == Some(expected)
+}
+
+pub(super) fn track_outside_rect_drag(view: gpui::WeakEntity<PlotView>, window: &mut Window) {
+    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+        if phase != gpui::DispatchPhase::Bubble || event.pressed_button != Some(MouseButton::Right)
+        {
+            return;
+        }
+        let _ = view.update(cx, |view, cx| {
+            let outside = {
+                let state = view.state.read().expect("plot state lock");
+                state
+                    .drag
+                    .as_ref()
+                    .is_some_and(|drag| drag.mode == DragMode::ZoomRect)
+                    && state
+                        .view_bounds
+                        .is_some_and(|bounds| !bounds.contains(&event.position))
+            };
+            if outside {
+                view.on_mouse_move(event, window, cx);
+            }
+        });
+    });
 }

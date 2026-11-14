@@ -6,7 +6,9 @@ use crate::charts::advanced::transform::Transform;
 use crate::charts::advanced::view::{Range, Viewport};
 
 use super::super::state::DragMode;
+use super::super::state::PlotUiState;
 use super::input::is_drag_button_held;
+use super::reset_link_state;
 use super::scroll::{pinch_zoom_scale, scroll_zoom_factor};
 
 #[test]
@@ -55,4 +57,24 @@ fn positive_pinch_delta_zooms_in_and_touch_pan_moves_opposite_drag() {
     let panned = pan_viewport(viewport, ScreenPoint::new(10.0, 0.0), &transform).unwrap();
     assert!(panned.x.min < viewport.x.min);
     assert_eq!(panned.y, viewport.y);
+}
+
+#[test]
+fn changing_link_groups_clears_group_specific_state() {
+    let mut state = PlotUiState {
+        link_view_seq: 100,
+        link_cursor_seq: 101,
+        link_brush_seq: 102,
+        linked_cursor_x: Some(12.0),
+        linked_brush_x: Some(Range::new(10.0, 20.0)),
+        ..Default::default()
+    };
+
+    reset_link_state(&mut state);
+
+    assert_eq!(state.link_view_seq, 0);
+    assert_eq!(state.link_cursor_seq, 0);
+    assert_eq!(state.link_brush_seq, 0);
+    assert_eq!(state.linked_cursor_x, None);
+    assert_eq!(state.linked_brush_x, None);
 }

@@ -299,13 +299,32 @@ impl Default for AxisLayout {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 struct AxisLayoutKey {
     range: Range,
     pixels: u32,
     tick_config: TickConfig,
     scale: AxisScale,
     time_offset_seconds: Option<i32>,
+    formatter: AxisFormatter,
+    label_size: f32,
+}
+
+impl PartialEq for AxisLayoutKey {
+    fn eq(&self, other: &Self) -> bool {
+        let same_formatter = match (&self.formatter, &other.formatter) {
+            (AxisFormatter::Default, AxisFormatter::Default) => true,
+            (AxisFormatter::Custom(a), AxisFormatter::Custom(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        };
+        self.range == other.range
+            && self.pixels == other.pixels
+            && self.tick_config == other.tick_config
+            && self.scale == other.scale
+            && self.time_offset_seconds == other.time_offset_seconds
+            && same_formatter
+            && self.label_size == other.label_size
+    }
 }
 
 /// Cached layout for axis ticks and labels.
@@ -330,6 +349,8 @@ impl AxisLayoutCache {
             tick_config: axis.tick_config(),
             scale: axis.scale(),
             time_offset_seconds: axis.time_offset_seconds,
+            formatter: axis.formatter().clone(),
+            label_size: axis.label_size(),
         };
         if self.key.as_ref() == Some(&key) {
             return &self.layout;

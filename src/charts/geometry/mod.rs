@@ -66,6 +66,7 @@ pub(crate) struct Dot {
 /// What a chart draws, in its box's own pixels, for the canvas and for SVG alike.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Geometry {
+    pub value_scale: Option<ValueScale>,
     /// Value ticks: where each sits along the value axis, and its value.
     pub ticks: Vec<(f32, f64)>,
     /// Labels along the other axis and where each sits: categories, or a scatter's x ticks.
@@ -176,6 +177,7 @@ pub(crate) fn categories(chart: &Categories, frame: Rect) -> Geometry {
         }
     };
     let mut geometry = Geometry {
+        value_scale: Some(scale),
         ticks: ticks.iter().map(|tick| (scale.at(*tick), *tick)).collect(),
         labels: (0..count)
             .map(|ix| (along(ix), chart.labels[first + ix].clone()))
@@ -315,6 +317,7 @@ pub(crate) fn scatter(
         .copied()
         .fold(0.0, f64::max);
     let mut geometry = Geometry {
+        value_scale: Some(ys),
         ticks: y_ticks.iter().map(|tick| (ys.at(*tick), *tick)).collect(),
         labels: x_ticks
             .iter()

@@ -24,7 +24,7 @@ pub(crate) fn answer(
     root: Stateful<Div>,
     state: &Entity<State>,
     (pick, horizontal, zoomable): (Pick, bool, bool),
-    (rect, span, reach): (Rect, (usize, usize), f32),
+    (rect, span, reach, total): (Rect, (usize, usize), f32, usize),
     geometry: Rc<Geometry>,
 ) -> Stateful<Div> {
     let (moved, left, pressed, released) =
@@ -235,7 +235,6 @@ pub(crate) fn answer(
                 }
                 pinch_cat.update(cx, |state, cx| {
                     state.brush = None;
-                    let total = span.1 + 1;
                     let (cur_a, cur_b) = state.span.unwrap_or(span);
                     let cur_len = (cur_b.saturating_sub(cur_a) + 1).max(2) as f32;
                     let next_len = (cur_len / scale).round() as usize;

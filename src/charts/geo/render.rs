@@ -1,5 +1,36 @@
 use super::*;
 
+pub(super) fn region_contains(pos: (f32, f32), rings: &[Vec<(f32, f32)>]) -> bool {
+    rings.iter().fold(false, |inside, ring| {
+        if point_in_polygon(pos, ring) {
+            !inside
+        } else {
+            inside
+        }
+    })
+}
+
+pub(super) fn region_paths(
+    rings: &[Vec<(f32, f32)>],
+    origin: Point<Pixels>,
+    border: Pixels,
+) -> (PathBuilder, PathBuilder) {
+    let mut fill_path = PathBuilder::fill().with_style(gpui::PathStyle::Fill(
+        gpui::FillOptions::default().with_fill_rule(gpui::FillRule::EvenOdd),
+    ));
+    let mut edge_path = PathBuilder::stroke(border);
+    for ring in rings.iter().filter(|ring| ring.len() >= 3) {
+        for path in [&mut fill_path, &mut edge_path] {
+            path.move_to(at(origin, ring[0]));
+            for &pt in &ring[1..] {
+                path.line_to(at(origin, pt));
+            }
+            path.close();
+        }
+    }
+    (fill_path, edge_path)
+}
+
 impl RenderOnce for GeoChart {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state: Entity<GeoState> =
@@ -102,13 +133,7 @@ impl RenderOnce for GeoChart {
                 return Some(ix);
             }
             for (r_ix, rings) in hit_regions.iter().rev() {
-                let mut inside = false;
-                for ring in rings {
-                    if point_in_polygon(pos, ring) {
-                        inside = !inside;
-                    }
-                }
-                if inside {
+                if region_contains(pos, rings) {
                     return Some(points_offset + *r_ix);
                 }
             }
@@ -309,23 +334,10 @@ impl RenderOnce for GeoChart {
                                     colors.bg.opacity(0.8)
                                 };
                                 let border_w = if is_hovered { stroke } else { hairline };
-                                for ring_pts in &reg.rings {
-                                    if ring_pts.len() < 3 {
-                                        continue;
-                                    }
-                                    let mut fill_path = PathBuilder::fill();
-                                    let mut edge_path = PathBuilder::stroke(border_w);
-                                    fill_path.move_to(at(origin, ring_pts[0]));
-                                    edge_path.move_to(at(origin, ring_pts[0]));
-                                    for &pt in &ring_pts[1..] {
-                                        fill_path.line_to(at(origin, pt));
-                                        edge_path.line_to(at(origin, pt));
-                                    }
-                                    fill_path.close();
-                                    edge_path.close();
-                                    finish(fill_path, fill_color, window);
-                                    finish(edge_path, border_color, window);
-                                }
+                                let (fill_path, edge_path) =
+                                    region_paths(&reg.rings, origin, border_w);
+                                finish(fill_path, fill_color, window);
+                                finish(edge_path, border_color, window);
                             }
 
                             for pt in &paint_points {

@@ -44,7 +44,11 @@ pub(super) fn generate_linear_ticks(
                 });
             }
         }
-        value += step;
+        let next_value = value + step;
+        if next_value <= value {
+            break;
+        }
+        value = next_value;
     }
 
     ticks

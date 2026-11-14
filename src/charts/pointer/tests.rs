@@ -20,12 +20,20 @@ mod interactive_tests {
 
     struct HoverProbe {
         state: gpui::Entity<State>,
+        span: (usize, usize),
+        total: usize,
     }
 
     impl HoverProbe {
-        fn new(cx: &mut Context<Self>) -> Self {
+        fn new(cx: &mut Context<Self>, span: (usize, usize), total: usize) -> Self {
             Self {
-                state: cx.new(|_| State::default()),
+                state: cx.new(|_| {
+                    let mut state = State::default();
+                    state.span = Some(span);
+                    state
+                }),
+                span,
+                total,
             }
         }
     }
@@ -51,7 +59,7 @@ mod interactive_tests {
                     .debug_selector(|| "chart-root".into()),
                 &self.state,
                 (Pick::Point, false, true),
-                (rect, (0, 10), 0.0),
+                (rect, self.span, 0.0, self.total),
                 Rc::new(Geometry::default()),
             )
             .child(measure(self.state.clone(), |state| &mut state.bounds))
@@ -69,7 +77,7 @@ mod interactive_tests {
                 Theme::init(cx);
                 Theme::update(cx, |theme| theme.touch_mode = $touch);
             });
-            let (_, cx) = $cx.add_window_view(|_, cx| HoverProbe::new(cx));
+            let (_, cx) = $cx.add_window_view(|_, cx| HoverProbe::new(cx, (0, 10), 11));
             cx.simulate_resize(gpui::size(px(400.0), px(240.0)));
             settle(cx);
             cx
@@ -118,7 +126,7 @@ mod interactive_tests {
             Theme::init(cx);
             Theme::update(cx, |theme| theme.touch_mode = true);
         });
-        let (view, cx) = cx.add_window_view(|_, cx| HoverProbe::new(cx));
+        let (view, cx) = cx.add_window_view(|_, cx| HoverProbe::new(cx, (0, 10), 11));
         cx.simulate_resize(gpui::size(px(400.0), px(240.0)));
         settle(cx);
         let send = |phase, start_position, position, cx: &mut gpui::VisualTestContext| {
@@ -155,7 +163,7 @@ mod interactive_tests {
             Theme::init(cx);
             Theme::update(cx, |theme| theme.touch_mode = true);
         });
-        let (view, cx) = cx.add_window_view(|_, cx| HoverProbe::new(cx));
+        let (view, cx) = cx.add_window_view(|_, cx| HoverProbe::new(cx, (0, 10), 11));
         cx.simulate_resize(gpui::size(px(400.0), px(240.0)));
         settle(cx);
         cx.simulate_event(gpui::PinchEvent {
@@ -169,6 +177,30 @@ mod interactive_tests {
             .read_with(cx, |view, cx| view.state.read(cx).span)
             .unwrap();
         assert!(span.1 - span.0 < 10);
+    }
+
+    #[gpui::test]
+    fn touch_pinch_expands_a_zoomed_category_range_to_the_full_count(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            Theme::update(cx, |theme| theme.touch_mode = true);
+        });
+        let (view, cx) = cx.add_window_view(|_, cx| HoverProbe::new(cx, (5, 9), 20));
+        cx.simulate_resize(gpui::size(px(400.0), px(240.0)));
+        settle(cx);
+        cx.simulate_event(gpui::PinchEvent {
+            position: point(px(150.0), px(100.0)),
+            delta: 0.6_f32.ln(),
+            phase: gpui::TouchPhase::Moved,
+            modifiers: Modifiers::none(),
+        });
+        settle(cx);
+
+        assert_eq!(
+            view.read_with(cx, |view, cx| view.state.read(cx).span),
+            Some((3, 10)),
+            "expansion uses all 20 categories and keeps the range centered"
+        );
     }
 }
 

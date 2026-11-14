@@ -243,17 +243,23 @@ pub(crate) fn plot(plot: Plot, base: Div, window: &mut Window, cx: &mut App) -> 
     } else {
         pixels(sizes.inset)
     };
-    let root = answer(root, &state, ways, (rect, span, reach), geometry.clone())
-        .child(drawing(
-            geometry,
-            pen,
-            rect,
-            (lit, brush),
-            (marks.rules, marks.notes),
-        ))
-        .children(marks.labels)
-        .children(tooltip)
-        .children(show_all)
-        .child(measure(state, |state| &mut state.bounds));
+    let root = answer(
+        root,
+        &state,
+        ways,
+        (rect, span, reach, count),
+        geometry.clone(),
+    )
+    .child(drawing(
+        geometry,
+        pen,
+        rect,
+        (lit, brush),
+        (marks.rules, marks.notes),
+    ))
+    .children(marks.labels)
+    .children(tooltip)
+    .children(show_all)
+    .child(measure(state, |state| &mut state.bounds));
     base.flex().flex_col().gap_2().children(legend).child(root)
 }

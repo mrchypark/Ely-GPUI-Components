@@ -106,6 +106,69 @@ fn advanced_chart_renders_selects_zooms_and_updates_theme(cx: &mut TestAppContex
 }
 
 #[gpui::test]
+fn rectangle_zoom_tracks_a_right_drag_outside_the_chart(cx: &mut TestAppContext) {
+    let selected = Rc::new(Cell::new(None));
+    let viewport = Rc::new(RefCell::new(None));
+    let series = Series::from_iter_y("panel", 0..1000, SeriesKind::Line(LineStyle::default()));
+    let view = cx.add_window(|_, cx| {
+        ElyTheme::init(cx);
+        ChartHarness {
+            selected,
+            viewport: viewport.clone(),
+            revision: 1,
+            series,
+            reset_token: 0,
+        }
+    });
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    cx.simulate_resize(gpui::size(px(900.0), px(500.0)));
+    cx.run_until_parked();
+    let start = point(px(200.0), px(80.0));
+    let inside = point(px(300.0), px(140.0));
+    let outside = point(px(700.0), px(200.0));
+    cx.simulate_mouse_down(start, MouseButton::Right, Default::default());
+    cx.simulate_mouse_move(inside, MouseButton::Right, Default::default());
+    cx.simulate_mouse_move(outside, MouseButton::Right, Default::default());
+    cx.simulate_mouse_up(outside, MouseButton::Right, Default::default());
+    cx.run_until_parked();
+    let zoomed = viewport
+        .borrow()
+        .expect("outside release commits rectangle zoom");
+    assert!(
+        zoomed.x.span() > 500.0,
+        "the outside drag extends the selected range"
+    );
+}
+
+#[gpui::test]
+fn pan_tracks_a_left_drag_outside_the_chart(cx: &mut TestAppContext) {
+    let viewport = Rc::new(RefCell::new(None));
+    let view = cx.add_window(|_, cx| {
+        ElyTheme::init(cx);
+        ChartHarness {
+            selected: Rc::new(Cell::new(None)),
+            viewport: viewport.clone(),
+            revision: 1,
+            series: Series::from_iter_y("panel", 0..1000, SeriesKind::Line(LineStyle::default())),
+            reset_token: 0,
+        }
+    });
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    cx.simulate_resize(gpui::size(px(900.0), px(500.0)));
+    cx.run_until_parked();
+    let start = point(px(200.0), px(80.0));
+    let inside = point(px(300.0), px(140.0));
+    let outside = point(px(700.0), px(200.0));
+    cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
+    cx.simulate_mouse_move(inside, MouseButton::Left, Default::default());
+    cx.simulate_mouse_move(outside, MouseButton::Left, Default::default());
+    cx.simulate_mouse_up(outside, MouseButton::Left, Default::default());
+    cx.run_until_parked();
+    let panned = viewport.borrow().expect("outside drag pans the viewport");
+    assert!(panned.x.min < -500.0, "outside movement continues the pan");
+}
+
+#[gpui::test]
 fn advanced_chart_from_view_wraps_existing_plot_view(cx: &mut TestAppContext) {
     struct Wrapped(gpui::Entity<PlotView>);
     impl Render for Wrapped {

@@ -142,20 +142,43 @@ impl SeriesStore {
         }
         let index_range = self.data.range_by_x(x_range);
         let points = self.data.iter_points(index_range.clone());
+        let before = index_range
+            .start
+            .checked_sub(1)
+            .and_then(|index| self.data.point(index));
+        let after = (index_range.end < self.data.len())
+            .then(|| self.data.point(index_range.end))
+            .flatten();
         if points.len() == 0 {
+            if let Some(point) = before {
+                scratch.output_mut().push(point);
+            }
+            if let Some(point) = after {
+                scratch.output_mut().push(point);
+            }
             return scratch.output();
         }
         if points.len() <= pixel_width.saturating_mul(2) {
             scratch.output_mut().extend(points);
+            if let Some(point) = before {
+                scratch.output_mut().insert(0, point);
+            }
+            if let Some(point) = after {
+                scratch.output_mut().push(point);
+            }
             return scratch.output();
         }
         if self.data.x_mode() == XMode::Explicit && !self.data.is_monotonic() {
-            return decimate_minmax_iter(points, x_range, pixel_width, scratch);
+            decimate_minmax_iter(points, x_range, pixel_width, scratch);
+            Self::add_boundary_points(scratch.output_mut(), before, after);
+            return scratch.output();
         }
 
         let target_bucket = (points.len() as f64 / pixel_width as f64).ceil() as usize;
         if target_bucket < self.summary.base_chunk() {
-            return decimate_minmax_iter(points, x_range, pixel_width, scratch);
+            decimate_minmax_iter(points, x_range, pixel_width, scratch);
+            Self::add_boundary_points(scratch.output_mut(), before, after);
+            return scratch.output();
         }
         if let Some(level) = self.summary.choose_level(target_bucket) {
             // Visit only complete visible buckets. Boundary and streaming-tail ranges use finer summaries, so out-of-view peaks cannot replace visible extrema and unpaired lower-level buckets are never lost.
@@ -181,10 +204,22 @@ impl SeriesStore {
             ) {
                 extrema.push_ordered(scratch.output_mut());
             }
+            Self::add_boundary_points(scratch.output_mut(), before, after);
             return scratch.output();
         }
 
-        decimate_minmax_iter(points, x_range, pixel_width, scratch)
+        decimate_minmax_iter(points, x_range, pixel_width, scratch);
+        Self::add_boundary_points(scratch.output_mut(), before, after);
+        scratch.output()
+    }
+
+    fn add_boundary_points(points: &mut Vec<Point>, before: Option<Point>, after: Option<Point>) {
+        if let Some(point) = before {
+            points.insert(0, point);
+        }
+        if let Some(point) = after {
+            points.push(point);
+        }
     }
 
     fn update_summary_from(&mut self, start_len: usize) {

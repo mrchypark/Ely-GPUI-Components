@@ -165,7 +165,7 @@ impl Plot {
         let bounds = self.data_bounds()?;
         match self.view {
             View::AutoAll { auto_x, auto_y } => {
-                let mut next = bounds;
+                let mut next = bounds.padded(padding_frac, min_padding);
                 if let Some(current) = self.viewport {
                     if !auto_x {
                         next.x = current.x;
@@ -174,7 +174,7 @@ impl Plot {
                         next.y = current.y;
                     }
                 }
-                self.viewport = Some(next.padded(padding_frac, min_padding));
+                self.viewport = Some(next);
             }
             View::Manual => {
                 if self.viewport.is_none() {
@@ -344,6 +344,31 @@ mod tests {
         let _ = source.push_y(3.0);
         let next_bounds = plot.data_bounds().expect("plot bounds");
         assert_eq!(next_bounds.y.max, 3.0);
+    }
+
+    #[test]
+    fn disabled_auto_axes_keep_their_padded_ranges_across_refreshes() {
+        for (auto_x, auto_y) in [(false, true), (true, false), (false, false)] {
+            let mut source = Series::line("series");
+            source.extend_y([1.0, 2.0]).unwrap();
+            let mut plot = Plot::new();
+            plot.add_series(&source);
+            plot.set_view(View::AutoAll { auto_x, auto_y });
+            let initial = plot.refresh_viewport(0.1, 0.0).unwrap();
+            source.push_y(8.0).unwrap();
+            let changed = plot.refresh_viewport(0.1, 0.0).unwrap();
+            let repeated = plot.refresh_viewport(0.1, 0.0).unwrap();
+            assert_eq!(changed, repeated);
+            if !auto_x {
+                assert_eq!(changed.x, initial.x);
+            }
+            if !auto_y {
+                assert_eq!(changed.y, initial.y);
+            }
+            if auto_y {
+                assert!(changed.y.max > initial.y.max);
+            }
+        }
     }
 
     #[test]

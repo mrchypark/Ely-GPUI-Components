@@ -3,8 +3,8 @@ use std::sync::{Arc, RwLock};
 
 use gpui::prelude::*;
 use gpui::{
-    App, Bounds, EventEmitter, MouseButton, PinchEvent, Pixels, Point, SharedString, Window,
-    canvas, div,
+    App, Bounds, DragMoveEvent, EmptyView, EventEmitter, MouseButton, PinchEvent, Pixels, Point,
+    SharedString, Window, canvas, div,
 };
 
 use crate::charts::advanced::interaction::zoom_viewport_with_scales;
@@ -25,6 +25,7 @@ mod scroll;
 #[cfg(test)]
 mod tests;
 
+use input::{PlotDrag, reset_link_state};
 use scroll::{ViewportCenter, apply_manual_view, screen_point};
 
 /// Events emitted by PlotView when the user interacts with a chart.
@@ -111,6 +112,7 @@ impl PlotView {
             group,
             options,
         });
+        reset_link_state(&mut self.state.write().expect("plot state lock"));
         cx.notify();
     }
 
@@ -281,6 +283,8 @@ impl Render for PlotView {
             }
         };
         let hover_region_id = Arc::as_ptr(&self.state) as usize;
+        let owner = cx.entity_id();
+        let right_drag = cx.entity().downgrade();
 
         div()
             .id(("gpui-plot-view", hover_region_id))
@@ -308,6 +312,7 @@ impl Render for PlotView {
                     },
                     move |_, frame, window, cx| {
                         paint_frame(&frame, window, cx);
+                        input::track_outside_rect_drag(right_drag.clone(), window);
                     },
                 )
                 .size_full(),
@@ -327,6 +332,16 @@ impl Render for PlotView {
             .on_mouse_move(cx.listener(|this, ev, window, cx| {
                 this.on_mouse_move(ev, window, cx);
             }))
+            .on_drag(PlotDrag { owner }, |_, _, _, cx| cx.new(|_| EmptyView))
+            .on_drag_move(
+                cx.listener(move |this, event: &DragMoveEvent<PlotDrag>, window, cx| {
+                    if event.drag(cx).owner != owner {
+                        return;
+                    }
+                    this.on_mouse_move(&event.event, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
             .on_hover(cx.listener(|this, hovered, window, cx| {
                 this.on_hover_state_change(*hovered, window, cx);
             }))

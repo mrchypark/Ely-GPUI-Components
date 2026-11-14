@@ -1,3 +1,4 @@
+use super::render::{region_contains, region_paths};
 use super::*;
 
 #[test]
@@ -28,6 +29,34 @@ fn rotation_and_projections_clip_and_clamp_accurately() {
     )
     .expect("90 deg visible in stereographic");
     assert!(edge.0.hypot(edge.1) < 1.0);
+}
+
+#[test]
+fn geo_region_compound_fill_leaves_holes_and_hit_testing_agrees() {
+    use gpui::{PathVertex, point, px};
+
+    let rings = vec![
+        vec![(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)],
+        vec![(5.0, 5.0), (15.0, 5.0), (15.0, 15.0), (5.0, 15.0)],
+    ];
+    let (fill, _) = region_paths(&rings, point(px(0.0), px(0.0)), px(1.0));
+    let mesh = fill.build().expect("compound region fill");
+    let painted_at = |pos| {
+        mesh.vertices.as_chunks::<3>().0.iter().any(|triangle| {
+            let triangle: Vec<(f32, f32)> = triangle
+                .iter()
+                .map(|PathVertex { xy_position, .. }| {
+                    (f32::from(xy_position.x), f32::from(xy_position.y))
+                })
+                .collect();
+            point_in_polygon(pos, &triangle)
+        })
+    };
+
+    assert!(painted_at((2.0, 2.0)));
+    assert!(!painted_at((10.0, 10.0)));
+    assert!(region_contains((2.0, 2.0), &rings));
+    assert!(!region_contains((10.0, 10.0), &rings));
 }
 
 #[test]

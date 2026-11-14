@@ -18,7 +18,13 @@ fn visible_extrema_and_unpaired_tail_survive_summary_decimation() {
         let output = store.decimate(Range::new(10., 190.), width, &mut scratch);
         assert!(output.contains(&points[31]));
         assert!(output.contains(&points[150]));
-        assert!(output.iter().all(|point| (10. ..=190.).contains(&point.x)));
+        assert!(
+            output[1..output.len() - 1]
+                .iter()
+                .all(|point| (10. ..=190.).contains(&point.x))
+        );
+        assert_eq!(output.first().unwrap().x, 9.);
+        assert_eq!(output.last().unwrap().x, 191.);
         assert!(output.windows(2).all(|pair| pair[0].x <= pair[1].x));
     }
     let output = store.decimate(Range::new(0., 198.), 1, &mut scratch);
@@ -26,6 +32,34 @@ fn visible_extrema_and_unpaired_tail_survive_summary_decimation() {
         output.contains(&points[150]),
         "complete but unpaired lower-level tail must remain visible"
     );
+}
+
+#[test]
+fn decimation_keeps_segments_crossing_a_viewport_without_samples() {
+    let store = SeriesStore::with_base_chunk(
+        AppendOnlyData::from_iter_points([Point::new(0., 0.), Point::new(10., 10.)]),
+        64,
+    );
+    let mut scratch = DecimationScratch::new();
+    assert_eq!(
+        store.decimate(Range::new(2., 8.), 1, &mut scratch),
+        &[Point::new(0., 0.), Point::new(10., 10.)]
+    );
+}
+
+#[test]
+fn decimation_keeps_missing_samples_between_boundary_neighbors() {
+    let missing = Point::new(5., f64::NAN);
+    let store = SeriesStore::with_base_chunk(
+        AppendOnlyData::from_iter_points([Point::new(0., 0.), missing, Point::new(10., 10.)]),
+        64,
+    );
+    let mut scratch = DecimationScratch::new();
+    let output = store.decimate(Range::new(2., 8.), 1, &mut scratch);
+    assert_eq!(output.len(), 3);
+    assert_eq!(output[0], Point::new(0., 0.));
+    assert!(output[1].y.is_nan());
+    assert_eq!(output[2], Point::new(10., 10.));
 }
 
 #[test]

@@ -1,10 +1,68 @@
 use super::*;
 
+struct TestMeasurer;
+
+impl TextMeasurer for TestMeasurer {
+    fn measure(&self, text: &str, size: f32) -> (f32, f32) {
+        (text.len() as f32 * size, size)
+    }
+}
+
 #[test]
 fn linear_ticks_generate_major() {
     let axis = AxisConfig::new();
     let ticks = generate_ticks(&axis, Range::new(0.0, 10.0), 400.0);
     assert!(ticks.iter().any(|tick| tick.is_major));
+}
+
+#[test]
+fn linear_ticks_stop_when_step_cannot_advance_large_values() {
+    let axis = AxisConfig::new();
+    let ticks = generate_linear_ticks(&axis, Range::new(1e20, 1e20 + 16384.0), 1000.0);
+    assert_eq!(ticks.iter().filter(|tick| tick.is_major).count(), 1);
+}
+
+#[test]
+fn layout_cache_refreshes_labels_when_formatter_changes() {
+    let mut cache = AxisLayoutCache::default();
+    let range = Range::new(0.0, 10.0);
+    let first = AxisConfig::new();
+    assert!(
+        cache
+            .update(&first, range, 400, &TestMeasurer)
+            .ticks
+            .iter()
+            .any(|tick| tick.label == "0")
+    );
+
+    let second = AxisConfig::builder()
+        .formatter(AxisFormatter::Custom(Arc::new(|value| {
+            format!("new:{value:.0}")
+        })))
+        .build();
+    assert!(
+        cache
+            .update(&second, range, 400, &TestMeasurer)
+            .ticks
+            .iter()
+            .any(|tick| tick.label == "new:0")
+    );
+}
+
+#[test]
+fn layout_cache_remeasures_when_label_size_changes() {
+    let mut cache = AxisLayoutCache::default();
+    let range = Range::new(0.0, 10.0);
+    let small = AxisConfig::builder().label_size(10.0).build();
+    let small_size = cache
+        .update(&small, range, 400, &TestMeasurer)
+        .max_label_size;
+    let large = AxisConfig::builder().label_size(20.0).build();
+    let large_size = cache
+        .update(&large, range, 400, &TestMeasurer)
+        .max_label_size;
+    assert_eq!(large_size.0, small_size.0 * 2.0);
+    assert_eq!(large_size.1, small_size.1 * 2.0);
 }
 
 #[test]
