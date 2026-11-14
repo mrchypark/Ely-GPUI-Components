@@ -79,6 +79,53 @@ fn focus(field: &Entity<TextInput>, cx: &mut VisualTestContext) {
 
 struct PointerFields(Vec<Entity<TextInput>>);
 
+struct PointerGroups(Vec<Entity<TextInput>>);
+
+impl Render for PointerGroups {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().children(self.0.iter().enumerate().map(|(index, field)| {
+            div()
+                .debug_selector(move || format!("pointer-group-{index}"))
+                .child(super::InputGroup::new(field).before(super::InputAddon::text("https://")))
+        }))
+    }
+}
+
+#[gpui::test]
+fn disabled_input_group_pointer_does_not_focus(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let enabled = cx.new(|cx| TextInput::new(window, cx));
+        let disabled = cx.new(|cx| {
+            let mut field = TextInput::new(window, cx);
+            field.set_disabled(true, cx);
+            field
+        });
+        PointerGroups(vec![enabled, disabled])
+    });
+    let fields = view.read_with(cx, |view, _| view.0.clone());
+    cx.update(|window, _| {
+        window.resize(gpui::size(px(390.), px(844.)));
+        window.activate_window();
+    });
+    cx.run_until_parked();
+    let enabled = cx.debug_bounds("pointer-group-0").unwrap();
+    let disabled = cx.debug_bounds("pointer-group-1").unwrap();
+    for position in [gpui::point(disabled.left() + px(10.), disabled.center().y), disabled.center()] {
+        cx.simulate_click(position, gpui::Modifiers::none());
+        assert!(!cx.update(|window, cx| fields[1].read(cx).focus().is_focused(window)));
+    }
+    cx.simulate_click(enabled.center(), gpui::Modifiers::none());
+    assert!(cx.update(|window, cx| fields[0].read(cx).focus().is_focused(window)));
+    cx.simulate_input("hello");
+    assert_eq!(text(&fields[0], cx), "hello");
+    assert_eq!(text(&fields[1], cx), "");
+    fields[1].update(cx, |field, cx| field.set_disabled(false, cx));
+    cx.run_until_parked();
+    cx.simulate_click(disabled.center(), gpui::Modifiers::none());
+    assert!(cx.update(|window, cx| fields[1].read(cx).focus().is_focused(window)));
+}
+
 impl Render for PointerFields {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div().children(self.0.iter().enumerate().map(|(index, field)| {

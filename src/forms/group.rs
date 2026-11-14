@@ -72,6 +72,8 @@ impl RenderOnce for InputGroup {
         let input = self.state.read(cx);
         let focus = input.focus().clone();
         let focused = focus.is_focused(window);
+        let disabled_state = self.state.clone();
+        let focus_state = self.state.clone();
         let theme = cx.theme();
         let colors = &theme.colors;
         let pad = theme.control_padding(self.size);
@@ -110,8 +112,15 @@ impl RenderOnce for InputGroup {
             .bg(colors.surface)
             .text_size(theme.text_size(text_size(self.size)))
             .text_color(colors.fg)
+            .capture_any_mouse_down(move |_, window, cx| {
+                if disabled_state.read(cx).is_disabled() {
+                    window.prevent_default();
+                }
+            })
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                window.focus(&focus, cx)
+                if !focus_state.read(cx).is_disabled() {
+                    window.focus(&focus, cx);
+                }
             })
             .children(self.before.into_iter().map(|block| addon(block, true)))
             .child(div().flex_1().min_w_0().px(pad).child(self.state))
