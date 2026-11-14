@@ -163,7 +163,7 @@ impl AccountSwitcher {
         self
     }
 
-    /// Show account names instead of email addresses in menu rows.
+    /// Show account names and email addresses in menu rows.
     pub fn menu_names(mut self, enabled: bool) -> Self {
         self.menu_names = enabled;
         self
@@ -177,7 +177,11 @@ impl RenderOnce for AccountSwitcher {
         let items = self.accounts.iter().enumerate().map(|(index, account)| {
             let (key, pick) = (account.key.clone(), on_select.clone());
             let label = if self.menu_names {
-                account.name.clone()
+                match (account.name.is_empty(), account.email.is_empty()) {
+                    (false, false) => format!("{} · {}", account.name, account.email).into(),
+                    (false, true) => account.name.clone(),
+                    (true, _) => account.email.clone(),
+                }
             } else {
                 account.email.clone()
             };
