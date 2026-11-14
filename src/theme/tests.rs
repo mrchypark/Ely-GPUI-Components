@@ -4,6 +4,35 @@ use gpui::{TestAppContext, hsla};
 
 use super::{ActiveTheme, Mode, Palette, Syntax, Theme};
 
+#[test]
+fn touch_default_selects_only_ios_and_android() {
+    for (target, expected) in [
+        ("ios", true),
+        ("android", true),
+        ("macos", false),
+        ("windows", false),
+        ("linux", false),
+        ("unknown", false),
+    ] {
+        assert_eq!(
+            super::touch::touch_mode_for_target(target),
+            expected,
+            "{target}"
+        );
+    }
+}
+
+#[gpui::test]
+fn touch_default_can_be_explicitly_overridden(cx: &mut TestAppContext) {
+    cx.update(Theme::init);
+    let default = super::touch::touch_mode_for_target(std::env::consts::OS);
+    assert_eq!(cx.read(|cx| cx.theme().touch_mode), default);
+    cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = !default));
+    assert_eq!(cx.read(|cx| cx.theme().touch_mode), !default);
+    cx.update(|cx| Theme::set_mode_now(Mode::Dark, cx));
+    assert_eq!(cx.read(|cx| cx.theme().touch_mode), !default);
+}
+
 /// An owner's palette serves its own mode; the other keeps Ely's, and none brings Ely's back.
 #[gpui::test]
 fn an_owners_palette_serves_its_mode_alone(cx: &mut TestAppContext) {

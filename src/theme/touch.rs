@@ -2,6 +2,10 @@ use gpui::{AbsoluteLength, DefiniteLength, Length, Pixels, Styled, px};
 
 use super::Theme;
 
+pub(super) fn touch_mode_for_target(target_os: &str) -> bool {
+    matches!(target_os, "ios" | "android")
+}
+
 impl Theme {
     /// Preserve a resolved minimum while applying the optional touch floor.
     pub fn touch_minimum(&self, minimum: Pixels) -> Pixels {
