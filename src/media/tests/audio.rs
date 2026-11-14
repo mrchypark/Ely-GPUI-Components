@@ -277,6 +277,53 @@ impl Render for Queueing {
     }
 }
 
+fn playlist_press(cx: &mut VisualTestContext, count: usize) {
+    let position = cx
+        .debug_bounds("list-item-Stone Stair")
+        .expect("song row")
+        .center();
+    cx.simulate_event(gpui::MouseDownEvent {
+        button: MouseButton::Left,
+        position,
+        modifiers: Modifiers::none(),
+        click_count: count,
+        first_mouse: false,
+    });
+    cx.simulate_event(gpui::MouseUpEvent {
+        button: MouseButton::Left,
+        position,
+        modifiers: Modifiers::none(),
+        click_count: count,
+    });
+    settle(cx);
+}
+
+#[gpui::test]
+fn touch_playlist_plays_once_for_each_press_of_a_double_press(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = true));
+    let (view, cx) = cx.add_window_view(|_, _| Queueing { played: Vec::new() });
+    settle(cx);
+    playlist_press(cx, 1);
+    assert_eq!(view.read_with(cx, |view, _| view.played.clone()), ["b"]);
+    playlist_press(cx, 2);
+    assert_eq!(
+        view.read_with(cx, |view, _| view.played.clone()),
+        ["b", "b"]
+    );
+}
+
+#[gpui::test]
+fn desktop_playlist_plays_only_on_double_press(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| Queueing { played: Vec::new() });
+    settle(cx);
+    playlist_press(cx, 1);
+    assert!(view.read_with(cx, |view, _| view.played.is_empty()));
+    playlist_press(cx, 2);
+    assert_eq!(view.read_with(cx, |view, _| view.played.clone()), ["b"]);
+}
+
 #[gpui::test]
 fn down_and_enter_play_the_next_song(cx: &mut TestAppContext) {
     setup(cx);

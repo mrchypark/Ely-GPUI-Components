@@ -118,14 +118,31 @@ fn console(bench: &Bench, window: &mut Window, cx: &mut App, owner: Entity<Bench
 fn enter_in_the_field_sends_and_empties_it(cx: &mut TestAppContext) {
     let (host, cx) = bench(console, cx);
     tab(2, cx);
-    cx.simulate_input("ping");
+    cx.simulate_input("  ping  ");
     tap("enter", cx);
     tap("enter", cx);
     assert_eq!(
         said(&host, cx),
-        ["send ping"],
-        "an empty field sends nothing"
+        ["send   ping  "],
+        "the exact message is sent and the cleared field sends nothing"
     );
+}
+
+#[gpui::test]
+fn whitespace_only_cannot_send_and_send_button_preserves_spaces(cx: &mut TestAppContext) {
+    let (host, cx) = bench(console, cx);
+    tab(2, cx);
+    cx.simulate_input("  ");
+    tap("enter", cx);
+    assert!(said(&host, cx).is_empty());
+    cx.simulate_input("hello  ");
+    settle(cx);
+    tab(3, cx);
+    tap("space", cx);
+    assert_eq!(said(&host, cx), ["send   hello  "]);
+    tab(2, cx);
+    tap("enter", cx);
+    assert_eq!(said(&host, cx), ["send   hello  "]);
 }
 
 /// Stops while closed: Connect, then the field; Send rests, so a third Tab wraps to Connect.

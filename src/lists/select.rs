@@ -8,7 +8,7 @@ use gpui::{
 use web_time::Instant;
 
 use super::ListItem;
-use crate::primitives::tab_stop;
+use crate::{primitives::tab_stop, theme::ActiveTheme};
 
 /// How a press or a key picks rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,6 +90,7 @@ pub struct SelectableList {
     label: Option<SharedString>,
     on_change: Option<OnSelect>,
     on_activate: Option<OnActivate>,
+    touch_activate: bool,
 }
 
 impl SelectableList {
@@ -103,6 +104,7 @@ impl SelectableList {
             label: None,
             on_change: None,
             on_activate: None,
+            touch_activate: false,
         }
     }
 
@@ -128,7 +130,13 @@ impl SelectableList {
         self
     }
 
-    /// Enter, or a double press, on a row.
+    /// Activate on every touch-mode press as well as desktop double press.
+    pub fn touch_activate(mut self) -> Self {
+        self.touch_activate = true;
+        self
+    }
+
+    /// Enter, a double press, or an enabled touch-mode press on a row.
     pub fn on_activate(
         mut self,
         handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
@@ -204,6 +212,7 @@ impl RenderOnce for SelectableList {
             .collect();
         let selected = self.selected;
         let multiple = self.multiple;
+        let touch_activate = self.touch_activate && cx.theme().touch_mode;
         let pick: Picker = {
             let (id, keys, selected, cursor, on_change) = (
                 self.id.clone(),
@@ -269,7 +278,7 @@ impl RenderOnce for SelectableList {
                         };
                         window.focus(&focus, cx);
                         pick(ix, how, window, cx);
-                        if event.click_count() == 2 {
+                        if !event.is_keyboard() && (touch_activate || event.click_count() == 2) {
                             activate(&key, window, cx);
                         }
                     })

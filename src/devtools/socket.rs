@@ -155,7 +155,7 @@ impl RenderOnce for WebSocketConsole {
         let draft = self.draft.clone();
         let ready = open && !draft.read(cx).text().trim().is_empty();
         let send = Rc::new(move |window: &mut Window, cx: &mut App| {
-            let text = draft.read(cx).text().trim().to_string();
+            let text = draft.read(cx).text().to_string();
             log::info!("websocket console: send {} bytes", text.len());
             draft.update(cx, |draft, cx| draft.set_text(String::new(), cx));
             on_send(text.into(), window, cx);
