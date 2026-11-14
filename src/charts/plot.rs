@@ -13,6 +13,7 @@ use super::{
     parts::{ChartLegend, ChartTooltip},
     pointer::{Focus, answer, drawing, focus},
     scale::compact,
+    series::Curve,
 };
 use crate::{
     buttons::{Button, ButtonVariant},
@@ -28,12 +29,15 @@ pub(crate) type Layout = Rc<dyn Fn(&Scene) -> Geometry>;
 pub(crate) type Tips =
     Rc<dyn Fn(usize, &Scene) -> (SharedString, Vec<(Option<Ink>, SharedString, String)>)>;
 
+pub(crate) type XyView = ((f64, f64), (f64, f64));
+
 /// What a layout lays out: the frame, the values at this moment of a glide, the series the legend hid, and the zoomed span.
 pub(crate) struct Scene<'a> {
     pub frame: Rect,
     pub values: &'a [Vec<f64>],
     pub hidden: &'a HashSet<SharedString>,
     pub span: (usize, usize),
+    pub xy_view: Option<XyView>,
 }
 
 /// What the pointer picks in a plot.
@@ -59,7 +63,8 @@ pub(crate) struct Plot {
     pub tips: Tips,
     pub pick: Pick,
     pub horizontal: bool,
-    pub smooth: bool,
+    pub curve: Curve,
+    pub voronoi: bool,
     pub rules: Vec<(f64, SharedString)>,
     pub notes: Vec<(usize, SharedString)>,
     pub zoom: bool,
@@ -77,7 +82,8 @@ impl Plot {
             tips,
             pick,
             horizontal: false,
-            smooth: false,
+            curve: Curve::Linear,
+            voronoi: false,
             rules: Vec::new(),
             notes: Vec::new(),
             zoom: false,
@@ -95,6 +101,8 @@ pub(crate) struct State {
     pub hidden: HashSet<SharedString>,
     pub span: Option<(usize, usize)>,
     pub brush: Option<(f32, f32)>,
+    pub xy_view: Option<XyView>,
+    pub drag_last: Option<(f32, f32)>,
     glide: Glide,
 }
 
@@ -108,9 +116,9 @@ pub(crate) fn plot(plot: Plot, base: Div, window: &mut Window, cx: &mut App) -> 
     if moving {
         window.request_animation_frame();
     }
-    let (bounds, hover, pointer, hidden, brush, zoomed) = {
+    let (bounds, hover, pointer, hidden, brush, zoomed, xy_view) = {
         let state = state.read(cx);
-        let held = (state.hidden.clone(), state.brush, state.span);
+        let held = (state.hidden.clone(), state.brush, state.span, state.xy_view);
         (
             state.bounds,
             state.hover,
@@ -118,6 +126,7 @@ pub(crate) fn plot(plot: Plot, base: Div, window: &mut Window, cx: &mut App) -> 
             held.0,
             held.1,
             held.2,
+            held.3,
         )
     };
     let theme = cx.theme();
@@ -147,6 +156,7 @@ pub(crate) fn plot(plot: Plot, base: Div, window: &mut Window, cx: &mut App) -> 
         values: &values,
         hidden: &hidden,
         span,
+        xy_view,
     };
     let drawn = rect.w > 0.0 && rect.h > 0.0 && (count > 0 || plot.pick == Pick::Dot);
     let geometry = Rc::new(if drawn {
@@ -197,7 +207,8 @@ pub(crate) fn plot(plot: Plot, base: Div, window: &mut Window, cx: &mut App) -> 
         })
     });
     let zoomable = plot.zoom && !plot.horizontal && plot.pick != Pick::Dot && count >= 3;
-    let show_all = zoomed.filter(|_| zoomable).map(|_| {
+    let is_zoomed = (zoomable && zoomed.is_some()) || (plot.pick == Pick::Dot && xy_view.is_some());
+    let show_all = is_zoomed.then(|| {
         let reset = state.clone();
         let button = Button::new((id.clone(), "show-all"), "Show all")
             .variant(ButtonVariant::Ghost)
@@ -209,6 +220,7 @@ pub(crate) fn plot(plot: Plot, base: Div, window: &mut Window, cx: &mut App) -> 
             .child(button.on_click(move |_, _, cx| {
                 reset.update(cx, |state, cx| {
                     state.span = None;
+                    state.xy_view = None;
                     log::info!("chart: zoom reset");
                     cx.notify();
                 })
@@ -219,16 +231,23 @@ pub(crate) fn plot(plot: Plot, base: Div, window: &mut Window, cx: &mut App) -> 
         stroke: sizes.stroke.to_pixels(rem),
         hairline: sizes.hairline,
         corner: theme.radius(Radius::Sm).to_pixels(rem),
-        smooth: plot.smooth,
+        curve: plot.curve,
         horizontal: plot.horizontal,
     };
     let root = div().id((id.clone(), "plot")).relative().flex_1().min_h_0();
     let ways = (plot.pick, plot.horizontal, zoomable);
+    let reach = if plot.voronoi {
+        f32::INFINITY
+    } else if theme.touch_mode {
+        pixels(sizes.inset).max(24.0)
+    } else {
+        pixels(sizes.inset)
+    };
     let root = answer(
         root,
         &state,
         ways,
-        (rect, span, pixels(sizes.inset)),
+        (rect, span, reach, count),
         geometry.clone(),
     )
     .child(drawing(

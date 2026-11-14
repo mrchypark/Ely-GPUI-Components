@@ -399,8 +399,8 @@ mod tests {
         use std::rc::Rc;
 
         use gpui::{
-            AppContext as _, Bounds, Context, InteractiveElement, IntoElement, Modifiers,
-            ParentElement, Render, Styled, TestAppContext, Window, div, point, px, size,
+            Bounds, Context, InteractiveElement, IntoElement, Modifiers, ParentElement, Render,
+            Styled, TestAppContext, Window, div, point, px, size,
         };
 
         use crate::forms::options::{Choice, Pick, Popup};

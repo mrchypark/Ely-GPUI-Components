@@ -3,7 +3,12 @@ use std::time::Duration;
 use ely_gpui_component::{
     buttons::{Button, ButtonVariant},
     charts::{
-        AreaChart, BarChart, ChartTooltip, LineChart, Points, RealtimeChart, ScatterChart, Series,
+        AdvancedChart, AreaChart, BarChart, ChartTooltip, Curve, HorizonChart, LineChart, Points,
+        RadialLineChart, RealtimeChart, ScatterChart, Series, Symbol,
+        advanced::{
+            AxisConfig, LineStyle, Point as PlotPoint, Series as PlotSeries, SeriesKind,
+            series_color,
+        },
     },
     theme::ActiveTheme,
     typography::Caption,
@@ -107,6 +112,39 @@ pub fn areas_and_bars(cx: &mut App) -> impl IntoElement + use<> {
             .child(div().w(px(360.)).child(BarChart::new("stacked", quarters).series(web.clone()).series(ios.clone()).series(android.clone()).stacked()))
             .child(div().w(px(360.)).child(BarChart::new("sideways", ["Search", "Direct", "Social", "Email"]).series(Series::new("Visits", [412.0, 288.0, 164.0, 91.0])).horizontal())),
     )
+    .child(
+        div()
+            .flex()
+            .flex_wrap()
+            .gap_6()
+            .child(div().w(px(360.)).max_w_full().child(AreaChart::new("stream", quarters).series(web).series(ios).series(android).stream().smooth()))
+            .child(div().w(px(360.)).max_w_full().child(LineChart::new("log-growth", quarters).series(Series::new("Requests", [12.0, 140.0, 1600.0, 18000.0])).curve(Curve::StepAfter).y_log(10.0))),
+    )
+    .child(
+        div()
+            .flex()
+            .flex_wrap()
+            .gap_6()
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    HorizonChart::new("horizon-cpu", MONTHS)
+                        .series(Series::new("Cluster A", [-18.0, -6.0, 8.0, 22.0, 35.0, 48.0, 41.0, 19.0, -4.0, -15.0, 12.0, 29.0]))
+                        .series(Series::new("Cluster B", [14.0, 28.0, 19.0, -8.0, -24.0, -12.0, 9.0, 31.0, 44.0, 26.0, 7.0, -9.0]))
+                        .bands(3),
+                ),
+            )
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    RadialLineChart::new("radial-temp", MONTHS)
+                        .series(Series::new("Mean °C", [-2.0, 1.0, 7.0, 13.0, 18.0, 23.0, 26.0, 25.0, 20.0, 14.0, 6.0, 0.0]))
+                        .range_band(
+                            [-6.0, -3.0, 2.0, 8.0, 13.0, 18.0, 22.0, 21.0, 15.0, 9.0, 2.0, -4.0],
+                            [2.0, 5.0, 12.0, 18.0, 23.0, 28.0, 30.0, 29.0, 25.0, 19.0, 11.0, 4.0],
+                        )
+                        .filled(true),
+                ),
+            ),
+    )
 }
 
 pub fn scatter(cx: &mut App) -> impl IntoElement + use<> {
@@ -146,8 +184,9 @@ pub fn scatter(cx: &mut App) -> impl IntoElement + use<> {
             .child(
                 div().w(px(360.)).child(
                     ScatterChart::new("scatter")
-                        .points(a)
-                        .points(b)
+                        .points(a.symbol(Symbol::Diamond))
+                        .points(b.symbol(Symbol::Triangle))
+                        .voronoi()
                         .axes("Sessions", "Retention"),
                 ),
             )
@@ -215,4 +254,75 @@ pub fn realtime(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         "Requests per second",
         SharedString::from(format!("{latest:.1}")),
     )))
+}
+
+pub fn advanced(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+    let selected = keep("advanced-selected", || None::<f64>, window, cx);
+    let reset = keep("advanced-reset", || 0u64, window, cx);
+    let (color_a, color_b) = (series_color(0, cx), series_color(1, cx));
+    let primary = keep(
+        "advanced-primary",
+        || {
+            PlotSeries::from_iter_points(
+                "Signal A",
+                (0..2000).map(|i| {
+                    let x = i as f64 * 0.5;
+                    PlotPoint::new(x, (x * 0.04).sin() * 24.0 + (x * 0.19).cos() * 6.0 + 50.0)
+                }),
+                SeriesKind::Line(LineStyle {
+                    color: color_a,
+                    width: 1.5,
+                }),
+            )
+        },
+        window,
+        cx,
+    );
+    let secondary = keep(
+        "advanced-secondary",
+        || {
+            PlotSeries::from_iter_points(
+                "Signal B",
+                (0..2000).map(|i| {
+                    let x = i as f64 * 0.5;
+                    PlotPoint::new(x, (x * 0.025).cos() * 18.0 + 46.0)
+                }),
+                SeriesKind::Line(LineStyle {
+                    color: color_b,
+                    width: 1.5,
+                }),
+            )
+        },
+        window,
+        cx,
+    );
+    let picked = *selected.read(cx);
+    let reset_now = *reset.read(cx);
+    let select_state = selected.clone();
+    let reset_state = reset.clone();
+    section(
+        "AdvancedChart",
+        "Viewport-decimated continuous plot for dense streams. Drag to pan, scroll or pinch to zoom, right-drag for box zoom, click to select X or pin a point, and click legend items to toggle series.",
+        cx,
+    )
+    .child(
+        div().w(px(720.)).max_w_full().child(
+            AdvancedChart::new("advanced-plot")
+                .series(primary.read(cx).handle())
+                .series(secondary.read(cx).handle())
+                .x_axis(AxisConfig::builder().title("Sample").build())
+                .y_axis(AxisConfig::builder().title("Output").build())
+                .selected_x(picked)
+                .reset_token(reset_now)
+                .on_select(move |x, _, cx| set(&select_state, Some(*x), cx)),
+        ),
+    )
+    .child(
+        row().child(
+            Button::new("advanced-reset-btn", "Reset view")
+                .variant(ButtonVariant::Ghost)
+                .on_click(move |_, _, cx| set(&reset_state, reset_now + 1, cx)),
+        ),
+    )
+    .children(picked.map(|x| Caption::new(format!("Selected X: {x:.1}"))))
 }

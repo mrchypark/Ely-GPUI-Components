@@ -363,12 +363,7 @@ impl RenderOnce for MapView {
                 cx.stop_propagation();
                 by_wheel(next, window, cx);
             })
-            // A pinch is consumed here, in its recognized form. The raw contacts it
-            // comes from belong to whichever layer owns them: a backend that already
-            // sends a cumulative pinch stream must convert it to these incremental
-            // deltas, and an adapter that owns the raw contacts must not also let
-            // GPUI synthesize a second pinch for the same fingers. Mixing the two
-            // would zoom the map twice for one gesture, so exactly one of them acts.
+            // Consume recognized pinch deltas here; convert cumulative streams and never synthesize a second pinch.
             .on_pinch(move |event, window, cx| {
                 cx.stop_propagation();
                 if event.phase == TouchPhase::Cancelled {

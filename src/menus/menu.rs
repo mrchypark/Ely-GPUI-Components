@@ -5,6 +5,10 @@ use gpui::{
     IntoElement, ParentElement, Pixels, Point, Styled, Window, anchored, canvas, div, prelude::*,
 };
 
+mod state;
+
+pub(super) use self::state::at_depth;
+use self::state::{Level, settle};
 use super::{
     draw,
     model::{Kind, Menu, PanelsChange},
@@ -15,46 +19,6 @@ use crate::{
     primitives::{Icon, IconName, Takeover, give_back, raise, take_focus},
     theme::{ActiveTheme, IconSize},
 };
-
-/// The menu open at `depth`, following the marked rows above it; `None` once those rows changed.
-pub(super) fn at_depth<'a>(menu: &'a Menu, levels: &[Level], depth: usize) -> Option<&'a Menu> {
-    levels.get(..depth)?.iter().try_fold(menu, |menu, level| {
-        match level
-            .at
-            .and_then(|ix| menu.item_at(ix))
-            .map(|item| &item.kind)
-        {
-            Some(Kind::Sub(sub)) => Some(sub),
-            _ => None,
-        }
-    })
-}
-
-/// Fits open levels to the menu as it is now: a mark on a row gone or disabled clears, and levels under a row that no longer opens them close.
-fn settle(menu: &Menu, levels: &mut Vec<Level>) {
-    let mut here = menu;
-    for depth in 0..levels.len() {
-        let at = levels[depth]
-            .at
-            .filter(|&ix| here.item_at(ix).is_some_and(|item| !item.disabled));
-        levels[depth].at = at;
-        match at.and_then(|ix| here.item_at(ix)).map(|item| &item.kind) {
-            Some(Kind::Sub(sub)) if depth + 1 < levels.len() => here = sub,
-            _ => {
-                levels.truncate(depth + 1);
-                return;
-            }
-        }
-    }
-}
-
-/// One open level: its marked row, that row's box and its panel's box.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(super) struct Level {
-    pub(super) at: Option<usize>,
-    pub(super) row: Bounds<Pixels>,
-    pub(super) panel: Bounds<Pixels>,
-}
 
 /// Where an open menu hangs: under its anchor box, or at a point.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -92,8 +56,7 @@ impl Open {
         self.spot.is_some()
     }
 
-    /// Tells the observer which panels are open, root level first; empty when closed.
-    /// Fires only when the set of open panels actually changed.
+    /// Reports changed open panels, root first; empty when closed.
     pub(crate) fn notify_panels(&mut self) {
         let panels: Vec<Bounds<Pixels>> = self
             .levels

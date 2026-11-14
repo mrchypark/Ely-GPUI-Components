@@ -80,8 +80,7 @@ fn a_pinch_ends_a_drag_underway(cx: &mut TestAppContext) {
     let none = Modifiers::none();
     cx.simulate_mouse_move(window_at((60.0, 200.0)), None, none);
     cx.simulate_mouse_down(window_at((60.0, 200.0)), MouseButton::Left, none);
-    // The first move past the drag threshold starts the drag, and the drag
-    // claims that very move, so the map has not panned yet. The next one does.
+    // The threshold-crossing move starts the drag; only the next move pans the map.
     cx.simulate_mouse_move(window_at((90.0, 190.0)), Some(MouseButton::Left), none);
     settle(cx);
     cx.simulate_mouse_move(window_at((105.0, 180.0)), Some(MouseButton::Left), none);

@@ -15,6 +15,12 @@ CHAIN = re.compile(r"\s*\.\s*\w+\s*(?:::<[^>]*>\s*)?\(")
 SHOWN = {
     ("forms", "Form"): ["FormLabel", "FormError"],
     ("tables", "DataTable"): ["Sparkline"],
+    ("charts", "AreaChart"): ["HorizonChart", "RadialLineChart", "Streamgraph"],
+    ("charts", "ScatterChart"): ["Log", "Symlog", "Curves", "Symbols", "Voronoi"],
+    ("charts", "HeatmapChart"): ["GeoChart"],
+    ("charts", "Treemap"): ["CirclePacking", "PolarChart", "TreeChart"],
+    ("charts", "SankeyChart"): ["ParallelSetsChart", "SurfaceChart"],
+    ("charts", "Histogram"): ["HexbinChart", "ContourChart", "RidgelineChart", "DifferenceChart"],
     ("chat", "PromptInput"): ["VoiceInputButton", "VoiceWaveform"],
     ("shell", "MiniWindow"): ["AlwaysOnTop"],
     ("settings", "SettingsLayout"): [
@@ -85,6 +91,8 @@ def functions(folder):
     """Every `fn` in a page's folder, with its body's span."""
     found = {}
     for file in sorted(folder.rglob("*.rs")):
+        if file.name.startswith("mobile"):
+            continue
         module = file.stem
         text = file.read_text()
         bare = strip(text)
@@ -98,7 +106,7 @@ def functions(folder):
                 if depth == 0:
                     break
                 k += 1
-            found[(module, m.group(1))] = (text, bare, j, k)
+            found.setdefault((module, m.group(1)), (text, bare, j, k))
     return found
 
 

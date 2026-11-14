@@ -1,6 +1,7 @@
 mod actions;
 mod edit;
 mod element;
+mod events;
 mod geometry;
 mod highlight;
 mod ime;
@@ -19,23 +20,13 @@ pub(crate) use actions::{
 pub use edit::History;
 use edit::Snapshot;
 pub(crate) use edit::{from_utf16, to_utf16};
+pub use events::InputEvent;
+use events::{Filter, Highlighter};
 pub use highlight::Highlight;
 pub use owner::{TextInputOwner, set_input_owner_reporter};
 
 use crate::theme::ActiveTheme;
 
-/// What a text input tells its owner.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputEvent {
-    Changed,
-    /// Enter in one line, or the submit key in several.
-    Submit,
-    Focus,
-    Blur,
-}
-
-type Highlighter = Rc<dyn Fn(&str, &App) -> Vec<(Range<usize>, Highlight)>>;
-type Filter = Rc<dyn Fn(char) -> bool>;
 pub(crate) type Fit = Rc<dyn Fn(&str, Range<usize>, &str) -> (String, usize)>;
 
 /// The last shaped text: one entry per hard line, with its display offset.

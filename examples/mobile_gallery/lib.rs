@@ -1,5 +1,4 @@
-//! Shared gallery crate root for a task-local mobile integration manifest.
-//! Register GalleryAssets and prepare its app-private files before rendering.
+//! Mobile gallery root; register GalleryAssets and prepare app-private files before rendering.
 macro_rules! asset {
     ($name:literal) => {
         concat!("gallery-assets/", $name)

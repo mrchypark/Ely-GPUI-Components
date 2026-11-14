@@ -239,8 +239,7 @@ impl WatchPanel {
 
 impl RenderOnce for WatchPanel {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        // A phone never hovers, so a press on a row reveals its remove action.
-        // Reveal은 행마다 따로 든다: 몇 행을 눌러도 그 행들만 함께 열리고, 각자 닫힌다.
+        // Touch reveals each pressed row independently; phones have no hover.
         let revealed = window.use_keyed_state((self.id.clone(), "remove"), cx, |_, _| {
             HashSet::<SharedString>::new()
         });
@@ -271,8 +270,7 @@ impl RenderOnce for WatchPanel {
                 let remove = self.on_remove.clone();
                 let press = revealed.clone();
                 let press_on_remove = revealed.clone();
-                // Reveal은 index가 아니라 표현식 문자열로 묶는다. index로 묶으면 watch 하나가
-                // 지워질 때 뒤의 watch들이 밀리며 reveal이 엉뚱한 watch의 제거 버튼으로 옮겨 붙는다.
+                // Key reveal state by expression so deleting a watch cannot shift it to another row.
                 let key = watch.expression.clone();
                 let open = shown.contains(&key);
                 let (value, color) = match &watch.value {
@@ -283,8 +281,7 @@ impl RenderOnce for WatchPanel {
                     .id((self.id.clone(), format!("row-{ix}")))
                     .group(group.clone())
                     .debug_selector(move || format!("watch-row-{ix}"))
-                    // A phone never hovers, so a press on a row reveals its remove action.
-                    // A pointer keeps its hover, so a press there must not change the reveal.
+                    // Touch reveals on press; pointer hover already reveals and must remain unchanged.
                     .when(touch, |row| {
                         let press = press.clone();
                         let key = key.clone();

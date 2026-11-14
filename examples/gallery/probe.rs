@@ -25,8 +25,7 @@ pub fn probe(key: &'static str, element: impl IntoElement) -> Div {
     probe_sized(key, element, false)
 }
 
-/// Fill an allocated caller width without letting the measurement flex item
-/// impose its child's intrinsic width. Existing probes retain content sizing.
+/// Fill the caller width without changing other probes’ content sizing.
 pub fn probe_sized(key: &'static str, element: impl IntoElement, fill: bool) -> Div {
     div().flex().child(
         Measure::new(key, move |bounds, _, cx| {

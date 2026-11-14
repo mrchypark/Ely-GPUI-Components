@@ -3,6 +3,11 @@ use gpui::{AbsoluteLength, DefiniteLength, Length, Pixels, Styled, px};
 use super::Theme;
 
 impl Theme {
+    /// Width below which a touch master-detail view shows one pane.
+    pub fn touch_compact_width(&self) -> Pixels {
+        px(600.)
+    }
+
     /// Preserve a resolved minimum while applying the optional touch floor.
     pub fn touch_minimum(&self, minimum: Pixels) -> Pixels {
         if self.touch_mode {
@@ -12,24 +17,7 @@ impl Theme {
         }
     }
 
-    /// Applies the 48 pixel touch floor without shrinking a larger existing minimum.
-    ///
-    /// The floor is a *hit area* guarantee, not a layout guarantee. It is meant for
-    /// controls whose visual size carries no spatial meaning: buttons, list rows,
-    /// nav items, inputs, tabs, map markers and clusters, canvas editing handles.
-    ///
-    /// It is deliberately **not** applied to elements whose size or position is the
-    /// encoding: map pin tips, route and line strokes, heat-map cells, chart glyphs,
-    /// selection overlays, and canvas content. Enlarging those changes what the
-    /// user sees rather than what they can hit, so they should keep an explicit
-    /// `min_size` (or a padded transparent hit shape) instead.
-    ///
-    /// Existing minima are preserved: a minimum larger than the floor wins. A `rem`
-    /// minimum is compared in rems, using the crate's own convention of sixteen
-    /// pixels to a rem, so a two rem row becomes three rems rather than losing the
-    /// floor. A fractional minimum is left untouched, because its resolved size
-    /// depends on the parent, which is not known here; callers that know the
-    /// resolved value should apply [`Theme::touch_minimum`] to it directly.
+    /// Apply the 48px hit floor; see docs/touch-targets.md for its limits.
     pub fn touch_target<T: Styled>(&self, mut element: T) -> T {
         if self.touch_mode {
             let minimum = self.touch_minimum(Pixels::ZERO);
@@ -63,8 +51,7 @@ fn touch_floor(current: Option<Length>, floor: Pixels) -> Option<Length> {
                 AbsoluteLength::Pixels(pixels.max(floor)),
             )))
         }
-        // A rem minimum is a fixed size in this crate, so it can be compared with
-        // the floor in rems and raised to it when it is smaller.
+        // Rem minima can be compared against the floor in rems.
         Some(Length::Definite(DefiniteLength::Absolute(AbsoluteLength::Rems(rems)))) => {
             if rems.0 >= FLOOR_REMS {
                 Some(Length::Definite(DefiniteLength::Absolute(
@@ -76,8 +63,7 @@ fn touch_floor(current: Option<Length>, floor: Pixels) -> Option<Length> {
                 )))
             }
         }
-        // A fractional minimum is resolved against the parent, so it cannot be
-        // compared with a floor here; keep the caller's intent.
+        // Fractional minima depend on the parent and cannot be compared here.
         Some(other) => Some(other),
     }
 }

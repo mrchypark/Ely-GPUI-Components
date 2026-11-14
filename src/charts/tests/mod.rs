@@ -2,6 +2,7 @@ mod flow_touch;
 mod funnel_touch;
 mod legend_touch;
 mod limits;
+mod narrow;
 mod network_touch;
 mod pie_touch;
 mod radar_touch;
@@ -19,14 +20,12 @@ use gpui::{
 };
 use jiff::civil::date;
 
-use super::axes::PAD;
 use super::{
-    AreaChart, BarChart, BoxPlot, Bullet, BulletChart, CalendarHeatmap, ChartLegend, ChordDiagram,
-    FunnelChart, GanttChart, HeatmapChart, Histogram, LineChart, NetworkGraph, ParallelCoordinates,
-    PieChart, Points, ProgressChart, RadarChart, RealtimeChart, SankeyChart, ScatterChart, Series,
-    Slice, Sunburst, Task, Treemap, ViolinPlot, WaterfallChart,
+    BarChart, Bullet, BulletChart, CalendarHeatmap, ChartLegend, ChordDiagram, FunnelChart,
+    GanttChart, HeatmapChart, LineChart, NetworkGraph, ParallelCoordinates, ProgressChart,
+    RadarChart, SankeyChart, Series, Task, Treemap,
 };
-use crate::{layout::tests::narrow_width, theme::Theme};
+use crate::theme::Theme;
 
 #[gpui::test]
 fn a_chart_exports_as_svg_and_csv(cx: &mut TestAppContext) {
@@ -219,200 +218,4 @@ fn tab_reaches_a_legend_entry_and_enter_toggles_it(cx: &mut TestAppContext) {
     });
     settle(cx);
     assert_eq!(*heard.borrow(), ["Held out"]);
-}
-
-#[gpui::test]
-fn every_chart_fills_a_column_its_block_measures_by_content(cx: &mut TestAppContext) {
-    cx.update(Theme::init);
-    let two = || Series::new("s", [1.0, 2.0]);
-    let pairs = [vec![0.0, 1.0], vec![1.0, 0.0]];
-    let widths = [
-        narrow_width(cx, "chart-root", move |_, _| {
-            LineChart::new("line", ["a", "b"])
-                .series(two())
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", move |_, _| {
-            AreaChart::new("area", ["a", "b"])
-                .series(two())
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", move |_, _| {
-            BarChart::new("bar", ["a", "b"])
-                .series(two())
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            let points = Points::new("p", [(0.0, 1.0), (1.0, 2.0)]);
-            ScatterChart::new("scatter")
-                .points(points)
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            Histogram::new("histogram", [1.0, 2.0, 2.0, 3.0]).into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            WaterfallChart::new("waterfall")
-                .step("a", 2.0)
-                .step("b", -1.0)
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            BoxPlot::new("box")
-                .group("a", [1.0, 2.0, 3.0])
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            ViolinPlot::new("violin")
-                .group("a", [1.0, 2.0, 3.0])
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            CalendarHeatmap::new("days", date(2026, 1, 5), [1.0; 14]).into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            SankeyChart::new("sankey", ["a", "b"])
-                .link(0, 1, 5.0)
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            FunnelChart::new("funnel")
-                .stage("a", 2.0)
-                .stage("b", 1.0)
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            NetworkGraph::new("network")
-                .node("a", 0)
-                .node("b", 0)
-                .edge(0, 1)
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            ParallelCoordinates::new("parallel", ["a", "b"])
-                .record("r", [1.0, 2.0])
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            PieChart::new("pie")
-                .slice("a", 1.0)
-                .slice("b", 2.0)
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", move |_, _| {
-            RadarChart::new("radar", ["a", "b", "c"])
-                .series(Series::new("s", [1.0, 2.0, 3.0]))
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            RealtimeChart::new("live", [1.0, 2.0], 2).into_any_element()
-        }),
-        narrow_width(cx, "chart-root", move |_, _| {
-            ChordDiagram::new("chord", ["a", "b"], pairs.to_vec()).into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            GanttChart::new("gantt")
-                .task(Task::new("t", date(2026, 3, 1), date(2026, 3, 9)))
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            Sunburst::new("sun", [Slice::new("a", 1.0)]).into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            BulletChart::new("bullets")
-                .bullet(Bullet::new("b", 5.0, 8.0))
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            Treemap::new("treemap")
-                .tile("a", 1.0)
-                .tile("b", 2.0)
-                .into_any_element()
-        }),
-        narrow_width(cx, "chart-root", |_, _| {
-            HeatmapChart::new("heatmap", ["a"])
-                .row("a", [1.0])
-                .into_any_element()
-        }),
-    ];
-    assert_eq!(
-        widths,
-        [px(240.0); 22],
-        "each chart spans the card inside its padding"
-    );
-}
-
-/// A sideways bar chart `wide` across with one band named `name`.
-struct Sideways(String, f32);
-
-impl Render for Sideways {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().w(px(self.1)).child(
-            BarChart::new("sideways", [self.0.clone()])
-                .series(Series::new("s", [3.0]))
-                .horizontal(),
-        )
-    }
-}
-
-#[gpui::test]
-fn a_long_band_name_widens_the_gutter_to_half_the_chart(cx: &mut TestAppContext) {
-    cx.update(Theme::init);
-    let long = "x".repeat(200);
-    for (name, wide) in [
-        ("claude-sonnet-4-5-20250929", 400.0),
-        (&long, 400.0),
-        (&long, 80.0),
-    ] {
-        let (_, cx) = cx.add_window_view(|_, _| Sideways(name.to_string(), wide));
-        settle(cx);
-        let root = cx.debug_bounds("chart-root").expect("the chart draws");
-        let band = cx.debug_bounds("chart-band").expect("the band is named");
-        let half = root.left() + px(wide / 2.0);
-        let pad = cx.update(|window, _| PAD.to_pixels(window.rem_size()));
-        assert!(
-            band.left() >= root.left(),
-            "{wide}: the name's box starts in the chart"
-        );
-        assert!(
-            band.right() + pad <= half,
-            "{wide}: the gutter takes half at most"
-        );
-        if wide > 200.0 {
-            assert!(band.size.width > px(48.0), "past the theme gutter");
-        }
-    }
-}
-
-/// A note, a link, an edge and a wait that name what their chart lacks.
-struct Dangling;
-
-impl Render for Dangling {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let line = LineChart::new("line", ["a", "b"])
-            .series(Series::new("s", [1.0, 2.0]))
-            .note(7, "late");
-        let sankey = SankeyChart::new("sankey", ["a", "b"])
-            .link(0, 9, 5.0)
-            .link(0, 1, 5.0);
-        let network = NetworkGraph::new("network")
-            .node("a", 0)
-            .node("b", 0)
-            .edge(0, 9);
-        let gantt = GanttChart::new("gantt")
-            .task(Task::new("t", date(2026, 3, 1), date(2026, 3, 9)).after(4));
-        div()
-            .w(px(400.0))
-            .child(line)
-            .child(sankey)
-            .child(network)
-            .child(gantt)
-    }
-}
-
-#[gpui::test]
-fn entries_past_their_lists_are_skipped(cx: &mut TestAppContext) {
-    cx.update(Theme::init);
-    let (_, cx) = cx.add_window_view(|_, _| Dangling);
-    settle(cx);
 }

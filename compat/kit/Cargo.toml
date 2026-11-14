@@ -11,6 +11,10 @@ path = "src/lib.rs"
 
 [dev-dependencies]
 ely-gpui-component = { path = "../..", features = ["test-support"] }
-gpui-kit = { version = ">=0.7.1", features = ["test-support"] }
+gpui-kit = { version = ">=0.9.1", features = ["gpui-fast", "test-support"] }
 
 [workspace]
+
+[patch.crates-io]
+gpui-fast-macos = { git = "https://github.com/mrchypark/gpui-mobile", rev = "7ad5c1027af8476299e3fc951fdb9f9b2c83a794" }
+gpui-pre-macos = { git = "https://github.com/mrchypark/gpui-mobile", rev = "7ad5c1027af8476299e3fc951fdb9f9b2c83a794" }

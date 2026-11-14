@@ -131,11 +131,12 @@ fn phone_chat_virtual_rows_day_system_and_markdown_fit_the_conversation(cx: &mut
             .into_iter()
             .enumerate()
             {
-                if let Some(bounds) = cx.debug_bounds(selector) {
-                    if bounds.bottom() > frame.top() && bounds.top() < frame.bottom() {
-                        fits(selector, bounds, frame);
-                        seen[ix] = true;
-                    }
+                if let Some(bounds) = cx.debug_bounds(selector)
+                    && bounds.bottom() > frame.top()
+                    && bounds.top() < frame.bottom()
+                {
+                    fits(selector, bounds, frame);
+                    seen[ix] = true;
                 }
             }
             if seen.iter().all(|seen| *seen) {

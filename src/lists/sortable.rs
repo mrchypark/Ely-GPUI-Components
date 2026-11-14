@@ -24,8 +24,7 @@ fn nudged(at: usize, count: usize, up: bool) -> Option<usize> {
     }
 }
 
-/// Rows you reorder by drag, Alt+Up/Down, or touch-mode move buttons.
-/// `on_reorder(from, to)` asks the owner to move row `from` to place `to`.
+/// Reorder rows by drag, Alt+Up/Down, or touch buttons; callback moves row `from` to `to`.
 #[derive(IntoElement)]
 pub struct SortableList {
     id: ElementId,

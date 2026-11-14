@@ -125,8 +125,7 @@ fn a_finger_tap_opens_the_link_under_it(cx: &mut TestAppContext) {
     cx.simulate_resize(size(px(390.), px(400.)));
     settle(cx);
 
-    // The link fills the first row of the grid; a finger carries no modifier,
-    // so the press itself opens it.
+    // A touch press opens the link; touch supplies no platform modifier.
     let at = view.read_with(cx, |host, cx| {
         let terminal = host.terminal.read(cx);
         terminal.origin

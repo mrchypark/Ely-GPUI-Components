@@ -18,8 +18,7 @@ fn a_tap_holds_a_toast_and_then_lets_it_go(cx: &mut TestAppContext) {
     cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = true));
     settle(cx);
     let id = push(&view, Toast::new("Saved"), cx);
-    // The toast rises on the wall clock; let it finish before touching it.
-    std::thread::sleep(Duration::from_millis(400));
+    cx.executor().advance_clock(Duration::from_millis(400));
     settle(cx);
 
     let at = stack(cx);
@@ -47,8 +46,7 @@ fn a_second_tap_still_lets_the_toast_go(cx: &mut TestAppContext) {
     cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = true));
     settle(cx);
     push(&view, Toast::new("Saved"), cx);
-    // The toast rises on the wall clock; let it finish before touching it.
-    std::thread::sleep(Duration::from_millis(400));
+    cx.executor().advance_clock(Duration::from_millis(400));
     settle(cx);
 
     let at = stack(cx);
@@ -65,8 +63,7 @@ fn a_second_tap_still_lets_the_toast_go(cx: &mut TestAppContext) {
         !toasts(&view, cx).is_empty(),
         "the tap still holds the toast open"
     );
-    // The first tap's timer ends the hold five seconds in, and the toast's own
-    // clock takes it from there. A second tap must not push that out.
+    // The first tap starts the toast timer; a second tap must not extend it.
     wait(Duration::from_secs(2), cx);
     assert!(
         toasts(&view, cx).is_empty(),
