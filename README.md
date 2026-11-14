@@ -21,7 +21,7 @@ workspace-root `[patch.crates-io]` overrides for `gpui-fast` and
 `gpui-fast-wgpu`. Cargo does not inherit patches from dependencies. Without
 those overrides, the registry packages do not include the mobile patches.
 On macOS, `gpui-fast-macos` 0.1.14 requires the workspace-root patch in this
-repository's `Cargo.toml`; its three unstable calls are replaced with stable
+repository's `Cargo.toml`, pinned to the mobile fork; its three unstable calls use stable
 equivalents. Cargo does not inherit this patch from Ely. CI uses Rust 1.99.0;
 Android and iOS simulator integration builds are checked with Rust 1.97.1.
 

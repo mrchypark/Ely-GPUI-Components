@@ -187,8 +187,7 @@ impl RenderOnce for ChatMessage {
                     .children(self.footer.map(|footer| div().pt_1().child(footer))),
             )
             .into_any_element();
-        // A message with a menu opens it on a right click, or on a long press
-        // where there is no hover to open it with.
+        // Open message menus by right-click or long-press when hover is unavailable.
         match self.menu {
             Some(menu) => ContextMenu::new((self.id.clone(), "context-menu"), menu)
                 .child(row)

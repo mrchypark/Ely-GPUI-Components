@@ -2400,6 +2400,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-macos"
 version = "0.1.14"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=7ad5c1027af8476299e3fc951fdb9f9b2c83a794#7ad5c1027af8476299e3fc951fdb9f9b2c83a794"
 dependencies = [
  "accesskit",
  "accesskit_macos",

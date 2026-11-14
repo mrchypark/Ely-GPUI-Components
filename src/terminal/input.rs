@@ -80,9 +80,7 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<Terminal>)
             MouseButton::Left,
             cx.listener(|terminal, _, _, cx| {
                 terminal.selecting = false;
-                // A finger has no hover to clear, so the pressed link would stay
-                // underlined after the tap. A pointer keeps its hover, so the
-                // underline stays while the button is held.
+                // Clear touch underlines after tap; pointer hover keeps them while pressed.
                 if cx.theme().touch_mode && terminal.hovered.take().is_some() {
                     cx.notify();
                 }
@@ -181,8 +179,7 @@ impl Terminal {
 
     fn press(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         let (row, cell, side) = self.cell_at(event.position);
-        // A finger carries no platform modifier, so a plain tap opens the link and a
-        // long press still starts a text selection.
+        // A plain tap opens links; long-press still selects text.
         let opens_link = event.modifiers.platform || cx.theme().touch_mode;
         if opens_link && let Some((_, _, target)) = self.link_at(row, cell.column.0) {
             // A finger gets no hover, so the press marks the link for the underline.

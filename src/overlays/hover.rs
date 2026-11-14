@@ -80,8 +80,7 @@ impl HoverCard {
         }
     }
 
-    /// Limits placement and scrolling content to the host's logical usable rectangle.
-    /// If its frame leaves no content space, hides the card and cancels delayed opening.
+    /// Bound placement and scrolling; no content space hides and cancels the card.
     pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
         self.usable_bounds = Some(bounds);
         self
@@ -140,7 +139,12 @@ impl RenderOnce for HoverCard {
                         .when_some(available, |popover, bounds| popover.usable_bounds(bounds)),
                 );
         }
-        let room = bounded::has_room(available, bounded::HOVER_PADDING, window);
+        let room = bounded::has_room(
+            available,
+            bounded::HOVER_PADDING,
+            window,
+            cx.theme().hairline(),
+        );
         let (enter, measure) = (state.clone(), state.clone());
         let host = div()
             .id(self.id.clone())

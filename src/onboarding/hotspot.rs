@@ -25,8 +25,7 @@ impl RenderOnce for Dot {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let side = theme.onboarding().hotspot;
-        // A finger needs a target to land on, so the dot's own box grows to a
-        // finger's size; the pulse inside it keeps the size it had.
+        // Enlarge the dot hit box for touch; keep the pulse size unchanged.
         let hit = theme.touch_minimum(side.to_pixels(window.rem_size()) * 2.0);
         let toggle = self.toggle;
         div()

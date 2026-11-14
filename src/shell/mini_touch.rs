@@ -71,8 +71,7 @@ fn a_mini_window_hides_its_bar_on_the_desktop(cx: &mut TestAppContext) {
         MiniWindow::new("Notes", body.into())
     });
     settle(cx);
-    // The desktop keeps its own bar size; a phone would have widened it to a
-    // thumb-sized target, and the desktop does not.
+    // Keep the desktop bar size; only phones widen it for touch.
     let bar = cx.debug_bounds("mini-window-bar").expect("the bar draws");
     assert!(
         bar.size.height < px(48.),

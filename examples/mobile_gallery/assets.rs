@@ -8,8 +8,7 @@ pub use base::CUSTOM_ICON;
 pub struct GalleryAssets;
 static FILE_ROOT: OnceLock<std::path::PathBuf> = OnceLock::new();
 
-/// Call once with an app-private writable directory before rendering specimens.
-/// No install path is compiled into the binary; all bytes are bundled offline.
+/// Set the app-private asset directory before rendering; assets are bundled, with no install path.
 pub fn prepare_files(root: &Path) -> anyhow::Result<()> {
     if let Some(existing) = FILE_ROOT.get() {
         anyhow::ensure!(

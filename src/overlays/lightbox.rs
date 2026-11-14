@@ -4,7 +4,6 @@ use gpui::{
     Animation, AnimationExt, App, Bounds, Div, ElementId, ImageSource, InteractiveElement,
     IntoElement, MouseButton, ObjectFit, ParentElement, Pixels, Point, RenderOnce, SharedString,
     Size, Stateful, StatefulInteractiveElement, Styled, Window, anchored, canvas, div, prelude::*,
-    px,
 };
 
 use crate::{
@@ -52,9 +51,7 @@ pub(crate) fn media_button(
         .items_center()
         .justify_center()
         .size(theme.control_height(size))
-        .when(theme.touch_mode, |button| {
-            button.min_w(px(48.)).min_h(px(48.))
-        })
+        .map(|button| theme.touch_target(button))
         .rounded_full()
         .border_1()
         .border_color(gpui::transparent_black())

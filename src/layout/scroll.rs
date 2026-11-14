@@ -4,7 +4,7 @@ use gpui::{
     AnyElement, App, Axis, Bounds, Canvas, Div, ElementId, EmptyView, Entity, EntityId,
     FocusHandle, HoverListenerMode, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
     RenderOnce, ScrollHandle, StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas,
-    div, point, prelude::*, px,
+    div, point, prelude::*,
 };
 use smallvec::SmallVec;
 use web_time::Instant;
@@ -43,8 +43,7 @@ pub(crate) fn reveal_when_focused(
     focus_revealer(id, scroll, focus, axis, None, window, cx)
 }
 
-/// Reveals again when usable bounds change while focus stays in the same field.
-/// Resize the scroll viewport or add keyboard padding before layout; bounds alone add no scroll reach.
+/// Re-reveal on bounds changes; resize or pad the viewport to add scroll reach.
 pub fn reveal_when_focused_in_bounds(
     id: impl Into<ElementId>,
     scroll: &ScrollHandle,
@@ -208,15 +207,13 @@ impl RenderOnce for Scrollbar {
         let axis = self.axis;
         let handle = self.handle.clone();
         let (idle, busy) = (theme.colors.fg.opacity(0.22), theme.colors.fg.opacity(0.42));
-        // A finger has no hover to light the thumb, so a phone keeps it lit and
-        // the grab target grows to a finger's width while the bar stays thin.
+        // Keep the thumb lit and its grab target finger-sized on touch.
         let grab = if theme.touch_mode {
-            theme.touch_minimum(px(48.))
+            theme.touch_minimum(Pixels::ZERO)
         } else {
             thickness
         };
-        // The thin bar keeps the desktop's place inside the track band; on a
-        // phone the wide grab target around it reaches the screen edge.
+        // Keep the thin bar in place while the touch target reaches the edge.
         let bar_inset = if theme.touch_mode {
             thickness
         } else {
@@ -249,9 +246,7 @@ impl RenderOnce for Scrollbar {
                 |_, _, _, cx| cx.new(|_| EmptyView),
             )
             .map(|thumb| match axis {
-                // A finger grabs from the edge inward, so the wide target runs
-                // to the edge of the screen while the thin bar inside it stays
-                // where the eye expects it.
+                // Extend the touch target to the edge without shifting the bar.
                 Axis::Vertical if theme.touch_mode => thumb.top(start).right_0().w(grab).h(length),
                 Axis::Horizontal if theme.touch_mode => {
                     thumb.left(start).bottom_0().h(grab).w(length)

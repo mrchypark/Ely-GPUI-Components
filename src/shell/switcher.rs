@@ -80,11 +80,13 @@ impl RenderOnce for WindowSwitcher {
                 .control_height(ControlSize::Lg)
                 .to_pixels(window.rem_size()),
         );
-        let room = tooltip_has_room(area, gpui::rems(0.5), window)
+        let room = tooltip_has_room(area, gpui::rems(0.5), window, cx.theme().hairline())
             && area.is_none_or(|area| {
                 area.size.width > minimum * 2.
                     && area.size.height
-                        > minimum * 2. + gpui::rems(1.).to_pixels(window.rem_size()) + gpui::px(4.)
+                        > minimum * 2.
+                            + gpui::rems(1.).to_pixels(window.rem_size())
+                            + cx.theme().hairline() * 4.
             });
         if !room {
             let previous = state.update(cx, |state, _| {

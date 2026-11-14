@@ -63,8 +63,7 @@ fn a_second_tap_still_lets_the_toast_go(cx: &mut TestAppContext) {
         !toasts(&view, cx).is_empty(),
         "the tap still holds the toast open"
     );
-    // The first tap's timer ends the hold five seconds in, and the toast's own
-    // clock takes it from there. A second tap must not push that out.
+    // The first tap starts the toast timer; a second tap must not extend it.
     wait(Duration::from_secs(2), cx);
     assert!(
         toasts(&view, cx).is_empty(),

@@ -104,7 +104,7 @@ impl RenderOnce for MenuBar {
         let bar_focused = focus.is_focused(window);
         let state = window.use_keyed_state((self.id.clone(), "menu"), cx, |_, _| Open::default());
         // Menu surfaces have p_1 padding and a one-pixel border on each side.
-        let frame = window.rem_size() * 0.5 + gpui::px(2.);
+        let frame = window.rem_size() * 0.5 + cx.theme().hairline() * 2.;
         let room = self.usable_bounds.is_none_or(|bounds| {
             let area = super::placement::area(bounds, window.viewport_size());
             area.size.width > frame && area.size.height > frame

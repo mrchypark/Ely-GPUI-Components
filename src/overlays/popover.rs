@@ -121,8 +121,7 @@ impl Popover {
         self
     }
 
-    /// Limits placement and scrolling content to the host's logical usable rectangle.
-    /// If its padding and border leave no content space, closes until explicitly reopened.
+    /// Bound placement and scrolling; no content space closes until explicitly reopened.
     pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
         self.usable_bounds = Some(bounds);
         self
@@ -132,7 +131,12 @@ impl Popover {
 impl RenderOnce for Popover {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let available = bounded::available(self.usable_bounds, cx.theme().touch_mode, window);
-        let room = bounded::has_room(available, bounded::POPOVER_PADDING, window);
+        let room = bounded::has_room(
+            available,
+            bounded::POPOVER_PADDING,
+            window,
+            cx.theme().hairline(),
+        );
         let state = window.use_keyed_state((self.id.clone(), "popover"), cx, |_, _| Pop::default());
         let open = state.read(cx).open;
         let toggle: Run = {
