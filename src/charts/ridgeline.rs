@@ -491,33 +491,36 @@ impl RenderOnce for RidgelineChart {
                     return;
                 }
                 let delta = ev.delta.pixel_delta(Pixels::from(16.0));
-                s_scroll.update(cx, |s, cx| {
-                    let cur = s.x_domain.unwrap_or(act_dom);
-                    let base_span = (base_dom.1 - base_dom.0).abs().max(1e-6);
-                    if ev.source == ScrollSource::Touch {
-                        let dx = f32::from(delta.x);
-                        if dx.abs() >= 0.2 {
+                let (dx, dy) = (f32::from(delta.x), f32::from(delta.y));
+                let base_span = (base_dom.1 - base_dom.0).abs().max(1e-6);
+                if ev.source == ScrollSource::Touch {
+                    if dx.abs() > dy.abs() && dx.abs() >= 0.2 {
+                        s_scroll.update(cx, |s, cx| {
+                            let cur = s.x_domain.unwrap_or(act_dom);
                             let shift = (cur.1 - cur.0) * f64::from(-dx / rect.w);
                             s.x_domain = Some((cur.0 + shift, cur.1 + shift));
                             cx.notify();
-                        }
-                    } else {
-                        let dy = f32::from(delta.y);
-                        if dy.abs() >= 0.05 {
-                            let factor = (1.0 - f64::from(dy) * 0.002).clamp(0.2, 5.0);
-                            let t = f64::from(((pos.0 - rect.x) / rect.w).clamp(0.0, 1.0));
-                            let anchor = cur.0 + (cur.1 - cur.0) * t;
-                            let n0 = anchor + (cur.0 - anchor) * factor;
-                            let n1 = anchor + (cur.1 - anchor) * factor;
-                            let span = (n1 - n0).abs();
-                            if span >= base_span * 1e-4 && span <= base_span * 10.0 {
-                                s.x_domain = Some((n0, n1));
-                                cx.notify();
-                            }
-                        }
+                        });
+                        cx.stop_propagation();
                     }
-                });
-                cx.stop_propagation();
+                    return;
+                }
+                if dy.abs() >= 0.05 {
+                    s_scroll.update(cx, |s, cx| {
+                        let cur = s.x_domain.unwrap_or(act_dom);
+                        let factor = (1.0 - f64::from(dy) * 0.002).clamp(0.2, 5.0);
+                        let t = f64::from(((pos.0 - rect.x) / rect.w).clamp(0.0, 1.0));
+                        let anchor = cur.0 + (cur.1 - cur.0) * t;
+                        let n0 = anchor + (cur.0 - anchor) * factor;
+                        let n1 = anchor + (cur.1 - anchor) * factor;
+                        let span = (n1 - n0).abs();
+                        if span >= base_span * 1e-4 && span <= base_span * 10.0 {
+                            s.x_domain = Some((n0, n1));
+                            cx.notify();
+                        }
+                    });
+                    cx.stop_propagation();
+                }
             })
             .on_pinch(move |ev: &PinchEvent, _, cx| {
                 let off = ev.position - s_pinch.read(cx).bounds.origin;

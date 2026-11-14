@@ -6,11 +6,11 @@ use std::{
 };
 
 use gpui::{
-    App, Bounds, Div, ElementId, Entity, HoverListenerMode, Hsla, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder,
-    PinchEvent, Pixels, Point, Refineable, RenderOnce, ScrollEvent, ScrollSource, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, TouchPhase, Window, canvas, div, fill,
-    prelude::FluentBuilder as _, size,
+    App, Bounds, DispatchPhase, Div, ElementId, Entity, HoverListenerMode, Hsla,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, PathBuilder, PinchEvent, Pixels, Point, Refineable, RenderOnce, ScrollEvent,
+    ScrollSource, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
+    TouchDragEvent, TouchPhase, Window, canvas, div, fill, prelude::FluentBuilder as _, size,
 };
 
 use super::{
@@ -725,7 +725,9 @@ impl RenderOnce for HorizonChart {
             let t = ((x.clamp(rect.x, rect.x + rect.w) - rect.x) / rect.w).clamp(0.0, 1.0);
             Some(start_col + ((t * (n_cols - 1) as f32).round() as usize).min(n_cols - 1))
         };
-        let (moved, pressed, released, up_bounds, left, wheeled, pinched) = (
+        let (moved, pressed, released, up_bounds, left, wheeled, pinched, touch_drag, touch_finish) = (
+            state.clone(),
+            state.clone(),
             state.clone(),
             state.clone(),
             state.clone(),
@@ -777,6 +779,73 @@ impl RenderOnce for HorizonChart {
             .flex_1()
             .min_h_0()
             .when(total_cols >= 3, |plot| plot.cursor_crosshair())
+            .when(total_cols >= 3 && zoomed.is_none(), |plot| {
+                plot.child(
+                    canvas(
+                        |_, _, _| {},
+                        move |_, _, window, _| {
+                            let touch = touch_drag.clone();
+                            let finish = touch_finish.clone();
+                            window.on_mouse_event(move |ev: &TouchDragEvent, phase, window, cx| {
+                                if phase != DispatchPhase::Bubble {
+                                    return;
+                                }
+                                let bounds = touch.read(cx).bounds;
+                                let start = local(ev.start_position, bounds);
+                                let at = local(ev.position, bounds);
+                                if ev.phase == TouchPhase::Started {
+                                    if window.default_prevented()
+                                        || !rect.contains(start)
+                                        || (at.0 - start.0).abs() <= (at.1 - start.1).abs()
+                                    {
+                                        return;
+                                    }
+                                    touch.update(cx, |st, cx| {
+                                        st.brush =
+                                            Some((start.0, at.0.clamp(rect.x, rect.x + rect.w)));
+                                        st.hover = None;
+                                        cx.notify();
+                                    });
+                                    window.prevent_default();
+                                    cx.stop_propagation();
+                                } else if ev.phase == TouchPhase::Cancelled {
+                                    touch.update(cx, |st, cx| {
+                                        st.brush = None;
+                                        cx.notify();
+                                    });
+                                } else if touch.read(cx).brush.is_some() {
+                                    touch.update(cx, |st, cx| {
+                                        if let Some(brush) = st.brush.as_mut() {
+                                            brush.1 = at.0.clamp(rect.x, rect.x + rect.w);
+                                        }
+                                        cx.notify();
+                                    });
+                                    if ev.phase == TouchPhase::Ended {
+                                        finish.update(cx, |st, cx| {
+                                            let Some((a, b)) = st.brush.take() else {
+                                                return;
+                                            };
+                                            if (b - a).abs() > 4.0
+                                                && let (Some(from), Some(to)) =
+                                                    (col_at(a.min(b)), col_at(a.max(b)))
+                                                && to > from
+                                            {
+                                                st.span = (from > 0 || to + 1 < total_cols)
+                                                    .then_some((from, to));
+                                            }
+                                            cx.notify();
+                                        });
+                                    }
+                                    cx.stop_propagation();
+                                }
+                            });
+                        },
+                    )
+                    .absolute()
+                    .inset_0()
+                    .size_full(),
+                )
+            })
             .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
                 let pos = local(event.position, moved.read(cx).bounds);
                 moved.update(cx, |st, cx| {
@@ -1773,7 +1842,7 @@ mod tests {
         );
         for patch in &patches {
             for &(x, y) in &patch.points {
-                assert!(x >= 0.0 && x <= 100.0, "x stays in row: {x}");
+                assert!((0.0..=100.0).contains(&x), "x stays in row: {x}");
                 assert!(
                     y >= row.y - 1e-3 && y <= row.y + row.h + 1e-3,
                     "y stays in row: {y}"
@@ -1795,7 +1864,7 @@ mod tests {
 
     #[test]
     fn radial_layout_maps_rings_and_envelope_within_outer_radius() {
-        let series = vec![Series::new("Temp", [10.0, 20.0, 15.0, 12.0])];
+        let series = [Series::new("Temp", [10.0, 20.0, 15.0, 12.0])];
         let refs: Vec<&Series> = series.iter().collect();
         let band = (vec![5.0, 15.0, 10.0, 8.0], vec![14.0, 25.0, 19.0, 16.0]);
         let layout = compute_radial(4, &refs, Some(&band), (120.0, 120.0), 80.0, 0.0);
@@ -2132,6 +2201,19 @@ mod tests {
         vc_h.simulate_click(h_show_all.center(), Modifiers::none());
         settle(vc_h);
         assert!(vc_h.debug_bounds("chart-show-all").is_none());
+
+        vc_h.simulate_event(gpui::TouchDragEvent {
+            phase: TouchPhase::Started,
+            start_position: h_from,
+            position: h_to,
+        });
+        vc_h.simulate_event(gpui::TouchDragEvent {
+            phase: TouchPhase::Ended,
+            start_position: h_from,
+            position: h_to,
+        });
+        settle(vc_h);
+        assert!(vc_h.debug_bounds("chart-show-all").is_some());
 
         // RadialLineChart touch_mode: tap pin, pinch clears drag, touch swipe rotates, Reset button resets.
         let (_, vc_r) = cx.add_window_view(|_, _| NarrowRadial);

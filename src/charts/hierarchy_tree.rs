@@ -1392,8 +1392,7 @@ mod tests {
         settle(vc);
         assert!(vc.debug_bounds("chart-tooltip").is_none());
 
-        // Clicking Beta again expands its descendants (note Beta shifts slightly when collapsed,
-        // so recompute Beta's collapsed position to click it reliably).
+        // Clicking Beta again expands its descendants using its collapsed layout coordinates.
         let mut collapsed = HashSet::new();
         collapsed.insert(beta.path_key.clone());
         let collapsed_layout = compute_layout(

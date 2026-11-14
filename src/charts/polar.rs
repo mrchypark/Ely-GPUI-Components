@@ -360,23 +360,25 @@ impl RenderOnce for PolarChart {
             })
             .on_scroll(move |ev: &ScrollEvent, _, cx| {
                 let delta = ev.delta.pixel_delta(Pixels::from(16.0));
-                s_scroll.update(cx, |s, cx| {
-                    if ev.source == ScrollSource::Touch {
-                        let dx = f32::from(delta.x);
-                        if dx.abs() >= 0.2 {
+                let (dx, dy) = (f32::from(delta.x), f32::from(delta.y));
+                if ev.source == ScrollSource::Touch {
+                    if dx.abs() > dy.abs() && dx.abs() >= 0.2 {
+                        s_scroll.update(cx, |s, cx| {
                             s.rotation = (s.rotation + dx * 0.008).rem_euclid(TAU);
                             cx.notify();
-                        }
-                    } else {
-                        let dy = f32::from(delta.y);
-                        if dy.abs() >= 0.05 {
-                            let z = if s.zoom <= 0.0 { 1.0 } else { s.zoom };
-                            s.zoom = (z * (1.0 + dy * 0.002)).clamp(0.5, 3.0);
-                            cx.notify();
-                        }
+                        });
+                        cx.stop_propagation();
                     }
-                });
-                cx.stop_propagation();
+                    return;
+                }
+                if dy.abs() >= 0.05 {
+                    s_scroll.update(cx, |s, cx| {
+                        let z = if s.zoom <= 0.0 { 1.0 } else { s.zoom };
+                        s.zoom = (z * (1.0 + dy * 0.002)).clamp(0.5, 3.0);
+                        cx.notify();
+                    });
+                    cx.stop_propagation();
+                }
             })
             .on_pinch(move |ev: &PinchEvent, _, cx| {
                 let scale = ev.delta.exp().clamp(0.25, 4.0);

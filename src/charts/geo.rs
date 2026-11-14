@@ -880,8 +880,7 @@ fn centroid_deg(ring: &[(f64, f64)]) -> Option<(f64, f64)> {
     Some((sx / n, sy / n))
 }
 
-/// Rotate `(lon_deg, lat_deg)` by `(yaw_deg, pitch_deg)` into a 3D unit vector `(x, y, z)`
-/// where `+x` faces the viewer, `+y` is East, and `+z` is North.
+/// Rotate `(lon_deg, lat_deg)` by `(yaw_deg, pitch_deg)` into a 3D unit vector `(x, y, z)` (`+x` viewer, `+y` East, `+z` North).
 fn rotate_vec(lon_deg: f64, lat_deg: f64, (yaw_deg, pitch_deg): (f64, f64)) -> [f64; 3] {
     let dl = (lon_deg + yaw_deg).to_radians();
     let phi = lat_deg.to_radians();

@@ -1,11 +1,11 @@
 use std::{fmt::Write as _, rc::Rc};
 
 use gpui::{
-    App, Bounds, Div, ElementId, Entity, HoverListenerMode, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, PathBuilder, PinchEvent, Pixels,
-    Point, Refineable, RenderOnce, ScrollEvent, ScrollSource, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, TouchPhase, Window, canvas, div, fill,
-    prelude::FluentBuilder as _, size,
+    App, Bounds, DispatchPhase, Div, ElementId, Entity, HoverListenerMode, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, PathBuilder,
+    PinchEvent, Pixels, Point, Refineable, RenderOnce, ScrollEvent, ScrollSource, SharedString,
+    StatefulInteractiveElement, StyleRefinement, Styled, TouchDragEvent, TouchPhase, Window,
+    canvas, div, fill, prelude::FluentBuilder as _, size,
 };
 
 use super::{
@@ -454,7 +454,9 @@ impl RenderOnce for DifferenceChart {
             let t = ((x.clamp(rect.x, rect.x + rect.w) - rect.x) / rect.w).clamp(0.0, 1.0);
             Some(start_ix + ((t * (vis_n - 1) as f32).round() as usize).min(vis_n - 1))
         };
-        let (moved, pressed, released, left, wheeled, pinched) = (
+        let (moved, pressed, released, left, wheeled, pinched, touch_drag, touch_finish) = (
+            state.clone(),
+            state.clone(),
             state.clone(),
             state.clone(),
             state.clone(),
@@ -494,6 +496,73 @@ impl RenderOnce for DifferenceChart {
 
         root.id((self.id.clone(), "difference"))
             .when(n >= 3, |plot| plot.cursor_crosshair())
+            .when(n >= 3 && zoomed.is_none(), |plot| {
+                plot.child(
+                    canvas(
+                        |_, _, _| {},
+                        move |_, _, window, _| {
+                            let touch = touch_drag.clone();
+                            let finish = touch_finish.clone();
+                            window.on_mouse_event(move |ev: &TouchDragEvent, phase, window, cx| {
+                                if phase != DispatchPhase::Bubble {
+                                    return;
+                                }
+                                let bounds = touch.read(cx).bounds;
+                                let start = local(ev.start_position, bounds);
+                                let at = local(ev.position, bounds);
+                                if ev.phase == TouchPhase::Started {
+                                    if window.default_prevented()
+                                        || !rect.contains(start)
+                                        || (at.0 - start.0).abs() <= (at.1 - start.1).abs()
+                                    {
+                                        return;
+                                    }
+                                    touch.update(cx, |st, cx| {
+                                        st.brush =
+                                            Some((start.0, at.0.clamp(rect.x, rect.x + rect.w)));
+                                        st.hover = None;
+                                        cx.notify();
+                                    });
+                                    window.prevent_default();
+                                    cx.stop_propagation();
+                                } else if ev.phase == TouchPhase::Cancelled {
+                                    touch.update(cx, |st, cx| {
+                                        st.brush = None;
+                                        cx.notify();
+                                    });
+                                } else if touch.read(cx).brush.is_some() {
+                                    touch.update(cx, |st, cx| {
+                                        if let Some(brush) = st.brush.as_mut() {
+                                            brush.1 = at.0.clamp(rect.x, rect.x + rect.w);
+                                        }
+                                        cx.notify();
+                                    });
+                                    if ev.phase == TouchPhase::Ended {
+                                        finish.update(cx, |st, cx| {
+                                            let Some((a, b)) = st.brush.take() else {
+                                                return;
+                                            };
+                                            if (b - a).abs() > 4.0
+                                                && let (Some(from), Some(to)) =
+                                                    (col_at(a.min(b)), col_at(a.max(b)))
+                                                && to > from
+                                            {
+                                                st.span =
+                                                    (from > 0 || to + 1 < n).then_some((from, to));
+                                            }
+                                            cx.notify();
+                                        });
+                                    }
+                                    cx.stop_propagation();
+                                }
+                            });
+                        },
+                    )
+                    .absolute()
+                    .inset_0()
+                    .size_full(),
+                )
+            })
             .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
                 let pos = local(event.position, moved.read(cx).bounds);
                 moved.update(cx, |st, cx| {
@@ -881,5 +950,19 @@ mod tests {
         vc.simulate_click(show_all.center(), Modifiers::none());
         settle(vc);
         assert!(vc.debug_bounds("chart-show-all").is_none());
+
+        // Horizontal touch drag brushes and zooms without requiring an earlier mouse-down.
+        vc.simulate_event(gpui::TouchDragEvent {
+            phase: TouchPhase::Started,
+            start_position: from,
+            position: to,
+        });
+        vc.simulate_event(gpui::TouchDragEvent {
+            phase: TouchPhase::Ended,
+            start_position: from,
+            position: to,
+        });
+        settle(vc);
+        assert!(vc.debug_bounds("chart-show-all").is_some());
     }
 }
