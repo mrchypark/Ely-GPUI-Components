@@ -7,7 +7,6 @@ use gpui::{
     canvas, div,
 };
 
-use crate::charts::advanced::geom::{Point as DataPoint, ScreenPoint, ScreenRect};
 use crate::charts::advanced::interaction::zoom_viewport_with_scales;
 use crate::charts::advanced::plot::Plot;
 use crate::charts::advanced::style::Theme as PlotTheme;
@@ -25,6 +24,8 @@ mod input;
 mod scroll;
 #[cfg(test)]
 mod tests;
+
+use scroll::{ViewportCenter, apply_manual_view, screen_point};
 
 /// Events emitted by PlotView when the user interacts with a chart.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -479,44 +480,5 @@ fn apply_link_updates(link: &LinkBinding, plot: &mut Plot, state: &mut PlotUiSta
                 }
             }
         }
-    }
-}
-
-pub(super) fn screen_point(point: Point<Pixels>) -> ScreenPoint {
-    ScreenPoint::new(f32::from(point.x), f32::from(point.y))
-}
-
-pub(super) fn apply_manual_view(
-    plot: &mut Plot,
-    state: &mut PlotUiState,
-    rect: ScreenRect,
-    viewport: Viewport,
-) {
-    plot.set_manual_view(viewport);
-    state.viewport = Some(viewport);
-    state.transform =
-        Transform::with_scales(viewport, rect, plot.x_axis().scale(), plot.y_axis().scale());
-}
-
-pub(super) trait ViewportCenter {
-    fn center(&self) -> DataPoint;
-    fn x_center(&self) -> DataPoint;
-    fn y_center(&self) -> DataPoint;
-}
-
-impl ViewportCenter for Viewport {
-    fn center(&self) -> DataPoint {
-        DataPoint::new(
-            (self.x.min + self.x.max) * 0.5,
-            (self.y.min + self.y.max) * 0.5,
-        )
-    }
-
-    fn x_center(&self) -> DataPoint {
-        self.center()
-    }
-
-    fn y_center(&self) -> DataPoint {
-        self.center()
     }
 }

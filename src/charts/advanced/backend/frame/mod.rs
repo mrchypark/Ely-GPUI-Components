@@ -20,12 +20,14 @@ use super::text::GpuiTextMeasurer;
 
 mod axes;
 mod hud;
+mod legend;
 mod pins;
 #[cfg(test)]
 mod tests;
 
 use axes::{build_axes, build_axis_titles};
-use hud::{build_hover, build_legend, build_linked_brush, build_linked_cursor};
+use hud::{build_hover, build_linked_brush, build_linked_cursor};
+use legend::build_legend;
 use pins::build_pins;
 
 #[derive(Debug, Clone)]
