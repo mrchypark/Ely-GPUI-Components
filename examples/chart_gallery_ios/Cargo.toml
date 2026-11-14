@@ -1,0 +1,33 @@
+[package]
+name = "ely-chart-gallery-ios"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# This host is intentionally outside Ely's workspace so it can apply the mobile patches.
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+anyhow = "1"
+ely-gpui-component = { path = "../..", default-features = false }
+gpui-mobile = { path = "../../../gpui-mobile" }
+gpui = { package = "gpui-fast", version = "=0.1.14", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png"] }
+jiff = "0.2"
+log = "0.4"
+qrcode = { version = "0.14", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+web-time = "1.1"
+
+# Cargo only honors these patches in the application workspace.
+[patch.crates-io]
+gpui-fast = { path = "../../../gpui-mobile/vendor/gpui-fast" }
+gpui-fast-wgpu = { path = "../../../gpui-mobile/vendor/gpui-fast-wgpu" }
+gpui-pre = { path = "../../../gpui-mobile/vendor/gpui-pre" }
+gpui-pre-wgpu = { path = "../../../gpui-mobile/vendor/gpui-pre-wgpu" }
+gpui-fast-macos = { path = "../../../gpui-mobile/vendor/gpui-fast-macos" }
+gpui-pre-macos = { path = "../../../gpui-mobile/vendor/gpui-pre-macos" }

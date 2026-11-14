@@ -1,3 +1,5 @@
+use super::probe;
+
 use std::time::Duration;
 
 use ely_gpui_component::{
@@ -15,10 +17,7 @@ use ely_gpui_component::{
 };
 use gpui::{App, ClipboardItem, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 
-use crate::{
-    probe::probe,
-    ui::{keep, live, noise, row, section, set},
-};
+use crate::ui::{keep, live, noise, row, section, set};
 
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -58,7 +57,7 @@ pub fn lines(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         "Hover for a crosshair and each series' value. Press a name in the legend to hide it. Drag across the chart to zoom into a span; a double press shows the whole year. The target and the launch are annotations. Copy the chart as SVG or its data as CSV.",
         cx,
     )
-    .child(probe("revenue", div().w(px(720.)).child(chart())))
+    .child(probe("revenue", div().w(px(720.)).max_w_full().child(chart())))
     .child(
         row()
             .child(Button::new("lines-next", "New data").variant(ButtonVariant::Ghost).on_click(move |_, _, cx| set(&next, now + 1, cx)))
@@ -101,16 +100,18 @@ pub fn areas_and_bars(cx: &mut App) -> impl IntoElement + use<> {
     .child(
         div()
             .flex()
+            .flex_wrap()
             .gap_6()
-            .child(div().w(px(360.)).child(AreaChart::new("areas", quarters).series(web.clone()).series(ios.clone()).series(android.clone()).stacked().smooth()))
-            .child(probe("bars", div().w(px(360.)).child(BarChart::new("bars", quarters).series(web.clone()).series(ios.clone()).series(android.clone())))),
+            .child(div().w(px(360.)).max_w_full().child(AreaChart::new("areas", quarters).series(web.clone()).series(ios.clone()).series(android.clone()).stacked().smooth()))
+            .child(probe("bars", div().w(px(360.)).max_w_full().child(BarChart::new("bars", quarters).series(web.clone()).series(ios.clone()).series(android.clone())))),
     )
     .child(
         div()
             .flex()
+            .flex_wrap()
             .gap_6()
-            .child(div().w(px(360.)).child(BarChart::new("stacked", quarters).series(web.clone()).series(ios.clone()).series(android.clone()).stacked()))
-            .child(div().w(px(360.)).child(BarChart::new("sideways", ["Search", "Direct", "Social", "Email"]).series(Series::new("Visits", [412.0, 288.0, 164.0, 91.0])).horizontal())),
+            .child(div().w(px(360.)).max_w_full().child(BarChart::new("stacked", quarters).series(web.clone()).series(ios.clone()).series(android.clone()).stacked()))
+            .child(div().w(px(360.)).max_w_full().child(BarChart::new("sideways", ["Search", "Direct", "Social", "Email"]).series(Series::new("Visits", [412.0, 288.0, 164.0, 91.0])).horizontal())),
     )
     .child(
         div()
@@ -180,9 +181,10 @@ pub fn scatter(cx: &mut App) -> impl IntoElement + use<> {
     .child(
         div()
             .flex()
+            .flex_wrap()
             .gap_6()
             .child(
-                div().w(px(360.)).child(
+                div().w(px(360.)).max_w_full().child(
                     ScatterChart::new("scatter")
                         .points(a.symbol(Symbol::Diamond))
                         .points(b.symbol(Symbol::Triangle))
@@ -192,7 +194,7 @@ pub fn scatter(cx: &mut App) -> impl IntoElement + use<> {
             )
             .child(probe(
                 "bubbles",
-                div().w(px(360.)).child(
+                div().w(px(360.)).max_w_full().child(
                     ScatterChart::new("bubbles")
                         .points(cities)
                         .axes("Price", "Rating"),
@@ -247,6 +249,7 @@ pub fn realtime(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         div()
             .w(px(720.))
+            .max_w_full()
             .child(RealtimeChart::new("stream", values, pushed)),
     )
     .child(div().w(px(200.)).child(ChartTooltip::new("Latest").row(

@@ -79,7 +79,7 @@ pub fn waterfall(cx: &mut App) -> impl IntoElement + use<> {
         cx,
     )
     .child(
-        div().w(px(720.)).child(
+        div().w(px(720.)).max_w_full().child(
             WaterfallChart::new("profit")
                 .step("Revenue", 420.0)
                 .step("Refunds", -36.0)

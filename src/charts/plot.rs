@@ -100,6 +100,7 @@ pub(crate) struct State {
     pub pointer: (f32, f32),
     pub hidden: HashSet<SharedString>,
     pub span: Option<(usize, usize)>,
+    pub pinch_delta: f32,
     pub brush: Option<(f32, f32)>,
     pub xy_view: Option<XyView>,
     pub drag_last: Option<(f32, f32)>,

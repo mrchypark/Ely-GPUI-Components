@@ -8,6 +8,8 @@ macro_rules! asset {
 pub mod assets;
 #[cfg(all(test, not(target_family = "wasm")))]
 mod caller_tests;
+#[cfg(all(test, not(target_family = "wasm")))]
+mod chart_tests;
 #[path = "../gallery/menu_model.rs"]
 mod menu_model;
 #[path = "../gallery/pages/mod.rs"]
