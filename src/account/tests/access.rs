@@ -37,6 +37,81 @@ fn the_account_menu_picks_another(cx: &mut TestAppContext) {
     assert_eq!(said(&host, cx), ["home"]);
 }
 
+fn bounded_accounts(bench: &Bench, owner: Entity<Bench>) -> AnyElement {
+    let account = |key: &str, name: &str, email: &str| Account {
+        key: key.to_string().into(),
+        name: name.to_string().into(),
+        email: email.to_string().into(),
+        image: None,
+    };
+    let selected = owner.clone();
+    AccountSwitcher::new(
+        "accounts",
+        [
+            account("a", "Alice", "alice@example.test"),
+            account("b", "Bob", "bob@example.test"),
+            account("c", "Carol", "carol@example.test"),
+        ],
+        "a",
+        move |key, _, cx| say(&selected, key.to_string(), cx),
+    )
+    .disabled(bench.sent)
+    .disabled_indices([1])
+    .menu_names(true)
+    .add_label("Connect account")
+    .on_add(move |_, cx| say(&owner, "add".into(), cx))
+    .into_any_element()
+}
+
+#[gpui::test]
+fn account_switcher_disables_rows_and_closes_when_disabled(cx: &mut TestAppContext) {
+    let (host, cx) = bench(bounded_accounts, cx);
+    cx.update(|window, cx| {
+        crate::theme::Theme::update(cx, |theme| theme.touch_mode = true);
+        window.refresh();
+    });
+    settle(cx);
+    let trigger = cx.debug_bounds("account-switcher-trigger").unwrap();
+    cx.simulate_click(trigger.center(), gpui::Modifiers::none());
+    settle(cx);
+    let bob = cx
+        .debug_bounds("menu-row-Bob")
+        .expect("disabled row visible");
+    cx.simulate_click(bob.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert!(said(&host, cx).is_empty());
+    assert!(cx.debug_bounds("menu-row-Connect account").is_some());
+    host.update(cx, |host, cx| {
+        host.sent = true;
+        cx.notify();
+    });
+    settle(cx);
+    assert!(cx.debug_bounds("menu-row-Bob").is_none());
+    let trigger = cx.debug_bounds("account-switcher-trigger").unwrap();
+    cx.simulate_click(trigger.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert!(cx.debug_bounds("menu-row-Bob").is_none());
+    tab(1, cx);
+    tap("enter", cx);
+    assert!(cx.debug_bounds("menu-row-Bob").is_none());
+    host.update(cx, |host, cx| {
+        host.sent = false;
+        cx.notify();
+    });
+    settle(cx);
+    assert!(
+        cx.debug_bounds("menu-row-Bob").is_none(),
+        "re-enable must not reopen the menu"
+    );
+    let trigger = cx.debug_bounds("account-switcher-trigger").unwrap();
+    cx.simulate_click(trigger.center(), gpui::Modifiers::none());
+    settle(cx);
+    let carol = cx.debug_bounds("menu-row-Carol").unwrap();
+    cx.simulate_click(carol.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert_eq!(said(&host, cx), ["c"]);
+}
+
 fn sessions(_: &Bench, owner: Entity<Bench>) -> AnyElement {
     let session = |key: &str, current: bool| Session {
         key: key.to_string().into(),

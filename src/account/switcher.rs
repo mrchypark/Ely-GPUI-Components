@@ -9,7 +9,7 @@ use gpui::{
 use super::login::Run;
 use crate::{
     data_display::{Avatar, Presence},
-    menus::{Menu, MenuItem, menu_under},
+    menus::{Menu, MenuItem, Open, menu_under},
     primitives::{FocusRing, Icon, IconName},
     theme::{ActiveTheme, AvatarSize, IconSize, Radius, TextSize},
     typography::Ellipsis,
@@ -111,6 +111,10 @@ pub struct AccountSwitcher {
     current: SharedString,
     on_select: OnKey,
     on_add: Option<Run>,
+    disabled: bool,
+    disabled_indices: Vec<usize>,
+    add_label: SharedString,
+    menu_names: bool,
 }
 
 impl AccountSwitcher {
@@ -128,6 +132,10 @@ impl AccountSwitcher {
             current,
             on_select: Rc::new(on_select),
             on_add: None,
+            disabled: false,
+            disabled_indices: Vec::new(),
+            add_label: "Add account".into(),
+            menu_names: false,
         }
     }
 
@@ -136,25 +144,54 @@ impl AccountSwitcher {
         self.on_add = Some(Rc::new(handler));
         self
     }
+
+    /// Disables the trigger and closes an open account menu.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Accounts that stay visible but cannot be selected.
+    pub fn disabled_indices(mut self, indices: impl IntoIterator<Item = usize>) -> Self {
+        self.disabled_indices = indices.into_iter().collect();
+        self
+    }
+
+    /// Changes the label of the optional Add action.
+    pub fn add_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.add_label = label.into();
+        self
+    }
+
+    /// Show account names instead of email addresses in menu rows.
+    pub fn menu_names(mut self, enabled: bool) -> Self {
+        self.menu_names = enabled;
+        self
+    }
 }
 
 impl RenderOnce for AccountSwitcher {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let id = self.id;
         let on_select = self.on_select;
-        let items = self.accounts.iter().map(|account| {
+        let items = self.accounts.iter().enumerate().map(|(index, account)| {
             let (key, pick) = (account.key.clone(), on_select.clone());
-            MenuItem::radio(account.email.clone(), account.key == self.current).on_click(
-                move |window, cx| {
+            let label = if self.menu_names {
+                account.name.clone()
+            } else {
+                account.email.clone()
+            };
+            MenuItem::radio(label, account.key == self.current)
+                .disabled(self.disabled_indices.contains(&index))
+                .on_click(move |window, cx| {
                     log::info!("account switcher: {key}");
                     pick(&key, window, cx);
-                },
-            )
+                })
         });
         let mut menu = Menu::new().group("Accounts", items.collect::<Vec<_>>());
         if let Some(add) = self.on_add {
             menu = menu.separator().item(
-                MenuItem::new("Add account")
+                MenuItem::new(self.add_label)
                     .icon(IconName::UserPlus)
                     .on_click(move |window, cx| add(window, cx)),
             );
@@ -177,8 +214,22 @@ impl RenderOnce for AccountSwitcher {
             avatar = avatar.image(image);
         }
         let email = now.map(|now| now.email).unwrap_or_default();
-        let trigger = row((id.clone(), "trigger"), avatar, named(name, email, cx), cx);
-        opening(id, &menu, trigger, window, cx)
+        let trigger = row((id.clone(), "trigger"), avatar, named(name, email, cx), cx)
+            .debug_selector(|| "account-switcher-trigger".into());
+        if self.disabled {
+            let state = window.use_keyed_state((id.clone(), "menu"), cx, |_, _| Open::default());
+            if state.read(cx).is_open() {
+                Open::close(&state, window, cx);
+            }
+            trigger
+                .role(gpui::Role::Button)
+                .aria_description(crate::i18n::text(cx, "state.unavailable", &[]))
+                .tab_index(-1)
+                .opacity(0.5)
+                .into_any_element()
+        } else {
+            opening(id, &menu, trigger, window, cx)
+        }
     }
 }
 
