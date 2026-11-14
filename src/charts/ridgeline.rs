@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use super::{
-    axes::{anchored, below, beside},
+    axes::{PAD, anchored, below, beside},
     geometry::{Rect, frame},
     paint::{at, finish, measure, tint, trace},
     parts::{ChartLegend, ChartTooltip},
@@ -20,7 +20,7 @@ use super::{
 use crate::{
     buttons::{Button, ButtonVariant},
     theme::{ActiveTheme, ControlSize, TextSize},
-    typography::tabular,
+    typography::{Ellipsis, tabular, text_width},
 };
 
 #[derive(Default)]
@@ -264,12 +264,6 @@ impl RenderOnce for RidgelineChart {
         let (colors, sizes, rem) = (theme.colors.clone(), theme.chart(), window.rem_size());
         let pixels = |length: gpui::Rems| f32::from(length.to_pixels(rem));
         let box_size = (f32::from(bounds.size.width), f32::from(bounds.size.height));
-        let rect = frame(
-            box_size,
-            pixels(sizes.gutter),
-            pixels(sizes.foot),
-            pixels(sizes.inset),
-        );
         let visible_pairs: Vec<(usize, (SharedString, Vec<f64>))> = self
             .groups
             .iter()
@@ -280,6 +274,15 @@ impl RenderOnce for RidgelineChart {
         let visible_groups: Vec<(SharedString, Vec<f64>)> =
             visible_pairs.iter().map(|(_, g)| g.clone()).collect();
         let visible_colors: Vec<usize> = visible_pairs.iter().map(|(ix, _)| *ix).collect();
+        let text_size = theme.text_size(TextSize::Xs).to_pixels(rem);
+        let widest = visible_groups
+            .iter()
+            .map(|(label, _)| f32::from(text_width(label, text_size, window)))
+            .fold(0.0, f32::max);
+        let gutter = (widest + pixels(PAD) + 4.0)
+            .max(pixels(sizes.gutter))
+            .min(box_size.0 / 2.0);
+        let rect = frame(box_size, gutter, pixels(sizes.foot), pixels(sizes.inset));
         let layout = compute_ridges(&visible_groups, rect, self.samples, self.overlap, x_domain);
         let active_slot = pinned_raw
             .or(hover_raw)
@@ -308,11 +311,13 @@ impl RenderOnce for RidgelineChart {
             .iter()
             .zip(&visible_groups)
             .map(|(ridge, (label, _))| {
-                beside(
-                    ridge.baseline,
-                    sizes.gutter.to_pixels(rem),
-                    text(label.clone()),
-                )
+                let name = div()
+                    .min_w_0()
+                    .text_right()
+                    .text_size(theme.text_size(TextSize::Xs))
+                    .text_color(colors.fg_subtle)
+                    .child(Ellipsis::new(label.clone()));
+                beside(ridge.baseline, Pixels::from(gutter), name)
             })
             .collect();
 

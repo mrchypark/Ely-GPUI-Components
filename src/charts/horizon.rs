@@ -14,7 +14,7 @@ use gpui::{
 };
 
 use super::{
-    axes::{anchored, below, beside},
+    axes::{PAD, anchored, below, beside},
     geometry::{Rect, frame},
     paint::{at, finish, measure, place, ring, tint},
     parts::{ChartLegend, ChartTooltip},
@@ -26,7 +26,7 @@ use super::{
 use crate::{
     buttons::{Button, ButtonVariant},
     theme::{ActiveTheme, ControlSize, TextSize},
-    typography::tabular,
+    typography::{Ellipsis, tabular, text_width},
 };
 
 fn svg_hex(color: Hsla) -> String {
@@ -552,12 +552,15 @@ impl RenderOnce for HorizonChart {
         let (colors, sizes, rem) = (theme.colors.clone(), theme.chart(), window.rem_size());
         let pixels = |length: gpui::Rems| f32::from(length.to_pixels(rem));
         let box_size = (f32::from(bounds.size.width), f32::from(bounds.size.height));
-        let rect = frame(
-            box_size,
-            pixels(sizes.gutter),
-            pixels(sizes.foot),
-            pixels(sizes.inset),
-        );
+        let text_size = theme.text_size(TextSize::Xs).to_pixels(rem);
+        let widest = shown
+            .iter()
+            .map(|series| f32::from(text_width(&series.name, text_size, window)))
+            .fold(0.0, f32::max);
+        let gutter = (widest + pixels(PAD) + 4.0)
+            .max(pixels(sizes.gutter))
+            .min(box_size.0 / 2.0);
+        let rect = frame(box_size, gutter, pixels(sizes.foot), pixels(sizes.inset));
         let layout = compute_horizon(
             &shown,
             effective_span,
@@ -590,11 +593,14 @@ impl RenderOnce for HorizonChart {
             .iter()
             .zip(&shown)
             .map(|(row, series)| {
-                beside(
-                    row.rect.y + row.rect.h * 0.5,
-                    sizes.gutter.to_pixels(rem),
-                    text(series.name.clone()),
-                )
+                let name = div()
+                    .debug_selector(|| "horizon-row-label".into())
+                    .min_w_0()
+                    .text_right()
+                    .text_size(theme.text_size(TextSize::Xs))
+                    .text_color(label_color)
+                    .child(Ellipsis::new(series.name.clone()));
+                beside(row.rect.y + row.rect.h * 0.5, Pixels::from(gutter), name)
             })
             .collect();
 
@@ -1816,8 +1822,8 @@ mod tests {
             fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
                 div().w(px(360.0)).h(px(280.0)).child(
                     HorizonChart::new("hz", ["T1", "T2", "T3", "T4"])
-                        .series(Series::new("CPU", [12.0, -8.0, 25.0, -18.0]))
-                        .series(Series::new("Mem", [4.0, 9.0, -6.0, 14.0]))
+                        .series(Series::new("Cluster A", [12.0, -8.0, 25.0, -18.0]))
+                        .series(Series::new("Cluster B", [4.0, 9.0, -6.0, 14.0]))
                         .bands(4)
                         .baseline(0.0)
                         .mode_mirror(true),
@@ -1862,6 +1868,13 @@ mod tests {
         vc_h.simulate_resize(gpui::size(px(360.0), px(280.0)));
         settle(vc_h);
         let h_root = vc_h.debug_bounds("chart-root").expect("horizon root");
+        let row_label = vc_h
+            .debug_bounds("horizon-row-label")
+            .expect("horizon row label");
+        assert!(
+            row_label.left() >= h_root.left(),
+            "label clipped on left: {row_label:?} vs {h_root:?}"
+        );
         vc_h.simulate_mouse_move(h_root.center(), None, Modifiers::none());
         settle(vc_h);
         assert!(vc_h.debug_bounds("chart-tooltip").is_some());
