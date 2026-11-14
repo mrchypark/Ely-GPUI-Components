@@ -1,10 +1,10 @@
 use std::{collections::HashSet, f32::consts::TAU};
 
 use gpui::{
-    App, Bounds, Div, ElementId, Entity, HoverListenerMode, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels,
-    Refineable, RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
-    Window, canvas, div, prelude::*,
+    App, Bounds, DispatchPhase, Div, ElementId, Entity, HoverListenerMode, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    PathBuilder, Pixels, Refineable, RenderOnce, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, TouchDragEvent, TouchPhase, Window, canvas, div, prelude::*,
 };
 
 use super::{
@@ -100,6 +100,7 @@ struct Graph {
     force: Option<Force>,
     hover: Option<usize>,
     drag: Option<usize>,
+    touch_start: Option<gpui::Point<Pixels>>,
 }
 
 /// Nodes and the edges between them, placed by forces: edges pull, nodes push apart, and the layout settles as you watch. Drag a node to move it; hover one to light its neighbors.
@@ -282,7 +283,8 @@ impl RenderOnce for NetworkGraph {
             (f32::from(offset.x), f32::from(offset.y))
         };
         let count = self.nodes.len();
-        let (moved, pressed, released, left, measured) = (
+        let (moved, pressed, released, released_out, left, measured) = (
+            graph.clone(),
             graph.clone(),
             graph.clone(),
             graph.clone(),
@@ -290,6 +292,8 @@ impl RenderOnce for NetworkGraph {
             graph.clone(),
         );
         let press_hit = hit.clone();
+        let touch_hit = hit.clone();
+        let touch = graph.clone();
         let mut root = div()
             .debug_selector(|| "chart-root".into())
             .relative()
@@ -342,11 +346,16 @@ impl RenderOnce for NetworkGraph {
                     }
                 })
             })
+            .on_mouse_up_out(MouseButton::Left, move |_: &MouseUpEvent, _, cx| {
+                released_out.update(cx, |graph, _| graph.drag = None);
+            })
             .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
             .on_hover(move |inside, _, cx| {
                 if !*inside {
                     left.update(cx, |graph, cx| {
-                        (graph.hover, graph.drag) = (None, None);
+                        if graph.touch_start.is_none() {
+                            (graph.hover, graph.drag) = (None, None);
+                        }
                         cx.notify();
                     })
                 }
@@ -355,6 +364,48 @@ impl RenderOnce for NetworkGraph {
                 canvas(
                     |_, _, _| {},
                     move |bounds, _, window, _| {
+                        let touch = touch.clone();
+                        let touch_hit = touch_hit.clone();
+                        window.on_mouse_event(move |event: &TouchDragEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble {
+                                return;
+                            }
+                            let bounds = touch.read(cx).bounds;
+                            if event.phase == TouchPhase::Started {
+                                if window.default_prevented()
+                                    || !bounds.contains(&event.start_position)
+                                {
+                                    return;
+                                }
+                                let Some(ix) = touch_hit(local(event.start_position, bounds))
+                                else {
+                                    return;
+                                };
+                                touch.update(cx, |graph, _| {
+                                    graph.hover = Some(ix);
+                                    graph.drag = Some(ix);
+                                    graph.touch_start = Some(event.start_position);
+                                });
+                                window.prevent_default();
+                            }
+                            if touch.read(cx).touch_start != Some(event.start_position) {
+                                return;
+                            }
+                            touch.update(cx, |graph, cx| {
+                                if matches!(event.phase, TouchPhase::Started | TouchPhase::Moved) {
+                                    if let (Some(ix), Some(force)) =
+                                        (graph.drag, graph.force.as_mut())
+                                    {
+                                        force.pin(ix, unit(local(event.position, bounds)));
+                                    }
+                                } else {
+                                    graph.drag = None;
+                                    graph.touch_start = None;
+                                }
+                                cx.notify();
+                            });
+                            cx.stop_propagation();
+                        });
                         let origin = bounds.origin;
                         for (a, b) in &edges {
                             let mut line = PathBuilder::stroke(hairline);
