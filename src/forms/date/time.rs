@@ -2,8 +2,8 @@ use std::{rc::Rc, time::Duration};
 
 use gpui::{
     App, Div, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, point,
-    prelude::*,
+    RenderOnce, Role, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    point, prelude::*,
 };
 use jiff::{
     ToSpan,
@@ -40,11 +40,40 @@ pub(crate) fn nudged(time: Time, minutes: i64) -> Time {
     time.wrapping_add(minutes.minutes())
 }
 
+#[derive(Clone, Copy)]
+struct TimeRules {
+    min: Option<Time>,
+    max: Option<Time>,
+    base: Time,
+    step: u8,
+}
+
+impl TimeRules {
+    fn contains(self, time: Time) -> bool {
+        match (self.min, self.max) {
+            (Some(min), Some(max)) if min > max => time >= min || time <= max,
+            (Some(min), Some(max)) => time >= min && time <= max,
+            (Some(min), None) => time >= min,
+            (None, Some(max)) => time <= max,
+            (None, None) => true,
+        }
+    }
+
+    fn choices(self) -> Vec<Time> {
+        let mut times: Vec<_> = (0..(1440 / usize::from(self.step)))
+            .map(|ix| nudged(self.base, (ix * usize::from(self.step)) as i64))
+            .collect();
+        times.sort_unstable();
+        times
+    }
+}
+
 /// Hours and minutes as two scrolling columns. A click sets that part.
 fn time_columns(
     id: &ElementId,
     time: Time,
     step: u8,
+    rules: Option<TimeRules>,
     on_pick: OnTime,
     window: &mut Window,
     cx: &mut App,
@@ -71,7 +100,7 @@ fn time_columns(
     };
     let theme = cx.theme();
     let colors = &theme.colors;
-    let cell = |key: &'static str, ix: usize, label: String, on: bool, pick: Run| {
+    let cell = |key: &'static str, ix: usize, label: String, on: bool, enabled: bool, pick: Run| {
         div()
             .id((key, ix))
             .debug_selector(move || format!("time-{key}-{ix}"))
@@ -81,9 +110,16 @@ fn time_columns(
             .justify_center()
             .h(row)
             .map(|cell| theme.touch_target(cell))
+            .role(Role::Button)
+            .aria_label(format!(
+                "{} {label}{}",
+                key,
+                if enabled { "" } else { ", unavailable" }
+            ))
             .px_3()
             .rounded(theme.radius(Radius::Md))
-            .cursor_pointer()
+            .when(enabled, |cell| cell.cursor_pointer())
+            .when(!enabled, |cell| cell.opacity(0.4))
             .map(|cell| {
                 if on {
                     cell.bg(colors.accent).text_color(colors.on_accent)
@@ -92,7 +128,9 @@ fn time_columns(
                         .hover(|style| style.bg(colors.hover))
                 }
             })
-            .on_click(move |_, window, cx| pick(window, cx))
+            .when(enabled, |cell| {
+                cell.on_click(move |_, window, cx| pick(window, cx))
+            })
             .child(label)
     };
     let column = |key: &'static str, handle: &ScrollHandle| {
@@ -106,39 +144,54 @@ fn time_columns(
             .flex()
             .flex_col()
     };
+    let choices = rules.map(TimeRules::choices);
     let hour_cells = (0..24).map(|hour| {
         let pick = on_pick.clone();
+        let target = choices.as_ref().map(|choices| {
+            choices
+                .iter()
+                .copied()
+                .filter(|candidate| candidate.hour() == hour && rules.unwrap().contains(*candidate))
+                .min_by_key(|candidate| {
+                    (i32::from(candidate.minute()) - i32::from(time.minute())).abs()
+                })
+        });
+        let enabled = target.is_none() || target.flatten().is_some();
+        let target = target
+            .flatten()
+            .unwrap_or_else(|| time.with().hour(hour).build().expect("hours run 0 to 23"));
         cell(
             "hour",
             hour as usize,
             format!("{hour:02}"),
             hour == time.hour(),
-            Rc::new(move |window, cx| {
-                pick(
-                    time.with().hour(hour).build().expect("hours run 0 to 23"),
-                    window,
-                    cx,
-                )
-            }),
+            enabled,
+            Rc::new(move |window, cx| pick(target, window, cx)),
         )
     });
-    let minute_cells = (0..60).step_by(step as usize).map(|minute| {
+    let minute_start = rules.map_or(0, |rules| rules.base.minute() as usize % step as usize);
+    let minute_cells = (minute_start..60).step_by(step as usize).map(|minute| {
         let pick = on_pick.clone();
+        let candidate = choices.as_ref().and_then(|choices| {
+            choices.iter().copied().find(|candidate| {
+                candidate.hour() == time.hour() && candidate.minute() as usize == minute
+            })
+        });
+        let enabled = rules.is_none()
+            || candidate.is_some_and(|candidate| rules.unwrap().contains(candidate));
+        let target = candidate.unwrap_or_else(|| {
+            time.with()
+                .minute(minute as i8)
+                .build()
+                .expect("minutes run 0 to 59")
+        });
         cell(
             "minute",
             minute as usize,
             format!("{minute:02}"),
-            minute == time.minute(),
-            Rc::new(move |window, cx| {
-                pick(
-                    time.with()
-                        .minute(minute)
-                        .build()
-                        .expect("minutes run 0 to 59"),
-                    window,
-                    cx,
-                )
-            }),
+            minute == time.minute() as usize,
+            enabled,
+            Rc::new(move |window, cx| pick(target, window, cx)),
         )
     });
     div()
@@ -158,6 +211,7 @@ fn time_keys(
     state: &Entity<Dropdown>,
     current: Time,
     step: u8,
+    rules: TimeRules,
     commit: OnTime,
     close: Run,
     cx: &App,
@@ -175,7 +229,32 @@ fn time_keys(
                 _ => return,
             };
             cx.stop_propagation();
-            commit(nudged(current, by), window, cx);
+            let next = nudged(current, by);
+            let choices = rules.choices();
+            let wraps = (by > 0 && next < current) || (by < 0 && next > current);
+            let reversed = matches!((rules.min, rules.max), (Some(min), Some(max)) if min > max);
+            let crosses_limit = wraps
+                && !reversed
+                && ((by > 0 && rules.max.is_some()) || (by < 0 && rules.min.is_some()));
+            if !crosses_limit && rules.contains(next) && choices.contains(&next) {
+                commit(next, window, cx);
+            } else if !rules.contains(current) || !choices.contains(&current) {
+                let candidate = if by > 0 {
+                    choices
+                        .iter()
+                        .copied()
+                        .find(|time| *time > current && rules.contains(*time))
+                } else {
+                    choices
+                        .iter()
+                        .rev()
+                        .copied()
+                        .find(|time| *time < current && rules.contains(*time))
+                };
+                if let Some(candidate) = candidate {
+                    commit(candidate, window, cx);
+                }
+            }
         })
 }
 
@@ -185,6 +264,8 @@ pub struct TimePicker {
     id: ElementId,
     value: Option<Time>,
     step: u8,
+    bounds: (Option<Time>, Option<Time>),
+    step_base: Option<Time>,
     placeholder: SharedString,
     size: ControlSize,
     disabled: bool,
@@ -197,6 +278,8 @@ impl TimePicker {
             id: id.into(),
             value,
             step: 5,
+            bounds: (None, None),
+            step_base: value,
             placeholder: SharedString::from("Pick a time"),
             size: ControlSize::default(),
             disabled: false,
@@ -211,6 +294,18 @@ impl TimePicker {
             "a {minutes}-minute step does not divide the hour"
         );
         self.step = minutes;
+        self
+    }
+
+    /// Inclusive bounds; a minimum after the maximum wraps across midnight.
+    pub fn range(mut self, min: Option<Time>, max: Option<Time>) -> Self {
+        self.bounds = (min, max);
+        self
+    }
+
+    /// Base for step alignment when no minimum is supplied.
+    pub fn step_base(mut self, base: Option<Time>) -> Self {
+        self.step_base = base;
         self
     }
 
@@ -238,6 +333,12 @@ impl TimePicker {
 impl RenderOnce for TimePicker {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (id, step, value) = (self.id.clone(), self.step, self.value);
+        let rules = TimeRules {
+            min: self.bounds.0,
+            max: self.bounds.1,
+            base: self.bounds.0.or(self.step_base).unwrap_or(Time::midnight()),
+            step,
+        };
         let state = dropdown(&id, window, cx);
         let commit: OnTime = {
             let (id, on_change) = (id.clone(), self.on_change);
@@ -259,7 +360,8 @@ impl RenderOnce for TimePicker {
             },
             move |close, anchor, window, cx| {
                 let time = value.unwrap_or(Time::midnight());
-                let columns = time_columns(&id, time, step, commit.clone(), window, cx);
+                let columns =
+                    time_columns(&id, time, step, Some(rules), commit.clone(), window, cx);
                 let out = close.clone();
                 float(
                     id.clone(),
@@ -267,7 +369,9 @@ impl RenderOnce for TimePicker {
                     CALENDAR_ROWS,
                     surface((id.clone(), "popup"), cx)
                         .on_mouse_down_out(move |_, window, cx| out(window, cx))
-                        .child(time_keys(&state, time, step, commit, close, cx).child(columns)),
+                        .child(
+                            time_keys(&state, time, step, rules, commit, close, cx).child(columns),
+                        ),
                     window,
                     cx,
                 )
@@ -369,6 +473,7 @@ impl RenderOnce for DateTimePicker {
                     &id,
                     time,
                     step,
+                    None,
                     Rc::new(move |time, window, cx| on_time(day.to_datetime(time), window, cx)),
                     window,
                     cx,
