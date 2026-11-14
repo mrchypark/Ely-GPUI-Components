@@ -12,7 +12,7 @@ mod touch;
 mod upload;
 
 use gpui::{
-    AppContext as _, ClipboardItem, Context, Entity, EntityInputHandler, IntoElement, KeyUpEvent,
+    AppContext as _, ClipboardItem, Context, Entity, EntityInputHandler, InteractiveElement, IntoElement, KeyUpEvent,
     Keystroke, ParentElement, Render, TestAppContext, VisualTestContext, Window, div, px,
 };
 
@@ -75,6 +75,53 @@ fn text(field: &Entity<TextInput>, cx: &mut VisualTestContext) -> String {
 
 fn focus(field: &Entity<TextInput>, cx: &mut VisualTestContext) {
     cx.update(|window, cx| window.focus(&field.read(cx).focus().clone(), cx));
+}
+
+struct PointerFields(Vec<Entity<TextInput>>);
+
+impl Render for PointerFields {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().children(self.0.iter().enumerate().map(|(index, field)| {
+            div()
+                .debug_selector(move || format!("pointer-field-{index}"))
+                .child(Input::new(field))
+        }))
+    }
+}
+
+#[gpui::test]
+fn disabled_input_pointer_does_not_take_focus(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let enabled = cx.new(|cx| TextInput::new(window, cx));
+        let disabled = cx.new(|cx| {
+            let mut field = TextInput::new(window, cx);
+            field.set_disabled(true, cx);
+            field
+        });
+        PointerFields(vec![enabled, disabled])
+    });
+    let fields = view.read_with(cx, |view, _| view.0.clone());
+    cx.update(|window, _| {
+        window.resize(gpui::size(px(390.), px(844.)));
+        window.activate_window();
+    });
+    cx.run_until_parked();
+    let enabled = cx.debug_bounds("pointer-field-0").unwrap();
+    let disabled = cx.debug_bounds("pointer-field-1").unwrap();
+    // Hit the frame inset as well as the text area: the frame previously focused
+    // a disabled input even though the text element itself ignored the press.
+    cx.simulate_click(gpui::point(disabled.left() + px(2.), disabled.center().y), gpui::Modifiers::none());
+    assert!(!cx.update(|window, cx| fields[1].read(cx).focus().is_focused(window)));
+    cx.simulate_click(enabled.center(), gpui::Modifiers::none());
+    assert!(cx.update(|window, cx| fields[0].read(cx).focus().is_focused(window)));
+    cx.simulate_click(disabled.center(), gpui::Modifiers::none());
+    assert!(!cx.update(|window, cx| fields[1].read(cx).focus().is_focused(window)));
+    cx.simulate_click(enabled.center(), gpui::Modifiers::none());
+    assert!(cx.update(|window, cx| fields[0].read(cx).focus().is_focused(window)));
+    cx.simulate_input("typing");
+    assert_eq!(text(&fields[0], cx), "typing");
+    assert_eq!(text(&fields[1], cx), "");
 }
 
 #[gpui::test]

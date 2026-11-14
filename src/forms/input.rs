@@ -97,6 +97,8 @@ impl RenderOnce for Input {
             colors.border_strong
         };
         let (state, clear_id) = (self.state.clone(), self.state.entity_id());
+        let focus_state = self.state.clone();
+        let disabled_state = self.state.clone();
         div()
             .debug_selector(|| "input-root".into())
             .flex()
@@ -124,8 +126,15 @@ impl RenderOnce for Input {
             } else {
                 colors.fg
             })
+            .capture_any_mouse_down(move |_, window, cx| {
+                if disabled_state.read(cx).is_disabled() {
+                    window.prevent_default();
+                }
+            })
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                window.focus(&focus, cx)
+                if !focus_state.read(cx).is_disabled() {
+                    window.focus(&focus, cx);
+                }
             })
             .children(self.prefix)
             .child(
