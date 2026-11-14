@@ -13,6 +13,7 @@ use super::{
     text::{Backspace, Down, Enter, Up},
 };
 use crate::{
+    buttons::Button,
     data_display::{Tag, Tone},
     theme::{ActiveTheme, ControlSize, Radius, TextSize},
 };
@@ -30,6 +31,9 @@ struct Tags {
 impl Tags {
     /// Adds the field's text as a tag, unless blank or already there.
     fn take(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.input.read(cx).marked().is_some() {
+            return;
+        }
         let typed = self
             .input
             .read(cx)
@@ -207,6 +211,8 @@ impl RenderOnce for TagInput {
             .render(window, cx)
         });
         let field = self.id.clone();
+        let add_state = state.clone();
+        let add_id = self.id.clone();
         div()
             .id(self.id)
             .debug_selector(move || format!("tag-input {field}"))
@@ -278,7 +284,59 @@ impl RenderOnce for TagInput {
                     .px_1()
                     .child(input),
             )
+            .when(theme.touch_mode, |field| {
+                field.child(
+                    Button::new((add_id, "add"), "Add")
+                        .size(ControlSize::Sm)
+                        .debug_selector(|| "tag-input-add".into())
+                        .on_click(move |_, window, cx| {
+                            add_state.update(cx, |tags, cx| tags.take(window, cx));
+                        }),
+                )
+            })
             .child(measure_anchor(picker))
             .children(popup)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{AppContext, EntityInputHandler, TestAppContext};
+    use std::cell::Cell;
+
+    #[gpui::test]
+    fn take_preserves_marked_composition_until_ime_commits(cx: &mut TestAppContext) {
+        crate::forms::tests::setup(cx);
+        let (_, cx) = cx.add_window_view(|_, _| gpui::Empty);
+        let calls = Rc::new(Cell::new(0));
+        let called = calls.clone();
+        let (input, tags) = cx.update(|window, cx| {
+            let input = cx.new(|cx| TextInput::new(window, cx));
+            let tags = cx.new(|cx: &mut Context<Tags>| {
+                let events = cx.subscribe_in(&input, window, |_, _, _: &InputEvent, _, _| {});
+                Tags {
+                    input: input.clone(),
+                    tags: Vec::new(),
+                    dismissed: false,
+                    _events: events,
+                    on_change: Some(Rc::new(move |_, _, _| called.set(called.get() + 1))),
+                }
+            });
+            (input, tags)
+        });
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                input.replace_and_mark_text_in_range(None, "한", Some(1..1), window, cx)
+            });
+            tags.update(cx, |tags, cx| tags.take(window, cx));
+            assert_eq!(input.read(cx).text(), "한");
+            assert!(input.read(cx).marked().is_some());
+            assert_eq!(calls.get(), 0);
+            input.update(cx, |input, cx| input.unmark_text(window, cx));
+            tags.update(cx, |tags, cx| tags.take(window, cx));
+        });
+        assert_eq!(calls.get(), 1);
+        assert_eq!(input.read_with(cx, |input, _| input.text().to_owned()), "");
     }
 }
