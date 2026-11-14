@@ -18,6 +18,9 @@ type OnRows = Rc<dyn Fn(Vec<Vec<String>>, &mut Window, &mut App)>;
 struct Rows {
     columns: usize,
     rows: Vec<Vec<(Entity<TextInput>, Subscription)>>,
+    seed_indices: Vec<Option<usize>>,
+    disabled: Vec<bool>,
+    control_disabled: bool,
     placeholders: Vec<SharedString>,
     on_change: Option<OnRows>,
 }
@@ -60,6 +63,8 @@ impl Rows {
             })
             .collect();
         self.rows.push(row);
+        self.seed_indices.push(None);
+        self.disabled.push(false);
     }
 }
 
@@ -75,11 +80,15 @@ fn rows_state(
         let mut rows = Rows {
             columns: placeholders.len(),
             rows: Vec::new(),
+            seed_indices: Vec::new(),
+            disabled: Vec::new(),
+            control_disabled: false,
             placeholders,
             on_change: None,
         };
-        for row in &seed {
+        for (index, row) in seed.iter().enumerate() {
             rows.push(row, window, cx);
+            *rows.seed_indices.last_mut().unwrap() = Some(index);
         }
         rows
     })
@@ -91,10 +100,11 @@ type OnRemove = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct FieldArray {
     id: ElementId,
-    rows: Vec<AnyElement>,
+    rows: Vec<(AnyElement, bool)>,
     add_label: SharedString,
     on_add: Option<Run>,
     on_remove: Option<OnRemove>,
+    disabled: bool,
 }
 
 impl FieldArray {
@@ -105,11 +115,22 @@ impl FieldArray {
             add_label: SharedString::from("Add"),
             on_add: None,
             on_remove: None,
+            disabled: false,
         }
     }
 
     pub fn row(mut self, row: impl IntoElement) -> Self {
-        self.rows.push(row.into_any_element());
+        self.rows.push((row.into_any_element(), false));
+        self
+    }
+
+    fn row_disabled(mut self, row: impl IntoElement, disabled: bool) -> Self {
+        self.rows.push((row.into_any_element(), disabled));
+        self
+    }
+
+    fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 
@@ -133,7 +154,8 @@ impl FieldArray {
 impl RenderOnce for FieldArray {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let id = self.id.clone();
-        let lines = self.rows.into_iter().enumerate().map(|(ix, row)| {
+        let control_disabled = self.disabled;
+        let lines = self.rows.into_iter().enumerate().map(|(ix, (row, disabled))| {
             let (id, remove) = (id.clone(), self.on_remove.clone());
             div()
                 .flex()
@@ -142,6 +164,8 @@ impl RenderOnce for FieldArray {
                 .child(div().flex_1().min_w_0().child(row))
                 .child(
                     IconButton::new(("remove-row", ix), IconName::Minus)
+                        .debug_selector(move || format!("pairs-remove-{ix}"))
+                        .disabled(disabled || control_disabled)
                         .size(ControlSize::Sm)
                         .tooltip("Remove")
                         .on_click(move |_, window, cx| {
@@ -162,6 +186,8 @@ impl RenderOnce for FieldArray {
             .child(
                 div().flex().child(
                     Button::new(("add-row", 0usize), self.add_label)
+                        .debug_selector(|| "pairs-add".to_owned())
+                        .disabled(self.disabled)
                         .size(ControlSize::Sm)
                         .variant(ButtonVariant::Ghost)
                         .icon(IconName::Plus)
@@ -179,9 +205,11 @@ impl RenderOnce for FieldArray {
 fn render_rows(id: &ElementId, state: Entity<Rows>, add: &'static str, cx: &App) -> FieldArray {
     let (grow, remove) = (state.clone(), state.clone());
     let array = FieldArray::new(id.clone())
+        .disabled(state.read(cx).control_disabled)
         .add_label(add)
         .on_add(move |window, cx| {
             grow.update(cx, |rows, cx| {
+                if rows.control_disabled { return; }
                 rows.push(&[], window, cx);
                 let last = rows.rows.last().expect("just pushed");
                 window.focus(&last[0].0.read(cx).focus().clone(), cx);
@@ -191,22 +219,30 @@ fn render_rows(id: &ElementId, state: Entity<Rows>, add: &'static str, cx: &App)
         })
         .on_remove(move |ix, window, cx| {
             remove.update(cx, |rows, cx| {
+                if rows.control_disabled || rows.disabled.get(ix).copied().unwrap_or(true) {
+                    return;
+                }
                 rows.rows.remove(ix);
+                rows.seed_indices.remove(ix);
+                rows.disabled.remove(ix);
                 rows.report(window, cx);
                 cx.notify();
             })
         });
-    state.read(cx).rows.iter().fold(array, |array, row| {
-        array.row(
+    state.read(cx).rows.iter().enumerate().fold(array, |array, (ix, row)| {
+        array.row_disabled(
             div()
                 .flex()
                 .items_center()
                 .gap_2()
-                .children(row.iter().map(|(field, _)| {
+                .children(row.iter().enumerate().map(|(column, (field, _))| {
                     div()
                         .flex_1()
+                        .min_w_0()
+                        .debug_selector(move || format!("pairs-field-{ix}-{column}"))
                         .child(Input::new(field).size(ControlSize::Sm))
                 })),
+            state.read(cx).disabled[ix],
         )
     })
 }
@@ -216,6 +252,8 @@ fn render_rows(id: &ElementId, state: Entity<Rows>, add: &'static str, cx: &App)
 pub struct KeyValueInput {
     id: ElementId,
     seed: Vec<Vec<String>>,
+    disabled_rows: Vec<usize>,
+    disabled: bool,
     on_change: Option<OnRows>,
 }
 
@@ -228,8 +266,23 @@ impl KeyValueInput {
                 .into_iter()
                 .map(|(key, value)| vec![key, value])
                 .collect(),
+            disabled_rows: Vec::new(),
+            disabled: false,
             on_change: None,
         }
+    }
+
+    /// Disable rows by their original seed indices, even after earlier rows are removed.
+    /// Newly added rows are enabled. Calling this again replaces the disabled set.
+    pub fn disabled_rows(mut self, indices: impl IntoIterator<Item = usize>) -> Self {
+        self.disabled_rows = indices.into_iter().collect();
+        self
+    }
+
+    /// Disable adding, editing, and removing pairs.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
     }
 
     /// Reports every pair after each change.
@@ -257,7 +310,20 @@ impl RenderOnce for KeyValueInput {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let placeholders = [SharedString::from("Key"), SharedString::from("Value")];
         let state = rows_state(&self.id, &self.seed, &placeholders, window, cx);
-        state.update(cx, |rows, _| rows.on_change = self.on_change.clone());
+        state.update(cx, |rows, cx| {
+            rows.on_change = self.on_change.clone();
+            rows.control_disabled = self.disabled;
+            for (ix, row) in rows.rows.iter().enumerate() {
+                let disabled = self.disabled || rows.seed_indices[ix]
+                    .is_some_and(|index| self.disabled_rows.contains(&index));
+                rows.disabled[ix] = disabled;
+                for (field, _) in row {
+                    if field.read(cx).is_disabled() != disabled {
+                        field.update(cx, |field, cx| field.set_disabled(disabled, cx));
+                    }
+                }
+            }
+        });
         render_rows(&self.id, state, "Add pair", cx)
     }
 }

@@ -177,3 +177,97 @@ fn long_labels_wrap_inside_their_box(cx: &mut TestAppContext) {
         assert!(label.right() <= px(200.0), "{selector}: {label:?}");
     }
 }
+
+struct PairFixture {
+    changes: Vec<Vec<(String, String)>>,
+    disabled: bool,
+    all_disabled: bool,
+}
+
+impl Render for PairFixture {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        let rows = vec![("FIRST".into(), "1".into()), ("READ_ONLY".into(), "locked".into()), ("LAST".into(), "3".into())];
+        crate::forms::KeyValueInput::new("pairs", rows)
+            .disabled_rows(if self.disabled { vec![1] } else { vec![] })
+            .disabled(self.all_disabled)
+            .on_change(move |pairs, _, cx| view.update(cx, |view, cx| {
+                view.changes.push(pairs);
+                cx.notify();
+            }))
+    }
+}
+
+#[gpui::test]
+fn pairs_disabled_row_survives_shifts_and_control_toggle(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| PairFixture { changes: Vec::new(), disabled: true, all_disabled: true });
+    cx.update(|window, _| window.resize(gpui::size(px(390.), px(844.))));
+    cx.run_until_parked();
+    let click = |cx: &mut VisualTestContext, selector: &'static str| {
+        let bounds = cx.debug_bounds(selector).unwrap_or_else(|| panic!("missing {selector}"));
+        cx.simulate_click(bounds.center(), Modifiers::none());
+        cx.run_until_parked();
+    };
+    click(cx, "pairs-add");
+    click(cx, "pairs-remove-0");
+    click(cx, "pairs-field-0-1");
+    cx.simulate_input("BAD");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |view, _| view.changes.is_empty()));
+    view.update(cx, |view, cx| { view.all_disabled = false; cx.notify(); });
+    cx.run_until_parked();
+    click(cx, "pairs-remove-1");
+    click(cx, "pairs-field-1-0");
+    cx.simulate_input("BAD");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |view, _| view.changes.is_empty()));
+    click(cx, "pairs-remove-0");
+    let last = view.read_with(cx, |view, _| view.changes.last().cloned().unwrap());
+    assert_eq!(last, [("READ_ONLY".into(), "locked".into()), ("LAST".into(), "3".into())]);
+    click(cx, "pairs-remove-0");
+    click(cx, "pairs-field-0-1");
+    cx.simulate_input("BAD");
+    cx.run_until_parked();
+    assert_eq!(view.read_with(cx, |view, _| view.changes.len()), 1);
+    click(cx, "pairs-field-1-1");
+    cx.simulate_input("x");
+    cx.run_until_parked();
+    let changed = view.read_with(cx, |view, _| view.changes.last().cloned().unwrap());
+    assert_eq!(changed[0], ("READ_ONLY".into(), "locked".into()));
+    assert!(changed[1].1.contains('x'));
+    view.update(cx, |view, cx| { view.disabled = false; cx.notify(); });
+    cx.run_until_parked();
+    click(cx, "pairs-remove-0");
+    assert_eq!(view.read_with(cx, |view, _| view.changes.last().unwrap().len()), 1);
+    click(cx, "pairs-add");
+    assert_eq!(view.read_with(cx, |view, _| view.changes.last().unwrap().len()), 2);
+}
+
+struct ListFixture(Vec<Vec<String>>);
+
+impl Render for ListFixture {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        crate::forms::ListInput::new("list", vec!["one".to_string(), "two".to_string()])
+            .on_change(move |values, _, cx| view.update(cx, |view, cx| {
+                view.0.push(values);
+                cx.notify();
+            }))
+    }
+}
+
+#[gpui::test]
+fn pairs_list_input_still_removes_and_adds(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| ListFixture(Vec::new()));
+    cx.run_until_parked();
+    let remove = cx.debug_bounds("pairs-remove-0").unwrap();
+    cx.simulate_click(remove.center(), Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(view.read_with(cx, |view, _| view.0.last().cloned().unwrap()), ["two"]);
+    let add = cx.debug_bounds("pairs-add").unwrap();
+    cx.simulate_click(add.center(), Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(view.read_with(cx, |view, _| view.0.last().cloned().unwrap()), ["two", ""]);
+}
