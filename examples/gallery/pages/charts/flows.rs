@@ -1,14 +1,13 @@
+use super::probe;
+
 use ely_gpui_component::charts::{
-    Bullet, BulletChart, ChordDiagram, FunnelChart, GanttChart, NetworkGraph, ParallelCoordinates,
-    ParallelSetsChart, ProgressChart, SankeyChart, SurfaceChart, Task,
+    Bullet, BulletChart, BurndownChart, ChordDiagram, FunnelChart, GanttChart, NetworkGraph,
+    ParallelCoordinates, ParallelSetsChart, ProgressChart, SankeyChart, SurfaceChart, Task,
 };
 use gpui::{App, IntoElement, ParentElement, Styled, div, px};
 use jiff::civil::date;
 
-use crate::{
-    probe::probe,
-    ui::{noise, section},
-};
+use crate::ui::{noise, section};
 
 pub fn flows(cx: &mut App) -> impl IntoElement + use<> {
     let budget = SankeyChart::new(
@@ -46,8 +45,8 @@ pub fn flows(cx: &mut App) -> impl IntoElement + use<> {
         "A month's money from where it came to where it went, and how many of a month's visitors reached each step. Hover a node, a ribbon or a stage.",
         cx,
     )
-    .child(probe("sankey", div().w(px(720.)).child(budget)))
-    .child(probe("funnel", div().w(px(720.)).child(signups)))
+    .child(probe("sankey", div().w(px(720.)).max_w_full().child(budget)))
+    .child(probe("funnel", div().w(px(720.)).max_w_full().child(signups)))
     .child(
         div()
             .flex()
@@ -103,7 +102,23 @@ pub fn schedule(cx: &mut App) -> impl IntoElement + use<> {
         "A launch plan: each bar filled as far as it is done, arrows from the work it waits for, and a line at today. Hover a row.",
         cx,
     )
-    .child(probe("gantt", div().w(px(720.)).child(plan)))
+    .child(probe("gantt", div().w(px(720.)).max_w_full().child(plan)))
+}
+
+pub fn burndown(cx: &mut App) -> impl IntoElement + use<> {
+    section(
+        "BurndownChart",
+        "A sprint's ideal work line and the work left each day. Hover a day to compare the team against the ideal; the line marks today.",
+        cx,
+    )
+    .child(probe(
+        "burndown",
+        div().w(px(720.)).max_w_full().child(
+            BurndownChart::new("sprint-burndown", date(2026, 9, 1), date(2026, 9, 12), 42.0)
+                .left([42.0, 39.0, 37.0, 35.0, 29.0, 27.0, 25.0, 19.0, 16.0])
+                .today(date(2026, 9, 9)),
+        ),
+    ))
 }
 
 pub fn relations(cx: &mut App) -> impl IntoElement + use<> {
@@ -166,13 +181,14 @@ pub fn relations(cx: &mut App) -> impl IntoElement + use<> {
         "People and who they work with, settling as forces pull and push: drag a node, hover one to light its ties. Trade between regions around a circle, and cars on five measures at once.",
         cx,
     )
-    .child(probe("network", div().w(px(720.)).child(graph)))
+    .child(probe("network", div().w(px(720.)).max_w_full().child(graph)))
     .child(
         div()
             .flex()
+            .flex_wrap()
             .gap_6()
-            .child(probe("chord", div().w(px(360.)).child(ChordDiagram::new("trade", regions, trade))))
-            .child(probe("parallel", div().w(px(420.)).child(cars))),
+            .child(probe("chord", div().w(px(360.)).max_w_full().child(ChordDiagram::new("trade", regions, trade))))
+            .child(probe("parallel", div().w(px(420.)).max_w_full().child(cars))),
     )
 }
 
@@ -190,6 +206,6 @@ pub fn targets(cx: &mut App) -> impl IntoElement + use<> {
         "A quarter's measures against their targets over bands from poor to good, and a day's goals as rings that fill toward them.",
         cx,
     )
-    .child(probe("bullets", div().w(px(720.)).child(bullets)))
+    .child(probe("bullets", div().w(px(720.)).max_w_full().child(bullets)))
     .child(probe("rings", rings))
 }

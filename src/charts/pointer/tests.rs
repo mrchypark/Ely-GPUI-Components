@@ -180,6 +180,30 @@ mod interactive_tests {
     }
 
     #[gpui::test]
+    fn small_pinch_steps_accumulate_before_rounding_categories(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            Theme::update(cx, |theme| theme.touch_mode = true);
+        });
+        let (view, cx) = cx.add_window_view(|_, cx| HoverProbe::new(cx, (0, 11), 12));
+        cx.simulate_resize(gpui::size(px(400.0), px(240.0)));
+        settle(cx);
+        for _ in 0..10 {
+            cx.simulate_event(gpui::PinchEvent {
+                position: point(px(150.0), px(100.0)),
+                delta: 0.01,
+                phase: gpui::TouchPhase::Moved,
+                modifiers: Modifiers::none(),
+            });
+            settle(cx);
+        }
+        let span = view
+            .read_with(cx, |view, cx| view.state.read(cx).span)
+            .unwrap();
+        assert!(span.1 - span.0 < 11);
+    }
+
+    #[gpui::test]
     fn touch_pinch_expands_a_zoomed_category_range_to_the_full_count(cx: &mut TestAppContext) {
         cx.update(|cx| {
             Theme::init(cx);

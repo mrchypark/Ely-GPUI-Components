@@ -8,6 +8,8 @@ use gpui::{
     ScrollHandle, StatefulInteractiveElement, Styled, Window, div, point, px,
 };
 
+use gpui::prelude::FluentBuilder;
+
 use crate::{pages, probe::probe};
 
 #[derive(serde::Deserialize)]
@@ -284,6 +286,7 @@ impl Render for MobileGallery {
             };
             div()
                 .debug_selector(move || format!("gallery-rendered-{slug}"))
+                .when(page.slug == "charts", |el| el.w(available.size.width - px(16.)).min_w_0())
                 .child(
                     div()
                         .debug_selector(|| "gallery-story-body".into())

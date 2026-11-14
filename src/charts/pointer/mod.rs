@@ -229,15 +229,24 @@ pub(crate) fn answer(
                 })
             })
             .on_pinch(move |ev: &PinchEvent, _, cx| {
-                let scale = ev.delta.exp().clamp(0.25, 4.0);
-                if (scale - 1.0).abs() <= 1e-4 {
-                    return;
-                }
                 pinch_cat.update(cx, |state, cx| {
+                    if matches!(
+                        ev.phase,
+                        TouchPhase::Started | TouchPhase::Ended | TouchPhase::Cancelled
+                    ) {
+                        state.pinch_delta = 0.0;
+                        return;
+                    }
                     state.brush = None;
+                    state.pinch_delta += ev.delta;
+                    let scale = state.pinch_delta.exp().clamp(0.25, 4.0);
                     let (cur_a, cur_b) = state.span.unwrap_or(span);
                     let cur_len = (cur_b.saturating_sub(cur_a) + 1).max(2) as f32;
                     let next_len = (cur_len / scale).round() as usize;
+                    if next_len == cur_len as usize {
+                        return;
+                    }
+                    state.pinch_delta = 0.0;
                     if next_len >= total {
                         state.span = None;
                     } else {
