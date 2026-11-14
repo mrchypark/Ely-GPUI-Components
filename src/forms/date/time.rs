@@ -50,9 +50,12 @@ fn time_columns(
     cx: &mut App,
 ) -> Div {
     let columns = window.use_keyed_state((id.clone(), "columns"), cx, |_, _| Columns::default());
-    let row = cx.theme().control_height(ControlSize::Sm);
+    let row = cx.theme().touch_minimum(
+        cx.theme()
+            .control_height(ControlSize::Sm)
+            .to_pixels(window.rem_size()),
+    );
     if columns.read(cx).shown != Some(time) {
-        let row = row.to_pixels(window.rem_size());
         let above = |ix: usize| point(Pixels::ZERO, -(row * ix.saturating_sub(2) as f32));
         columns.update(cx, |columns, _| {
             columns.hours.set_offset(above(time.hour() as usize));
@@ -71,11 +74,13 @@ fn time_columns(
     let cell = |key: &'static str, ix: usize, label: String, on: bool, pick: Run| {
         div()
             .id((key, ix))
+            .debug_selector(move || format!("time-{key}-{ix}"))
             .flex()
             .flex_none()
             .items_center()
             .justify_center()
             .h(row)
+            .map(|cell| theme.touch_target(cell))
             .px_3()
             .rounded(theme.radius(Radius::Md))
             .cursor_pointer()
@@ -93,6 +98,7 @@ fn time_columns(
     let column = |key: &'static str, handle: &ScrollHandle| {
         div()
             .id((id.clone(), key))
+            .debug_selector(move || format!("time-column-{key}"))
             .track_scroll(handle)
             .overflow_y_scroll()
             .max_h(theme.list_max_height())

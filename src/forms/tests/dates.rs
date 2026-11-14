@@ -116,6 +116,40 @@ fn a_time_picker_steps_with_the_arrows(cx: &mut TestAppContext) {
     );
 }
 
+#[gpui::test]
+fn time_picker_rows_fit_touch_and_desktop_and_keep_the_selected_hour_visible(
+    cx: &mut TestAppContext,
+) {
+    setup(cx);
+    for touch in [false, true] {
+        cx.update(|cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = touch));
+        let (view, cx) = cx.add_window_view(|_, _| Clock {
+            value: Some(time(9, 30, 0, 0)),
+        });
+        cx.simulate_resize(gpui::size(px(390.), px(844.)));
+        cx.update(|window, cx| window.focus_next(cx));
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        let hour = cx.debug_bounds("time-hour-9").expect("selected hour");
+        let minute = cx.debug_bounds("time-minute-45").expect("minute choice");
+        let expected = if touch { px(48.) } else { px(24.) };
+        assert_eq!(hour.size.height, expected);
+        assert_eq!(minute.size.height, expected);
+        if touch {
+            assert!(hour.size.width >= px(48.));
+            assert!(minute.size.width >= px(48.));
+        }
+        let hours = cx.debug_bounds("time-column-hours").expect("hour column");
+        assert!(hour.top() >= hours.top() && hour.bottom() <= hours.bottom());
+        cx.simulate_click(minute.center(), Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(
+            view.read_with(cx, |view, _| view.value),
+            Some(time(9, 45, 0, 0))
+        );
+    }
+}
+
 struct Bounded {
     picked: Option<Date>,
     max: Option<Date>,
