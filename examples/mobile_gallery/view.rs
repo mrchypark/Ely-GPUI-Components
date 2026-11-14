@@ -4,7 +4,7 @@ use ely_gpui_component::{
     theme::ActiveTheme,
 };
 use gpui::{
-    AppContext, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    Bounds, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement,
     Pixels, Render, ScrollHandle, StatefulInteractiveElement, Styled, Window, div, point, px,
 };
 

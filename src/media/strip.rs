@@ -247,12 +247,7 @@ impl RenderOnce for VideoThumbnailStrip {
                                     let Some(at) = along(bounds, event.start_position) else {
                                         return;
                                     };
-                                    let held = end_at(
-                                        trim,
-                                        at,
-                                        f32::from(reach / bounds.size.width),
-                                        length,
-                                    );
+                                    let held = end_at(trim, at, reach / bounds.size.width, length);
                                     if held.is_some() {
                                         touch.update(cx, |strip, _| strip.touch_held = held);
                                         window.prevent_default();

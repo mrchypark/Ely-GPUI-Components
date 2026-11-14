@@ -193,7 +193,9 @@ fn touch_menu_gives_long_key_hint_space_back_to_the_action(cx: &mut TestAppConte
     cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = true));
     settle(cx);
     assert!(cx.debug_bounds("menu-key-hint").is_none());
-    let row = cx.debug_bounds("menu-row-Cut").expect("touch action stays visible");
+    let row = cx
+        .debug_bounds("menu-row-Cut")
+        .expect("touch action stays visible");
     cx.simulate_click(row.center(), Modifiers::none());
     settle(cx);
     assert_eq!(ran(&view, cx), ["cut"]);

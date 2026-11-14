@@ -282,7 +282,7 @@ fn wheel_page(inner: Pixels, cx: &mut TestAppContext) -> Pixels {
         move |_, _| Nested(inner, page)
     });
     cx.run_until_parked();
-    cx.simulate_event(gpui::ScrollWheelEvent {
+    cx.simulate_event(gpui::ScrollEvent {
         source: gpui::ScrollSource::Pointer,
         position: point(px(50.0), px(50.0)),
         delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(-40.0))),

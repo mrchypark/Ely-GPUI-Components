@@ -1,18 +1,32 @@
 use super::*;
 use crate::theme::Palette;
 
-pub(super) fn paint_horizon_canvas(
-    rows: Vec<HorizonRow>,
-    xs: Vec<f32>,
-    rect: Rect,
-    bands: usize,
-    hovered_rc: Option<(usize, usize)>,
-    is_pinned: bool,
-    brush: Option<(f32, f32)>,
-    total_cols: usize,
-    hairline: Pixels,
-    colors: Palette,
-) -> gpui::Canvas<()> {
+pub(super) struct HorizonPaint {
+    pub(super) rows: Vec<HorizonRow>,
+    pub(super) xs: Vec<f32>,
+    pub(super) rect: Rect,
+    pub(super) bands: usize,
+    pub(super) hovered_rc: Option<(usize, usize)>,
+    pub(super) is_pinned: bool,
+    pub(super) brush: Option<(f32, f32)>,
+    pub(super) total_cols: usize,
+    pub(super) hairline: Pixels,
+    pub(super) colors: Palette,
+}
+
+pub(super) fn paint_horizon_canvas(p: HorizonPaint) -> gpui::Canvas<()> {
+    let HorizonPaint {
+        rows,
+        xs,
+        rect,
+        bands,
+        hovered_rc,
+        is_pinned,
+        brush,
+        total_cols,
+        hairline,
+        colors,
+    } = p;
     canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {

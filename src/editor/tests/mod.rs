@@ -30,7 +30,7 @@ fn a_narrow_editor_reveals_the_long_line_and_caret(cx: &mut TestAppContext) {
     });
     editor.update(cx, |editor, cx| {
         let end = text.len();
-        editor.select([end..end], cx);
+        editor.select(std::iter::once(end..end), cx);
     });
     cx.update(|window, cx| {
         window.refresh();

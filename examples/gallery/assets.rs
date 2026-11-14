@@ -8,6 +8,7 @@ pub const CUSTOM_ICON: &str = "app-icons/mark.svg";
 pub struct GalleryAssets;
 
 /// Desktop/web examples already use filesystem paths or URLs.
+#[allow(dead_code)]
 pub fn file(path: &str) -> SharedString {
     path.to_owned().into()
 }

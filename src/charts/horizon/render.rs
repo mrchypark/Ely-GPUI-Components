@@ -1,4 +1,4 @@
-use super::paint::paint_horizon_canvas;
+use super::paint::{HorizonPaint, paint_horizon_canvas};
 use super::*;
 
 impl RenderOnce for HorizonChart {
@@ -433,10 +433,18 @@ impl RenderOnce for HorizonChart {
                 cx.stop_propagation();
             })
             .child(
-                paint_horizon_canvas(
-                    rows, xs, rect, bands, hovered_rc, is_pinned, brush, total_cols, hairline,
+                paint_horizon_canvas(HorizonPaint {
+                    rows,
+                    xs,
+                    rect,
+                    bands,
+                    hovered_rc,
+                    is_pinned,
+                    brush,
+                    total_cols,
+                    hairline,
                     colors,
-                )
+                })
                 .absolute()
                 .inset_0(),
             )

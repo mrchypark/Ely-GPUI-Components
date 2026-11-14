@@ -1,7 +1,7 @@
 use gpui::{
     Context, IntoElement, KeyUpEvent, Keystroke, Modifiers, ParentElement, Render, ScrollDelta,
-    ScrollHandle, ScrollWheelEvent, Styled, TestAppContext, TouchPhase, Window, div, point,
-    prelude::*, px,
+    ScrollEvent, ScrollHandle, Styled, TestAppContext, TouchPhase, Window, div, point, prelude::*,
+    px,
 };
 
 use super::setup;
@@ -39,7 +39,7 @@ fn a_wheel_over_an_open_list_leaves_the_page(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     let list = cx.debug_bounds("option-list").expect("the list opens");
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         source: gpui::ScrollSource::Pointer,
         position: list.center(),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-120.0))),

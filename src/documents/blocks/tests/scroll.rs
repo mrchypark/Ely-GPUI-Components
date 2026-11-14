@@ -1,7 +1,7 @@
 use gpui::{
-    AppContext as _, Entity, Modifiers, ParentElement, Pixels, Render, ScrollDelta, ScrollHandle,
-    ScrollWheelEvent, Styled, TestAppContext, TouchPhase, VisualTestContext, div, point,
-    prelude::*, px,
+    AppContext as _, Entity, Modifiers, ParentElement, Pixels, Render, ScrollDelta, ScrollEvent,
+    ScrollHandle, Styled, TestAppContext, TouchPhase, VisualTestContext, div, point, prelude::*,
+    px,
 };
 
 use super::{BlockData, BlockEditor, BlockKind, caret, settle};
@@ -94,7 +94,7 @@ fn a_wheel_scrolls_the_editor_and_leaves_its_caret(cx: &mut TestAppContext) {
     caret(&editor, 0, 0, cx);
     still(cx);
     let before = shown(&editor, cx);
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         source: gpui::ScrollSource::Pointer,
         position: point(px(100.0), px(100.0)),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-120.0))),

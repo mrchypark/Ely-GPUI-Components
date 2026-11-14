@@ -164,7 +164,9 @@ fn an_outline_row_keeps_a_finger_sized_target(cx: &mut TestAppContext) {
     let (_, cx) = cx.add_window_view(|_, _| TestOutline);
     settle(cx);
 
-    let bounds = cx.debug_bounds("outline-item-one").expect("the outline row");
+    let bounds = cx
+        .debug_bounds("outline-item-one")
+        .expect("the outline row");
     assert!(
         bounds.size.height >= px(48.),
         "an outline row must be finger-sized, got {:?}",
