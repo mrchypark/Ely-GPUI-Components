@@ -13,7 +13,7 @@ crate-type = ["staticlib"]
 [dependencies]
 anyhow = "1"
 ely-gpui-component = { path = "../..", default-features = false }
-gpui-mobile = { path = "../../../gpui-mobile" }
+gpui-mobile = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
 gpui = { package = "gpui-fast", version = "=0.1.14", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png"] }
 jiff = "0.2"
@@ -25,9 +25,9 @@ web-time = "1.1"
 
 # Cargo only honors these patches in the application workspace.
 [patch.crates-io]
-gpui-fast = { path = "../../../gpui-mobile/vendor/gpui-fast" }
-gpui-fast-wgpu = { path = "../../../gpui-mobile/vendor/gpui-fast-wgpu" }
-gpui-pre = { path = "../../../gpui-mobile/vendor/gpui-pre" }
-gpui-pre-wgpu = { path = "../../../gpui-mobile/vendor/gpui-pre-wgpu" }
-gpui-fast-macos = { path = "../../../gpui-mobile/vendor/gpui-fast-macos" }
-gpui-pre-macos = { path = "../../../gpui-mobile/vendor/gpui-pre-macos" }
+gpui-fast = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-fast-wgpu = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-pre = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-pre-wgpu = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-fast-macos = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-pre-macos = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }

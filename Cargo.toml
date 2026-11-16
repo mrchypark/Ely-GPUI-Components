@@ -136,4 +136,5 @@ name = "docs_render"
 path = "examples/docs/render.rs"
 
 [patch.crates-io]
-gpui-fast-macos = { git = "https://github.com/mrchypark/gpui-mobile", rev = "7ad5c1027af8476299e3fc951fdb9f9b2c83a794" }
+gpui-fast = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-fast-macos = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }

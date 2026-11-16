@@ -2260,8 +2260,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast"
 version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8c3a7e25e5a4789656da980b0316857acbdb72347b5d890d7d0c549bb9fee72"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1#fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2400,7 +2399,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-macos"
 version = "0.1.14"
-source = "git+https://github.com/mrchypark/gpui-mobile?rev=7ad5c1027af8476299e3fc951fdb9f9b2c83a794#7ad5c1027af8476299e3fc951fdb9f9b2c83a794"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1#fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -7085,7 +7084,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

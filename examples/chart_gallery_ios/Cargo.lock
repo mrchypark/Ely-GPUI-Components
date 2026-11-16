@@ -35,6 +35,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "accesskit_ios"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "750c4e9f6ce888dfe8a10c0f1b5ceb646a7854fd46579d74919219d1bb314083"
+dependencies = [
+ "accesskit",
+ "accesskit_consumer",
+ "hashbrown 0.16.1",
+ "objc2 0.5.3",
+ "objc2-foundation 0.2.2",
+ "objc2-ui-kit 0.2.2",
+]
+
+[[package]]
 name = "accesskit_macos"
 version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1931,6 +1945,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast"
 version = "0.1.14"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1#fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2063,6 +2078,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-macos"
 version = "0.1.14"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1#fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -2089,8 +2105,8 @@ dependencies = [
  "objc2-core-video",
  "objc2-foundation 0.3.2",
  "objc2-quartz-core 0.3.2",
- "objc2-uniform-type-identifiers",
- "objc2-user-notifications",
+ "objc2-uniform-type-identifiers 0.3.2",
+ "objc2-user-notifications 0.3.2",
  "parking_lot",
  "raw-window-handle",
  "semver",
@@ -2159,6 +2175,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-wgpu"
 version = "0.1.14"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1#fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2214,8 +2231,10 @@ dependencies = [
 [[package]]
 name = "gpui-mobile"
 version = "0.1.0"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1#fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1"
 dependencies = [
  "accesskit_android",
+ "accesskit_ios",
  "android-activity",
  "android_logger",
  "anyhow",
@@ -2249,6 +2268,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre"
 version = "0.3.12"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1#fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2404,7 +2424,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
  "objc2-quartz-core 0.3.2",
- "objc2-ui-kit",
+ "objc2-ui-kit 0.3.2",
  "parking_lot",
  "raw-window-handle",
  "uuid",
@@ -3805,7 +3825,31 @@ dependencies = [
  "objc2 0.6.5",
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
- "objc2-uniform-type-identifiers",
+ "objc2-uniform-type-identifiers 0.3.2",
+]
+
+[[package]]
+name = "objc2-cloud-kit"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74dd3b56391c7a0596a295029734d3c1c5e7e510a4cb30245f8221ccea96b009"
+dependencies = [
+ "bitflags 2.13.2",
+ "block2 0.5.1",
+ "objc2 0.5.3",
+ "objc2-core-location",
+ "objc2-foundation 0.2.2",
+]
+
+[[package]]
+name = "objc2-contacts"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5ff520e9c33812fd374d8deecef01d4a840e7b41862d849513de77e44aa4889"
+dependencies = [
+ "block2 0.5.1",
+ "objc2 0.5.3",
+ "objc2-foundation 0.2.2",
 ]
 
 [[package]]
@@ -3856,6 +3900,18 @@ dependencies = [
  "objc2 0.5.3",
  "objc2-foundation 0.2.2",
  "objc2-metal 0.2.2",
+]
+
+[[package]]
+name = "objc2-core-location"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "000cfee34e683244f284252ee206a27953279d370e309649dc3ee317b37e5781"
+dependencies = [
+ "block2 0.5.1",
+ "objc2 0.5.3",
+ "objc2-contacts",
+ "objc2-foundation 0.2.2",
 ]
 
 [[package]]
@@ -3934,6 +3990,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-link-presentation"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1a1ae721c5e35be65f01a03b6d2ac13a54cb4fa70d8a5da293d7b0020261398"
+dependencies = [
+ "block2 0.5.1",
+ "objc2 0.5.3",
+ "objc2-app-kit 0.2.2",
+ "objc2-foundation 0.2.2",
+]
+
+[[package]]
 name = "objc2-metal"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3995,6 +4063,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-symbols"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a684efe3dec1b305badae1a28f6555f6ddd3bb2c2267896782858d5a78404dc"
+dependencies = [
+ "objc2 0.5.3",
+ "objc2-foundation 0.2.2",
+]
+
+[[package]]
+name = "objc2-ui-kit"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8bb46798b20cd6b91cbd113524c490f1686f4c4e8f49502431415f3512e2b6f"
+dependencies = [
+ "bitflags 2.13.2",
+ "block2 0.5.1",
+ "objc2 0.5.3",
+ "objc2-cloud-kit",
+ "objc2-core-data",
+ "objc2-core-image",
+ "objc2-core-location",
+ "objc2-foundation 0.2.2",
+ "objc2-link-presentation",
+ "objc2-quartz-core 0.2.2",
+ "objc2-symbols",
+ "objc2-uniform-type-identifiers 0.2.2",
+ "objc2-user-notifications 0.2.2",
+]
+
+[[package]]
 name = "objc2-ui-kit"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4010,12 +4109,36 @@ dependencies = [
 
 [[package]]
 name = "objc2-uniform-type-identifiers"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44fa5f9748dbfe1ca6c0b79ad20725a11eca7c2218bceb4b005cb1be26273bfe"
+dependencies = [
+ "block2 0.5.1",
+ "objc2 0.5.3",
+ "objc2-foundation 0.2.2",
+]
+
+[[package]]
+name = "objc2-uniform-type-identifiers"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7902ac02859fc1f7045f8b598c63f1ae0cc7efeaa06a9bc9f3d9a3c955974fa4"
 dependencies = [
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "objc2-user-notifications"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76cfcbf642358e8689af64cee815d139339f3ed8ad05103ed5eaf73db8d84cb3"
+dependencies = [
+ "bitflags 2.13.2",
+ "block2 0.5.1",
+ "objc2 0.5.3",
+ "objc2-core-location",
+ "objc2-foundation 0.2.2",
 ]
 
 [[package]]
@@ -7033,7 +7156,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
- "objc2-ui-kit",
+ "objc2-ui-kit 0.3.2",
  "objc2-web-kit",
  "percent-encoding",
  "raw-window-handle",
@@ -7383,7 +7506,9 @@ dependencies = [
 [[patch.unused]]
 name = "gpui-pre-macos"
 version = "0.3.12"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1#fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1"
 
 [[patch.unused]]
 name = "gpui-pre-wgpu"
 version = "0.3.12"
+source = "git+https://github.com/mrchypark/gpui-mobile?rev=fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1#fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1"
