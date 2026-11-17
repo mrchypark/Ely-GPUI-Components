@@ -1,3 +1,4 @@
+use gpui::prelude::FluentBuilder as _;
 use std::path::Path;
 
 use gpui::{
@@ -34,6 +35,7 @@ struct Guides {
     log: Vec<String>,
     lower: bool,
     pictures: usize,
+    lightbox_bounds: Option<Bounds<gpui::Pixels>>,
 }
 
 fn target() -> Bounds<gpui::Pixels> {
@@ -77,6 +79,9 @@ impl Render for Guides {
         let overlay = self.open.map(|open| match open {
             Open::Lightbox => Lightbox::new("light", slides, self.at, shut)
                 .on_step(step)
+                .when_some(self.lightbox_bounds, |lightbox, bounds| {
+                    lightbox.usable_bounds(bounds)
+                })
                 .into_any_element(),
             Open::Spotlight => Spotlight::new("spot", steps[0].clone(), shut).into_any_element(),
             Open::SpotField => Spotlight::new(
@@ -134,6 +139,7 @@ fn guides(cx: &mut TestAppContext) -> (Entity<Guides>, &mut VisualTestContext) {
         log: Vec::new(),
         lower: false,
         pictures: 3,
+        lightbox_bounds: None,
     });
     settle(cx);
     (view, cx)
@@ -199,6 +205,28 @@ fn the_dark_closes_the_lightbox_and_the_picture_does_not(cx: &mut TestAppContext
     assert_eq!(state(&view, cx).0, Some(Open::Lightbox));
     click(4.0, f32::from(middle.height) - 4.0, cx);
     assert!(state(&view, cx).0.is_none());
+}
+
+#[gpui::test]
+fn lightbox_touch_controls_stay_in_the_supplied_safe_area(cx: &mut TestAppContext) {
+    let (view, cx) = guides(cx);
+    cx.simulate_resize(size(px(390.), px(844.)));
+    cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    let safe = Bounds::new(point(px(24.), px(59.)), size(px(330.), px(751.)));
+    view.update(cx, |view, cx| {
+        view.lightbox_bounds = Some(safe);
+        cx.notify();
+    });
+    open(&view, Open::Lightbox, cx);
+    let close = cx.debug_bounds("media-button close").expect("close button");
+    assert!(close.size.width >= px(48.) && close.size.height >= px(48.));
+    assert!(close.left() >= safe.left() && close.top() >= safe.top());
+    assert!(close.right() <= safe.right() && close.bottom() <= safe.bottom());
+    click(4., 4., cx);
+    assert!(
+        state(&view, cx).0.is_none(),
+        "the backdrop still closes outside the safe area"
+    );
 }
 
 #[gpui::test]

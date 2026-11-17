@@ -1,6 +1,9 @@
 use std::rc::Rc;
 
-use gpui::{App, ElementId, IntoElement, ParentElement, RenderOnce, Styled, Window, div};
+use gpui::{
+    App, ElementId, IntoElement, ParentElement, RenderOnce, Styled, Window, div,
+    prelude::FluentBuilder,
+};
 
 use super::player::SPEEDS;
 use crate::{
@@ -8,7 +11,7 @@ use crate::{
     forms::{OnFlag, OnNumber, Run, Slider},
     menus::{DropdownMenu, Menu, MenuItem},
     primitives::IconName,
-    theme::ControlSize,
+    theme::{ActiveTheme, ControlSize},
 };
 
 type OnSpeed = Rc<dyn Fn(f32, &mut Window, &mut App)>;
@@ -233,7 +236,7 @@ impl MediaControls {
 }
 
 impl RenderOnce for MediaControls {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let id = self.id.clone();
         let step = |key: &'static str, icon: IconName, tip: &'static str, run: Option<Run>| {
             run.map(|run| {
@@ -293,6 +296,7 @@ impl RenderOnce for MediaControls {
             .items_center()
             .justify_center()
             .gap_2()
+            .when(cx.theme().touch_mode, |row| row.flex_wrap())
             .children(shuffle)
             .children(step("back", IconName::SkipBack, "Back", self.on_back))
             .children(play)

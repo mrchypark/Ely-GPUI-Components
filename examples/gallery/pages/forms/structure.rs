@@ -11,7 +11,7 @@ use gpui::{
 
 use super::text::field;
 use crate::{
-    probe::probe,
+    probe::{probe, probe_sized},
     ui::{keep, section, set, specimen},
 };
 
@@ -35,7 +35,11 @@ fn link(text: String, window: &mut Window, cx: &mut App) -> Entity<TextInput> {
     })
 }
 
-pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn form(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let name = field("form-name", window, cx, |input| {
         input.placeholder("Ada Lovelace")
     });
@@ -102,6 +106,9 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         |array, link| array.row(Input::new(link)),
     );
     let (save_click, count) = (save.clone(), *sent.read(cx));
+    let width = (window.viewport_size().width - px(16.))
+        .max(px(0.))
+        .min(px(480.));
     section(
         "Form / FormSection / FormField / FieldArray / DirtyIndicator",
         "Sections with room between them. Errors take the description's place; Cmd-Enter saves from any field.",
@@ -113,27 +120,27 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             1 => "saved once".to_string(),
             count => format!("saved {count} times"),
         },
-        div().w(px(480.0)).child(
+        div().w(width).min_w_0().child(
             Form::new("profile-form")
                 .on_submit(save)
                 .child(
                     FormSection::new("Profile")
                         .description("How others see you.")
                         .child(
-                            FormField::new("profile-name", "Name")
+                            FormField::new("profile-name", "Name").when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                                 .required()
-                                .child(probe("form-name", div().w(px(480.0)).child(Input::new(&name)))),
+                                .child(probe_sized("form-name", Input::new(&name), true)),
                         )
                         .child(
-                            FormField::new("profile-email", "Email")
+                            FormField::new("profile-email", "Email").when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                                 .required()
                                 .help("Only for sign-in and receipts.")
                                 .description("We never share it.")
                                 .when_some(problem, |field, problem| field.error(problem))
-                                .child(probe("form-email", div().w(px(480.0)).child(Input::new(&email)))),
+                                .child(probe_sized("form-email", Input::new(&email), true)),
                         )
                         .child(
-                            FormField::new("profile-bio", "Bio")
+                            FormField::new("profile-bio", "Bio").when_some(bounds, |overlay, area| overlay.usable_bounds(area))
                                 .description("Plain text, a few lines.")
                                 .child(Input::new(&bio)),
                         ),
@@ -143,9 +150,8 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         .description("Sites to show on your profile.")
                         .child(array),
                 )
-                .child(probe(
+                .child(probe_sized(
                     "form-actions",
-                    div().w(px(480.0)).child(
                     ActionBar::new()
                         .child(DirtyIndicator::new("form-dirty", dirty))
                         .child(div().flex_1())
@@ -161,7 +167,7 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                                 .disabled(!dirty || !ready(&now))
                                 .on_click(move |_, window, cx| save_click(window, cx)),
                         ),
-                    ),
+                    true,
                 )
                 ),
         ),
@@ -169,22 +175,89 @@ pub fn form(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-pub fn inline(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn inline(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let email = field("inline-email", window, cx, |input| {
         input.placeholder("you@example.com")
     });
+    let width = (window.viewport_size().width - px(16.))
+        .max(px(0.))
+        .min(px(480.));
     section(
         "InlineForm",
         "Fields and actions in one row, their bottoms aligned.",
         cx,
     )
-    .child(
-        div().w(px(480.0)).child(
+    .child(probe(
+        "inline-form",
+        div().w(width).min_w_0().child(
             InlineForm::new()
-                .child(div().flex_1().child(
-                    FormField::new("inline-newsletter", "Newsletter").child(Input::new(&email)),
-                ))
-                .child(Button::new("inline-join", "Subscribe").primary()),
+                .child(
+                    div().flex_1().min_w_0().child(
+                        FormField::new("inline-newsletter", "Newsletter")
+                            .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+                            .child(Input::new(&email)),
+                    ),
+                )
+                .child(probe(
+                    "inline-action",
+                    Button::new("inline-join", "Subscribe").primary(),
+                )),
         ),
-    )
+    ))
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use gpui::{
+        Context, IntoElement, ParentElement, Render, TestAppContext, Window, div, px, size,
+    };
+
+    use super::{form, inline};
+
+    struct StructureDemo;
+
+    impl Render for StructureDemo {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .child(form(window, cx, None))
+                .child(inline(window, cx, None))
+        }
+    }
+
+    #[gpui::test]
+    fn form_examples_fit_the_viewport(cx: &mut TestAppContext) {
+        cx.update(ely_gpui_component::init_for_tests);
+        let (_, cx) = cx.add_window_view(|_, _| StructureDemo);
+        for (viewport, expected) in [(320., 304.), (390., 374.), (1200., 480.)] {
+            cx.simulate_resize(size(px(viewport), px(844.)));
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            for key in ["form-name", "form-email", "form-actions", "inline-form"] {
+                let actual = cx.update(|_, cx| {
+                    crate::probe::Probes::get(key, cx)
+                        .expect("form example probe")
+                        .size
+                        .width
+                });
+                assert_eq!(actual, px(expected), "{key} at viewport {viewport}");
+            }
+            let (form, action) = cx.update(|_, cx| {
+                (
+                    crate::probe::Probes::get("inline-form", cx)
+                        .expect("inline form probe")
+                        .right(),
+                    crate::probe::Probes::get("inline-action", cx)
+                        .expect("inline action probe")
+                        .right(),
+                )
+            });
+            assert!(action <= form, "inline action at viewport {viewport}");
+        }
+    }
 }

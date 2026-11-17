@@ -213,7 +213,11 @@ pub fn window_manager(cx: &mut App) -> impl IntoElement + use<> {
     )
 }
 
-pub fn window_switcher(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn window_switcher(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let shown = window.use_keyed_state("switcher-shown", cx, |_, _| false);
     let open = *shown.read(cx);
     let (show, hide) = (shown.clone(), shown);
@@ -234,12 +238,15 @@ pub fn window_switcher(window: &mut Window, cx: &mut App) -> impl IntoElement + 
             }),
     ))
     .when(open, |block| {
-        block.child(WindowSwitcher::new("switcher", move |_, cx| {
-            hide.update(cx, |shown, cx| {
-                *shown = false;
-                cx.notify();
+        block.child(
+            WindowSwitcher::new("switcher", move |_, cx| {
+                hide.update(cx, |shown, cx| {
+                    *shown = false;
+                    cx.notify();
+                })
             })
-        }))
+            .when_some(bounds, |switcher, area| switcher.usable_bounds(area)),
+        )
     })
 }
 
@@ -250,7 +257,11 @@ pub fn quick_launcher(cx: &App) -> impl IntoElement + use<> {
         cx,
     )
     .child(Caption::new(
-        "It is `navigation::QuickLauncher`; the Navigation page, chapter 7, opens one.",
+        if cx.theme().touch_mode {
+            "The Navigation page opens the real inline SearchPalette in touch mode. This does not demonstrate QuickLauncher's native popup window."
+        } else {
+            "It is `navigation::QuickLauncher`; the Navigation page, chapter 7, opens one."
+        },
     ))
 }
 

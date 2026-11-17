@@ -10,8 +10,12 @@ use gpui::{
 };
 
 mod clipboard;
+mod column_touch;
 mod columns;
 mod stale;
+mod table_touch;
+mod toolbar_bounds;
+mod touch;
 
 use super::{Column, DataTable, FilterBuilder, FilterRule, Row};
 use crate::{

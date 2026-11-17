@@ -60,9 +60,15 @@ impl Combobox {
             .map(|country| (country.name(), country.alpha2()))
             .collect();
         named.sort_by_key(|(name, _)| name.to_lowercase());
-        let choices = named
-            .into_iter()
-            .map(|(name, code)| Choice::new(code, format!("{} {name}", flag(code))).note(code));
+        let choices = named.into_iter().map(|(name, code)| {
+            // Android's text renderer can hide the whole label when it includes a flag.
+            let label = if cfg!(target_os = "android") {
+                name.to_owned()
+            } else {
+                format!("{} {name}", flag(code))
+            };
+            Choice::new(code, label).note(code)
+        });
         Self::new(id, state, choices)
     }
 

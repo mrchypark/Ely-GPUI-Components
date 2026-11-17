@@ -20,7 +20,11 @@ pub const PAGE: Page = Page {
 
 const SCRIPT: &[Step] = &[];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(db::connections(window, cx))
         .child(db::schema(window, cx))
@@ -31,7 +35,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(apis::requests(window, cx))
         .child(apis::socket(window, cx))
         .child(apis::graphql(window, cx))
-        .child(tools::text(window, cx))
+        .child(tools::text(window, cx, bounds))
         .child(tools::machines(window, cx))
         .into_any_element()
 }

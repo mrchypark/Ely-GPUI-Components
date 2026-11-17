@@ -92,6 +92,7 @@ pub(crate) struct Metrics {
     pub left: Pixels,
     pub top: Pixels,
     pub advance: Pixels,
+    pub width: Pixels,
     pub line: Pixels,
 }
 
@@ -306,11 +307,17 @@ impl CodeEditor {
     }
 
     pub fn set_cursor_shape(&mut self, shape: CursorShape, cx: &mut Context<Self>) {
+        if self.options.cursor == shape {
+            return;
+        }
         self.options.cursor = shape;
         cx.notify();
     }
 
     pub fn set_line_numbers(&mut self, numbers: LineNumbers, cx: &mut Context<Self>) {
+        if self.options.numbers == numbers {
+            return;
+        }
         self.options.numbers = numbers;
         cx.notify();
     }

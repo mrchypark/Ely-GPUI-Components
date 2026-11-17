@@ -225,17 +225,18 @@ impl RenderOnce for Scrubber {
             };
             time_tip(hovered, text, cx)
         });
-        let knob = (hover.is_some() || focused).then(|| {
-            div()
-                .absolute()
-                .left(relative(share(at)))
-                .top(relative(0.5))
-                .size_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(div().flex_none().size(thumb).rounded_full().bg(played))
-        });
+        let knob = (hover.is_some() || focused || (theme.touch_mode && self.on_seek.is_some()))
+            .then(|| {
+                div()
+                    .absolute()
+                    .left(relative(share(at)))
+                    .top(relative(0.5))
+                    .size_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(div().flex_none().size(thumb).rounded_full().bg(played))
+            });
         let measured = track.clone();
         let rail = div()
             .debug_selector(|| "scrubber-rail".into())
@@ -244,7 +245,7 @@ impl RenderOnce for Scrubber {
             .flex()
             .gap_0p5()
             .items_center()
-            .h(thumb)
+            .h(theme.touch_minimum(thumb.to_pixels(window.rem_size())))
             .children(lanes)
             .child(
                 canvas(
@@ -266,7 +267,7 @@ impl RenderOnce for Scrubber {
             )
             .children(knob)
             .children(tip);
-        let (moved, left) = (track.clone(), track.clone());
+        let (moved, left, pressed) = (track.clone(), track.clone(), track.clone());
         div()
             .id(self.id.clone())
             .debug_selector(|| "scrubber".into())
@@ -277,6 +278,13 @@ impl RenderOnce for Scrubber {
             .child(rail)
             .on_mouse_move(move |event, _, cx| {
                 moved.update(cx, |track, cx| {
+                    track.hover = along(track.bounds, event.position);
+                    cx.notify();
+                })
+            })
+            // A tap has no pointer to move, so the press sets the hover itself.
+            .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                pressed.update(cx, |track, cx| {
                     track.hover = along(track.bounds, event.position);
                     cx.notify();
                 })

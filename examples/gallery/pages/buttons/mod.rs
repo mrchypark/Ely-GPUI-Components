@@ -71,19 +71,23 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(basics::basics(cx))
         .child(actions::later(cx))
         .child(choices::toggle_button(window, cx))
         .child(choices::toggle_group(window, cx))
         .child(choices::segmented(window, cx))
-        .child(actions::fab(cx))
+        .child(actions::fab(window, cx))
         .child(actions::confirm(cx))
         .child(actions::small_buttons(cx))
-        .child(actions::action_bar(cx))
+        .child(actions::action_bar(window, cx))
         .child(actions::bulk(window, cx))
-        .child(actions::action_sheet(window, cx))
-        .child(actions::quick_actions(cx))
+        .child(actions::action_sheet(window, cx, bounds))
+        .child(actions::quick_actions(window, cx))
         .into_any_element()
 }

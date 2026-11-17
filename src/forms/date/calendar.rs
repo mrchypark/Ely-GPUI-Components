@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::{
     Animation, AnimationExt, App, ElementId, FocusHandle, FontWeight, HoverListenerMode,
-    InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled,
-    Window, div, prelude::*, transparent_black,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, RenderOnce,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*, transparent_black,
 };
 use jiff::{ToSpan, civil::Date};
 
@@ -199,7 +199,20 @@ impl RenderOnce for Calendar {
         };
         let theme = cx.theme();
         let colors = &theme.colors;
-        let cell = theme.control_height(ControlSize::Md);
+        // A touch gets a day cell at least 48px tall, so a finger can hit one.
+        let cell = theme.touch_minimum(
+            theme
+                .control_height(ControlSize::Md)
+                .to_pixels(window.rem_size()),
+        );
+        let width = if theme.touch_mode {
+            (cell * 8.0).min(
+                (window.fully_visible_bounds().size.width - theme.touch_spacing() * 2.0)
+                    .max(gpui::Pixels::ZERO),
+            )
+        } else {
+            cell * 8.0
+        };
         let header = div()
             .flex()
             .items_center()
@@ -280,8 +293,10 @@ impl RenderOnce for Calendar {
                     transparent_black()
                 };
                 let (pick, hover, on_hover) = (pick.clone(), hover.clone(), self.on_hover.clone());
+                let (pressed_hover, pressed_on_hover) = (hover.clone(), self.on_hover.clone());
                 div()
                     .id(("day", ix))
+                    .debug_selector(|| format!("calendar-day-{date}"))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -315,6 +330,16 @@ impl RenderOnce for Calendar {
                                     if let Some(on_hover) = &on_hover {
                                         on_hover(Some(date), window, cx);
                                     }
+                                }
+                            })
+                            // A tap has no pointer to hover, so the press previews the day.
+                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                                pressed_hover.update(cx, |hover, cx| {
+                                    *hover = Some(date);
+                                    cx.notify();
+                                });
+                                if let Some(on_hover) = &pressed_on_hover {
+                                    on_hover(Some(date), window, cx);
                                 }
                             })
                             .on_click(move |_, window, cx| pick(date, window, cx))
@@ -364,7 +389,8 @@ impl RenderOnce for Calendar {
             .flex()
             .flex_col()
             .gap_2()
-            .w(cell * 8.0)
+            .w(width)
+            .when(theme.touch_mode, |calendar| calendar.max_w_full())
             .p_2()
             .rounded(theme.radius(Radius::Lg))
             .on_key_down(move |event, window, cx| {
@@ -405,6 +431,10 @@ impl RenderOnce for Calendar {
             .child(grid)
     }
 }
+
+#[cfg(all(test, feature = "test-support"))]
+#[path = "calendar/sizing_tests.rs"]
+mod sizing_tests;
 
 #[cfg(test)]
 mod tests {

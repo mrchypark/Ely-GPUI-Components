@@ -128,6 +128,7 @@ impl RenderOnce for SourceCard {
 /// A citation in running text: a small numbered pill; resting on it shows its source, a press opens it.
 #[derive(IntoElement)]
 pub struct CitationBadge {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     number: usize,
     source: Source,
@@ -135,8 +136,15 @@ pub struct CitationBadge {
 }
 
 impl CitationBadge {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, number: usize, source: Source) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             number,
             source,
@@ -159,6 +167,7 @@ impl RenderOnce for CitationBadge {
         let open = self.on_open.clone();
         let pill = div()
             .id((self.id.clone(), "pill"))
+            .debug_selector(|| "citation-primary".into())
             .px_1p5()
             .rounded_full()
             .border_1()
@@ -179,6 +188,10 @@ impl RenderOnce for CitationBadge {
             .child(tabular(div()).child(format!("{number}")));
         HoverCard::new(self.id, pill, move |_, cx| {
             div().w(prose).child(lines(Some(number), &source, cx))
+        })
+        .touch_label(format!("Preview source {number}"))
+        .when_some(self.usable_bounds, |overlay, bounds| {
+            overlay.usable_bounds(bounds)
         })
     }
 }

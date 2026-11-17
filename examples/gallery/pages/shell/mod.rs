@@ -1,14 +1,24 @@
 mod bars;
 mod chrome;
 mod columns;
+#[cfg(any(test, target_os = "ios", target_os = "android"))]
+mod mobile;
+#[cfg(any(test, target_os = "ios", target_os = "android"))]
+mod mobile_headers;
+#[cfg(all(test, feature = "test-support", not(target_family = "wasm")))]
+mod mobile_tests;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod status;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod system;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod windows;
 
 use gpui::{AnyElement, App, IntoElement, ParentElement, Window, div};
 
 use super::Page;
 use crate::step::Step;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub use windows::{open_about, open_managed};
 
 pub const PAGE: Page = Page {
@@ -100,7 +110,12 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(chrome::title_bar(cx))
         .child(columns::column_shell(cx))
@@ -118,7 +133,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(system::dock(cx))
         .child(system::notification(cx))
         .child(windows::window_manager(cx))
-        .child(windows::window_switcher(window, cx))
+        .child(windows::window_switcher(window, cx, bounds))
         .child(windows::quick_launcher(cx))
         .child(windows::mini_windows(cx))
         .child(status::update_banner(cx))
@@ -127,4 +142,13 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(status::offline(window, cx))
         .child(status::zoom(cx))
         .into_any_element()
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
+    mobile::render(window, cx, bounds)
 }

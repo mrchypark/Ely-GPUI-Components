@@ -253,7 +253,11 @@ fn zero(cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(boxes(window, cx))
         .child(list(window, cx))

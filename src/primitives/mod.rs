@@ -26,7 +26,7 @@ pub(crate) use files::{file_icon, icon_theme};
 pub(crate) use focus::{
     CONTEXT as FOCUS_CONTEXT, Takeover, give_back, hand_back, hold_focus, tab_stop, take_focus,
 };
-pub use focus::{FocusNext, FocusPrev, FocusRing, FocusScope};
+pub use focus::{FocusNext, FocusPrev, FocusRing, FocusScope, focused_in_takeover};
 pub use ghost::DragGhost;
 pub use icon::{Icon, IconName};
 pub use image::Image;

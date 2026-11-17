@@ -102,6 +102,7 @@ impl RenderOnce for ActivityBar {
             let group = SharedString::from(format!("activity-{}", item.id));
             let on_select = self.on_select.clone();
             let id = item.id.clone();
+            let selector = item.id.clone();
             div()
                 .id(item.id.clone())
                 .group(group.clone())
@@ -110,6 +111,8 @@ impl RenderOnce for ActivityBar {
                 .items_center()
                 .justify_center()
                 .size(side)
+                .debug_selector(move || format!("activity-{selector}"))
+                .map(|entry| theme.touch_target(entry))
                 .cursor_pointer()
                 .tooltip(Tooltip::text(item.label.clone()))
                 .on_click(move |_, window, cx| {

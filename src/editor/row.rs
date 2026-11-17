@@ -18,6 +18,7 @@ impl CodeEditor {
         let base = div()
             .id(("editor-row", ix))
             .w_full()
+            .min_w(self.frame.content_width)
             .h(self.frame.line)
             .flex();
         match self.frame.rows[ix] {

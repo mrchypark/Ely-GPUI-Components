@@ -31,7 +31,11 @@ pub const PAGE: Page = Page {
     ],
 };
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     let colors = cx.theme().colors.clone();
     let surfaces = [
         ("bg", colors.bg),
@@ -154,7 +158,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
             ))
             .child(track("spring", "spring · damping 0.75", motion::spring, cx)),
         )
-        .child(editing::editor(window, cx))
+        .child(editing::editor(window, cx, bounds))
         .child(importing::importing(window, cx))
         .child(platform::platform(window, cx))
         .into_any_element()

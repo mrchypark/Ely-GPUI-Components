@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ElementId, InteractiveElement, IntoElement, MouseButton, ParentElement, RenderOnce,
-    SharedString, Styled, Window, div,
+    App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, Window, div,
 };
 
 use super::{
@@ -184,20 +184,18 @@ impl RenderOnce for AutoLayoutControls {
                     let spot = (*across, *down);
                     let chosen = spot == layout.place;
                     let press = place.clone();
-                    div()
+                    // The cell may grow to the touch floor; its mark stays fixed, preserving the 3×3 encoding.
+                    let cell = div()
                         .id((id.clone(), format!("place-{across:?}-{down:?}")))
+                        .debug_selector(move || format!("place-{across:?}-{down:?}"))
+                        .flex_none()
                         .flex()
                         .items_center()
                         .justify_center()
                         .size(sizes.place)
-                        .rounded(theme.radius(Radius::Sm))
-                        .cursor_pointer()
-                        .hover(move |style| style.bg(hover))
-                        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                            press(spot, window, cx)
-                        })
                         .child(
                             div()
+                                .debug_selector(move || format!("place-mark-{across:?}-{down:?}"))
                                 .size(if chosen {
                                     sizes.place_mark
                                 } else {
@@ -205,7 +203,14 @@ impl RenderOnce for AutoLayoutControls {
                                 })
                                 .rounded(theme.radius(Radius::Sm))
                                 .bg(if chosen { accent } else { subtle }),
-                        )
+                        );
+                    // Click supports mouse, keyboard, and recognized touch activation on every device.
+                    theme
+                        .touch_target(cell)
+                        .rounded(theme.radius(Radius::Sm))
+                        .cursor_pointer()
+                        .hover(move |style| style.bg(hover))
+                        .on_click(move |_, window, cx| press(spot, window, cx))
                 }))
             }));
         div()

@@ -1,6 +1,9 @@
 use std::rc::Rc;
 
-use gpui::{App, ElementId, IntoElement, ParentElement, RenderOnce, Styled, Window, div};
+use gpui::{
+    App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled, Window,
+    div, prelude::FluentBuilder,
+};
 
 use super::options::OnNumber;
 use crate::{
@@ -75,9 +78,11 @@ impl RenderOnce for Stepper {
             }
         };
         div()
+            .debug_selector(|| "stepper-root".into())
             .flex()
             .items_center()
             .h(theme.control_height(ControlSize::Md))
+            .when(theme.touch_mode, |frame| frame.h_auto())
             .p_0p5()
             .rounded(theme.radius(Radius::Md))
             .border_1()
@@ -85,6 +90,7 @@ impl RenderOnce for Stepper {
             .bg(theme.colors.surface)
             .child(
                 IconButton::new((self.id.clone(), "less"), IconName::Minus)
+                    .debug_selector(|| "stepper-less".into())
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
                     .disabled(value <= min)
@@ -100,6 +106,7 @@ impl RenderOnce for Stepper {
             )
             .child(
                 IconButton::new((self.id.clone(), "more"), IconName::Plus)
+                    .debug_selector(|| "stepper-more".into())
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
                     .disabled(value >= max)

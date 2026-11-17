@@ -2,11 +2,13 @@ use std::path::PathBuf;
 
 use gpui::{
     Context, Entity, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement,
-    Pixels, Point, Render, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
+    Pixels, Point, Render, Styled, TestAppContext, TouchDragEvent, TouchPhase, VisualTestContext,
+    Window, div, point, px,
 };
 
 use super::{picture, press, settle, setup};
 use crate::media::{Crop, ImageAnnotator, ImageCropper, ImageUpload, Mark};
+use crate::theme::Theme;
 
 const HALF: Crop = Crop {
     x: 0.25,
@@ -152,6 +154,64 @@ fn a_shaped_crop_keeps_its_shape_as_a_corner_moves(cx: &mut TestAppContext) {
         ..HALF
     };
     assert!(near(crop, shaped), "{crop:?}");
+}
+
+#[gpui::test]
+fn a_touch_claims_a_crop_handle_and_cancels_after_the_last_update(cx: &mut TestAppContext) {
+    let (view, cx) = cropping(HALF, None, true, cx);
+    cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    settle(cx);
+    let send = |phase, start_position, position, cx: &mut VisualTestContext| {
+        cx.simulate_event(TouchDragEvent {
+            phase,
+            start_position,
+            position,
+        });
+        settle(cx);
+    };
+
+    let outside = spot("image-cropper", (0.05, 0.05), cx);
+    let moved = spot("image-cropper", (0.5, 0.5), cx);
+    send(TouchPhase::Started, outside, outside, cx);
+    send(TouchPhase::Moved, outside, moved, cx);
+    send(TouchPhase::Ended, outside, moved, cx);
+    assert_eq!(view.read_with(cx, |view, _| view.crop), HALF);
+
+    let corner = spot("image-cropper", (0.75, 0.75), cx);
+    let pulled = corner + point(px(20.0), px(10.0));
+    send(TouchPhase::Started, corner, corner, cx);
+    send(TouchPhase::Moved, corner, pulled, cx);
+    send(TouchPhase::Ended, corner, pulled, cx);
+    let resized = view.read_with(cx, |view, _| view.crop);
+    assert_eq!((resized.x, resized.y), (HALF.x, HALF.y));
+    assert!(
+        (0.548..0.554).contains(&resized.w) && (0.548..0.554).contains(&resized.h),
+        "{resized:?}"
+    );
+
+    let corner = spot(
+        "image-cropper",
+        (resized.x + resized.w, resized.y + resized.h),
+        cx,
+    );
+    let displaced = corner + point(px(8.0), px(4.0));
+    send(TouchPhase::Started, corner, displaced, cx);
+    let updated = view.read_with(cx, |view, _| view.crop);
+    assert!(
+        (0.017..0.025).contains(&(updated.w - resized.w)),
+        "started displacement: {updated:?}"
+    );
+    assert!(
+        (0.017..0.025).contains(&(updated.h - resized.h)),
+        "started displacement: {updated:?}"
+    );
+    send(
+        TouchPhase::Cancelled,
+        corner,
+        corner + point(px(80.0), px(40.0)),
+        cx,
+    );
+    assert_eq!(view.read_with(cx, |view, _| view.crop), updated);
 }
 
 #[gpui::test]

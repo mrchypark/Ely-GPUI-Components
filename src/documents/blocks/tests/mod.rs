@@ -7,6 +7,7 @@ mod markdown;
 mod scroll;
 mod span;
 mod stale;
+mod touch;
 
 fn open(
     blocks: Vec<BlockData>,

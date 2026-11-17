@@ -1,0 +1,484 @@
+use ely_gpui_component::{
+    buttons::Button,
+    layout::{ViewportInsets, keyboard_clear_bounds, usable_bounds},
+    theme::ActiveTheme,
+};
+use gpui::{
+    Bounds, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Pixels, Render,
+    ScrollHandle, StatefulInteractiveElement, Styled, Subscription, Window, div, point, px,
+};
+#[cfg(any(target_os = "ios", target_os = "android"))]
+use gpui_mobile::{
+    StatusBarContentStyle, SystemChromeStyle, set_system_chrome_with_navigation_bar_style,
+};
+
+use gpui::prelude::FluentBuilder;
+
+use crate::{pages, probe::probe};
+
+#[path = "keyboard.rs"]
+mod keyboard;
+use keyboard::keyboard_occlusion;
+#[cfg(test)]
+use keyboard::{keyboard_target, needed_top_reach};
+
+#[derive(serde::Deserialize)]
+struct Stories {
+    pages: Vec<StoryPage>,
+}
+#[derive(serde::Deserialize)]
+struct StoryPage {
+    slug: String,
+    stories: Vec<Specimen>,
+}
+#[derive(serde::Deserialize)]
+struct Specimen {
+    title: String,
+    slug: String,
+}
+
+fn stories(page: &str) -> &'static [Specimen] {
+    static CATALOG: std::sync::OnceLock<Stories> = std::sync::OnceLock::new();
+    CATALOG
+        .get_or_init(|| {
+            serde_json::from_str(include_str!("../gallery/stories.json"))
+                .expect("gallery stories catalog must be valid")
+        })
+        .pages
+        .iter()
+        .find(|entry| entry.slug == page)
+        .map_or(&[], |entry| entry.stories.as_slice())
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn bar_content_style(is_dark: bool) -> StatusBarContentStyle {
+    if is_dark {
+        StatusBarContentStyle::Light
+    } else {
+        StatusBarContentStyle::Dark
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn system_chrome(is_dark: bool) -> SystemChromeStyle {
+    SystemChromeStyle {
+        status_bar_style: bar_content_style(is_dark),
+        ..Default::default()
+    }
+}
+
+/// A single mounted catalog page; navigation remains outside its scroll viewport.
+pub struct MobileGallery {
+    focus: FocusHandle,
+    page: usize,
+    visits: u64,
+    catalog: bool,
+    story: Option<usize>,
+    story_error: Option<String>,
+    scroll: ScrollHandle,
+    insets: ViewportInsets,
+    keyboard: Pixels,
+    floating_keyboard: Option<Bounds<Pixels>>,
+    top_reach: Pixels,
+    reveal_pending: bool,
+    reveal_retries: u8,
+    reveal_viewport: Option<(Pixels, Pixels)>,
+    _focus_changes: Subscription,
+}
+
+impl MobileGallery {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
+        let weak = cx.weak_entity();
+        let focus_changes = window.on_focus_changed(cx, move |_, cx| {
+            let _ = weak.update(cx, |view, cx| {
+                view.reveal_retries = 1;
+                cx.notify();
+            });
+        });
+        Self {
+            focus,
+            page: 0,
+            visits: 1,
+            catalog: true,
+            story: None,
+            story_error: None,
+            scroll: ScrollHandle::new(),
+            insets: ViewportInsets::default(),
+            keyboard: px(0.),
+            floating_keyboard: None,
+            top_reach: px(0.),
+            reveal_pending: false,
+            reveal_retries: 1,
+            reveal_viewport: None,
+            _focus_changes: focus_changes,
+        }
+    }
+
+    /// Feed real platform insets; no simulated keyboard is used in this harness.
+    pub fn set_insets(&mut self, insets: ViewportInsets, keyboard: Pixels, cx: &mut Context<Self>) {
+        if self.insets != insets || self.keyboard != keyboard {
+            self.insets = insets;
+            self.keyboard = keyboard;
+            self.reveal_retries = 1;
+            cx.notify();
+        }
+    }
+
+    /// Supply the floating keyboard rectangle in logical window coordinates.
+    pub fn set_floating_keyboard(
+        &mut self,
+        keyboard: Option<Bounds<Pixels>>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.floating_keyboard != keyboard {
+            self.floating_keyboard = keyboard;
+            if keyboard.is_none() && self.top_reach > px(0.) {
+                self.reclaim_top_reach(self.keyboard);
+            }
+            self.reveal_retries = 1;
+            cx.notify();
+        }
+    }
+
+    /// Stable automation entry, shared with touch navigation. Unknown slugs leave state intact.
+    pub fn select(&mut self, slug: &str, cx: &mut Context<Self>) -> bool {
+        let Some(page) = pages::find(slug) else {
+            return false;
+        };
+        self.page = page;
+        self.catalog = false;
+        self.story = None;
+        self.story_error = None;
+        self.visits += 1;
+        cx.set_global(crate::probe::Probes::default());
+        self.scroll.set_offset(point(px(0.), -self.top_reach));
+        cx.notify();
+        true
+    }
+
+    pub fn current_slug(&self) -> &'static str {
+        pages::ALL[self.page].slug
+    }
+    /// Select a catalog story by slug or exact title without invoking its controls.
+    pub fn select_story(&mut self, page: &str, story: &str, cx: &mut Context<Self>) -> bool {
+        let Some(index) = stories(page)
+            .iter()
+            .position(|entry| entry.slug == story || entry.title == story)
+        else {
+            return false;
+        };
+        if !self.select(page, cx) {
+            return false;
+        }
+        self.story = Some(index);
+        true
+    }
+
+    pub fn current_story_slug(&self) -> Option<&'static str> {
+        self.story
+            .map(|index| stories(self.current_slug())[index].slug.as_str())
+    }
+    pub fn visits(&self) -> u64 {
+        self.visits
+    }
+}
+
+impl Render for MobileGallery {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
+            let is_dark = cx.theme().is_dark();
+            set_system_chrome_with_navigation_bar_style(
+                &system_chrome(is_dark),
+                bar_content_style(is_dark),
+            );
+        }
+        let keyboard = keyboard_occlusion(
+            self.keyboard,
+            window.insets().ime.bottom,
+            self.floating_keyboard.is_some(),
+        );
+        let available = usable_bounds(
+            Bounds::new(point(px(0.), px(0.)), window.viewport_size()),
+            self.insets,
+            keyboard,
+        )
+        .intersect(&window.fully_visible_bounds());
+        self.schedule_keyboard_reveal(window, cx);
+        let colors = cx.theme().colors.clone();
+        let compact_height = available.size.height < px(320.);
+        let page = &pages::ALL[self.page];
+        let specimens = stories(page.slug);
+        let mut navigation = div().flex().flex_wrap().gap_2();
+        for (id, label, target) in [
+            ("gallery-previous", "Previous", self.page.checked_sub(1)),
+            (
+                "gallery-next",
+                "Next",
+                (self.page + 1 < pages::ALL.len()).then_some(self.page + 1),
+            ),
+        ] {
+            let entity = cx.entity();
+            navigation = navigation.child(probe(
+                id,
+                div()
+                    .min_h(px(48.))
+                    .debug_selector(move || id.into())
+                    .child(Button::new(id, label).disabled(target.is_none()).on_click(
+                        move |_, _, cx| {
+                            if let Some(index) = target {
+                                entity.update(cx, |view, cx| {
+                                    view.select(pages::ALL[index].slug, cx);
+                                });
+                            }
+                        },
+                    )),
+            ));
+        }
+        let entity = cx.entity();
+        navigation = navigation.child(probe(
+            "gallery-catalog",
+            div()
+                .min_h(px(48.))
+                .debug_selector(|| "gallery-catalog".into())
+                .child(
+                    Button::new("gallery-catalog", "Catalog").on_click(move |_, _, cx| {
+                        entity.update(cx, |view, cx| {
+                            view.catalog = !view.catalog;
+                            cx.notify();
+                        })
+                    }),
+                ),
+        ));
+        let mut story_navigation = div().flex().flex_wrap().gap_2();
+        for (id, label, target) in [
+            (
+                "gallery-story-previous",
+                "‹ Story",
+                self.story.and_then(|index| index.checked_sub(1)),
+            ),
+            (
+                "gallery-story-next",
+                "Story ›",
+                match self.story {
+                    Some(index) => (index + 1 < specimens.len()).then_some(index + 1),
+                    None => (!specimens.is_empty()).then_some(0),
+                },
+            ),
+        ] {
+            let entity = cx.entity();
+            story_navigation = story_navigation.child(probe(
+                id,
+                div()
+                    .min_h(px(48.))
+                    .debug_selector(move || id.into())
+                    .child(Button::new(id, label).disabled(target.is_none()).on_click(
+                        move |_, _, cx| {
+                            if let Some(index) = target {
+                                entity.update(cx, |view, cx| {
+                                    view.select_story(page.slug, &specimens[index].slug, cx);
+                                });
+                            }
+                        },
+                    )),
+            ));
+        }
+        let entity = cx.entity();
+        story_navigation = story_navigation.child(probe(
+            "gallery-story-all",
+            div()
+                .min_h(px(48.))
+                .debug_selector(|| "gallery-story-all".into())
+                .child(
+                    Button::new("gallery-story-all", "All").on_click(move |_, _, cx| {
+                        entity.update(cx, |view, cx| {
+                            view.select(page.slug, cx);
+                        });
+                    }),
+                ),
+        ));
+        let body = if self.catalog {
+            let columns = if available.size.width >= px(900.) {
+                3
+            } else if available.size.width >= px(600.) {
+                2
+            } else {
+                1
+            };
+            let mut list = div()
+                .debug_selector(|| "gallery-catalog-grid".into())
+                .grid()
+                .grid_cols(columns)
+                .gap_2();
+            for page in pages::ALL {
+                let slug = page.slug;
+                let entity = cx.entity();
+                list = list.child(
+                    div()
+                        .min_h(px(48.))
+                        .debug_selector(move || format!("gallery-page-{slug}"))
+                        .child(Button::new(slug, page.title).full_width().on_click(
+                            move |_, _, cx| {
+                                entity.update(cx, |view, cx| {
+                                    view.select(slug, cx);
+                                })
+                            },
+                        )),
+                );
+            }
+            list.into_any_element()
+        } else {
+            let slug = page.slug;
+            // Story is only a render-time filter. Selection and geometry belong to this view.
+            if let Some(index) = self.story {
+                cx.set_global(crate::ui::Story::new(specimens[index].title.clone().into()));
+            }
+            let overlay_bounds = self.floating_keyboard.map_or(available, |keyboard| {
+                keyboard_clear_bounds(available, keyboard)
+            });
+            let rendered = (page.render)(window, cx, Some(overlay_bounds));
+            self.story_error = self
+                .story
+                .and_then(|_| cx.remove_global::<crate::ui::Story>().missing(slug));
+            let rendered = match &self.story_error {
+                Some(error) => div()
+                    .debug_selector(|| "gallery-story-error".into())
+                    .child(error.clone())
+                    .into_any_element(),
+                None => rendered,
+            };
+            div()
+                .debug_selector(move || format!("gallery-rendered-{slug}"))
+                .when(page.slug == "charts", |el| {
+                    el.w(available.size.width - px(16.)).min_w_0()
+                })
+                .child(
+                    div()
+                        .debug_selector(|| "gallery-story-body".into())
+                        .child(rendered),
+                )
+                .into_any_element()
+        };
+        let secondary = div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .gap_2()
+            .children((!self.catalog).then_some(story_navigation))
+            .children((!self.catalog).then(|| {
+                div()
+                    .id("gallery-story-label-scroll")
+                    .debug_selector(|| "gallery-story-label".into())
+                    .min_w_0()
+                    .when(compact_height, |label| {
+                        label.max_h(px(48.)).overflow_y_scroll()
+                    })
+                    .child(
+                        div()
+                            .debug_selector(|| "gallery-story-label-text".into())
+                            .child(match self.story {
+                                Some(index) => format!(
+                                    "{}/{} · {}",
+                                    index + 1,
+                                    specimens.len(),
+                                    specimens[index].title
+                                ),
+                                None => format!(
+                                    "All {} stories · Story › opens the first",
+                                    specimens.len()
+                                ),
+                            }),
+                    )
+            }))
+            .child(
+                div()
+                    .debug_selector(|| "gallery-status".into())
+                    .child(format!(
+                        "{} · {}/{} · visits {}",
+                        page.slug,
+                        self.page + 1,
+                        pages::ALL.len(),
+                        self.visits
+                    )),
+            );
+        let (navigation, scroll_navigation) = if compact_height {
+            (None, Some(navigation))
+        } else {
+            (Some(navigation), None)
+        };
+        let (header, scroll_header) = if compact_height {
+            (None, Some(secondary))
+        } else {
+            (Some(secondary), None)
+        };
+        let weak_scroll = cx.weak_entity();
+        div()
+            .size_full()
+            .track_focus(&self.focus)
+            .bg(colors.bg)
+            .text_color(colors.fg)
+            .child(
+                div()
+                    .absolute()
+                    .left(available.origin.x)
+                    .top(available.origin.y)
+                    .w(available.size.width)
+                    .h(available.size.height)
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_2()
+                    .overflow_hidden()
+                    .children(navigation)
+                    .children(header)
+                    .child(
+                        div()
+                            .id("gallery-content")
+                            .debug_selector(|| "gallery-content".into())
+                            .flex_1()
+                            .min_h_0()
+                            .min_w_0()
+                            .overflow_y_scroll()
+                            .overflow_x_scroll()
+                            .track_scroll(&self.scroll)
+                            .on_scroll(move |_, window, cx| {
+                                let _ = weak_scroll.update(cx, |view, cx| {
+                                    let keyboard = keyboard_occlusion(
+                                        view.keyboard,
+                                        window.insets().ime.bottom,
+                                        view.floating_keyboard.is_some(),
+                                    );
+                                    if view.top_reach > px(0.)
+                                        || keyboard > px(0.)
+                                        || view.floating_keyboard.is_some()
+                                    {
+                                        view.reveal_retries = 1;
+                                        cx.notify();
+                                    }
+                                });
+                            })
+                            .when(self.top_reach > px(0.), |scroll| {
+                                scroll.child(div().h(self.top_reach).flex_none())
+                            })
+                            .children(scroll_navigation)
+                            .children(scroll_header)
+                            .child(body)
+                            .when(
+                                keyboard > px(0.) || self.floating_keyboard.is_some(),
+                                |scroll| {
+                                    let reach = keyboard.max(
+                                        self.floating_keyboard
+                                            .map_or(px(0.), |_| available.size.height),
+                                    );
+                                    scroll.child(div().h(reach).flex_none())
+                                },
+                            ),
+                    ),
+            )
+    }
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod view_tests;

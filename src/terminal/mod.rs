@@ -20,6 +20,8 @@ mod search;
 mod shells;
 #[cfg(all(test, feature = "test-support"))]
 mod tests;
+#[cfg(all(test, feature = "test-support"))]
+mod touch_test;
 #[cfg(not(target_family = "wasm"))]
 mod view;
 

@@ -8,11 +8,12 @@ use ely_gpui_component::{
     theme::{ActiveTheme, ControlSize, Radius},
     typography::{Caption, Label, Paragraph},
 };
-use gpui::{App, Axis, IntoElement, ParentElement, Styled, Window, div, px};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{App, Axis, InteractiveElement, IntoElement, ParentElement, Styled, Window, div, px};
 
 use super::basics::tile;
 use crate::{
-    probe::probe,
+    probe::{probe, probe_sized},
     ui::{code, row, section},
 };
 
@@ -32,10 +33,14 @@ fn frame(cx: &App) -> gpui::Div {
     div()
         .w(px(560.0))
         .h(px(220.0))
+        .when(theme.touch_mode, |frame| {
+            frame.w_full().max_w(px(560.0)).min_w_0()
+        })
         .overflow_hidden()
         .rounded(theme.radius(Radius::Lg))
         .border_1()
         .border_color(theme.colors.border)
+        .debug_selector(|| "gallery-split-frame".into())
 }
 
 pub fn split_pane(cx: &App) -> impl IntoElement + use<> {
@@ -44,7 +49,7 @@ pub fn split_pane(cx: &App) -> impl IntoElement + use<> {
         "Drag a divider. Panes nest across and down.",
         cx,
     )
-    .child(probe(
+    .child(probe_sized(
         "split",
         frame(cx).child(
             SplitPane::new("split-outer", Axis::Horizontal, px(96.0))
@@ -56,6 +61,7 @@ pub fn split_pane(cx: &App) -> impl IntoElement + use<> {
                         .pane(pane("terminal", cx)),
                 ),
         ),
+        cx.theme().touch_mode,
     ))
     .child(code(
         "ResizablePanel and ThreeColumnLayout are SplitPane.",
@@ -96,9 +102,13 @@ pub fn collapsible(window: &mut Window, cx: &mut App) -> impl IntoElement + use<
     .child(
         div()
             .w(px(420.0))
+            .when(cx.theme().touch_mode, |column| {
+                column.w_full().max_w(px(420.0)).min_w_0()
+            })
             .flex()
             .flex_col()
             .gap_2()
+            .debug_selector(|| "gallery-collapsible-frame".into())
             .child(probe(
                 "collapse-toggle",
                 Button::new(
@@ -249,4 +259,83 @@ pub fn well(cx: &App) -> impl IntoElement + use<> {
             .w(px(320.0))
             .child(Caption::new("Wells hold secondary material.")),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use ely_gpui_component::theme::Theme;
+    use gpui::{
+        Context, IntoElement, ParentElement, Render, Styled, TestAppContext, Window, div, px, size,
+    };
+
+    use super::{collapsible, split_pane};
+
+    struct Regions;
+
+    impl Render for Regions {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .p_6()
+                .flex()
+                .flex_col()
+                .gap_8()
+                .child(split_pane(cx))
+                .child(collapsible(window, cx))
+        }
+    }
+
+    #[gpui::test]
+    fn layout_specimens_fit_a_phone_and_keep_desktop_widths(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            ely_gpui_component::init_for_tests(cx);
+            Theme::update(cx, |theme| theme.touch_mode = true);
+        });
+        let (_, cx) = cx.add_window_view(|_, _| Regions);
+        cx.simulate_resize(size(px(390.0), px(844.0)));
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+        }
+        for selector in ["gallery-split-frame", "gallery-collapsible-frame"] {
+            let bounds = cx.debug_bounds(selector).expect(selector);
+            assert!(
+                bounds.left() >= px(0.0) && bounds.right() <= px(390.0),
+                "{selector} is clipped at phone width: {bounds:?}"
+            );
+        }
+        assert!(
+            cx.debug_bounds("gallery-split-frame")
+                .expect("split frame")
+                .size
+                .width
+                >= px(300.0),
+            "the split specimen must fill the phone content width"
+        );
+
+        cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = false));
+        cx.simulate_resize(size(px(900.0), px(844.0)));
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+        }
+        assert_eq!(
+            cx.debug_bounds("gallery-split-frame")
+                .expect("split frame")
+                .size
+                .width,
+            px(560.0)
+        );
+        assert_eq!(
+            cx.debug_bounds("gallery-collapsible-frame")
+                .expect("collapsible frame")
+                .size
+                .width,
+            px(420.0)
+        );
+    }
 }

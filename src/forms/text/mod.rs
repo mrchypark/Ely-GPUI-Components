@@ -1,15 +1,21 @@
 mod actions;
 mod edit;
 mod element;
+mod events;
 mod geometry;
 mod highlight;
 mod ime;
+mod owner;
 
+mod state;
+
+#[cfg(all(test, feature = "test-support"))]
+mod password_security_tests;
 use std::{ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
-    App, Bounds, Context, EventEmitter, FocusHandle, Focusable, Pixels, Point, SharedString,
-    Subscription, Task, Window, WrappedLine,
+    App, Bounds, Context, EventEmitter, FocusHandle, Focusable, KeyboardType, Pixels, Point,
+    SharedString, Subscription, Task, TextInputConfiguration, Window, WrappedLine,
 };
 
 pub(crate) use actions::{
@@ -18,22 +24,11 @@ pub(crate) use actions::{
 pub use edit::History;
 use edit::Snapshot;
 pub(crate) use edit::{from_utf16, to_utf16};
+pub use events::InputEvent;
+use events::{Filter, Highlighter};
 pub use highlight::Highlight;
+pub use owner::{TextInputOwner, set_input_owner_reporter};
 
-use crate::theme::ActiveTheme;
-
-/// What a text input tells its owner.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputEvent {
-    Changed,
-    /// Enter in one line, or the submit key in several.
-    Submit,
-    Focus,
-    Blur,
-}
-
-type Highlighter = Rc<dyn Fn(&str, &App) -> Vec<(Range<usize>, Highlight)>>;
-type Filter = Rc<dyn Fn(char) -> bool>;
 pub(crate) type Fit = Rc<dyn Fn(&str, Range<usize>, &str) -> (String, usize)>;
 
 /// The last shaped text: one entry per hard line, with its display offset.
@@ -45,12 +40,14 @@ pub(crate) struct Layout {
     pub placeholder: bool,
 }
 
-const BULLET: char = '•';
-const BLINK: Duration = Duration::from_millis(530);
+pub(super) const BULLET: char = '•';
+pub(super) const BLINK: Duration = Duration::from_millis(530);
 
 /// Editable text: one line or many, with selection, undo, IME and clipboard.
 pub struct TextInput {
     focus: FocusHandle,
+    owner_activation: u64,
+    owner_observer: Option<Rc<dyn Fn(TextInputOwner)>>,
     text: String,
     placeholder: SharedString,
     label: SharedString,
@@ -60,9 +57,15 @@ pub struct TextInput {
     composing: Option<Snapshot>,
     rows: Option<(usize, usize)>,
     masked: bool,
+    input_configuration: TextInputConfiguration,
+    secure: bool,
+    explicit_secure: bool,
+    secure_owner: bool,
     filter: Option<Filter>,
     fit: Option<Fit>,
     max_len: Option<usize>,
+    keyboard_type: KeyboardType,
+    reveal_bounds: Option<Bounds<Pixels>>,
     highlighter: Option<Highlighter>,
     disabled: bool,
     history: History<Snapshot>,
@@ -94,13 +97,16 @@ impl TextInput {
         let focus = cx.focus_handle().tab_stop(true);
         let subscriptions = vec![
             cx.on_focus(&focus, window, |input, _, cx| {
+                input.advance_owner_activation();
                 input.focused = true;
                 input.restart_blink(cx);
                 cx.emit(InputEvent::Focus);
             }),
-            cx.on_blur(&focus, window, |input, _, cx| {
+            cx.on_blur(&focus, window, |input, window, cx| {
+                input.advance_owner_activation();
                 input.focused = false;
                 input.selecting = false;
+                gpui::EntityInputHandler::unmark_text(input, window, cx);
                 input._blink = None;
                 cx.emit(InputEvent::Blur);
                 cx.notify();
@@ -108,6 +114,8 @@ impl TextInput {
         ];
         Self {
             focus,
+            owner_activation: 0,
+            owner_observer: None,
             text: String::new(),
             placeholder: SharedString::default(),
             label: SharedString::default(),
@@ -117,9 +125,15 @@ impl TextInput {
             composing: None,
             rows: None,
             masked: false,
+            input_configuration: TextInputConfiguration::default(),
+            secure: false,
+            explicit_secure: false,
+            secure_owner: false,
             filter: None,
             fit: None,
             max_len: None,
+            keyboard_type: KeyboardType::Default,
+            reveal_bounds: None,
             highlighter: None,
             disabled: false,
             history: History::default(),
@@ -157,7 +171,27 @@ impl TextInput {
     /// Shows bullets instead of the text, and keeps it off the clipboard.
     pub fn masked(mut self) -> Self {
         self.masked = true;
+        self.secure = true;
+        self.explicit_secure = true;
         self
+    }
+
+    /// Configure supported software keyboard hints (excludes keyboard type and secure-entry).
+    pub fn input_configuration(mut self, configuration: TextInputConfiguration) -> Self {
+        self.input_configuration = configuration;
+        self
+    }
+
+    /// Update software keyboard hints for this field.
+    pub fn set_input_configuration(
+        &mut self,
+        configuration: TextInputConfiguration,
+        cx: &mut Context<Self>,
+    ) {
+        if self.input_configuration != configuration {
+            self.input_configuration = configuration;
+            cx.notify();
+        }
     }
 
     /// Drops typed or pasted characters `allow` rejects.
@@ -169,6 +203,12 @@ impl TextInput {
     /// Longest text, in characters.
     pub fn max_len(mut self, len: usize) -> Self {
         self.max_len = Some(len);
+        self
+    }
+
+    /// The software keyboard to request when this input gains focus.
+    pub fn keyboard_type(mut self, keyboard_type: KeyboardType) -> Self {
+        self.keyboard_type = keyboard_type;
         self
     }
 
@@ -244,10 +284,77 @@ impl TextInput {
 
     pub fn set_masked(&mut self, masked: bool, cx: &mut Context<Self>) {
         self.masked = masked;
+        if masked {
+            self.secure = true;
+            self.explicit_secure = true;
+        }
         cx.notify();
     }
 
+    pub(crate) fn enter_secure(&mut self, cx: &mut Context<Self>) {
+        self.secure_owner = true;
+        if !self.secure {
+            self.secure = true;
+            self.masked = true;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn remask_secure(&mut self, cx: &mut Context<Self>) {
+        self.secure_owner = true;
+        if !self.secure || !self.masked {
+            self.secure = true;
+            self.masked = true;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn set_revealed(&mut self, revealed: bool, cx: &mut Context<Self>) {
+        if self.masked == revealed {
+            self.masked = !revealed;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn leave_secure(&mut self, cx: &mut Context<Self>) {
+        if self.secure_owner {
+            self.secure_owner = false;
+            self.secure = self.explicit_secure;
+            self.masked = self.explicit_secure;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn set_keyboard_type(
+        &mut self,
+        keyboard_type: KeyboardType,
+        cx: &mut Context<Self>,
+    ) {
+        if self.keyboard_type != keyboard_type {
+            self.keyboard_type = keyboard_type;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn reveal_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.reveal_bounds
+    }
+
+    pub(crate) fn set_reveal_bounds(&mut self, bounds: Bounds<Pixels>) {
+        self.reveal_bounds = Some(bounds);
+    }
+
+    pub(crate) fn clear_reveal_bounds(&mut self) {
+        self.reveal_bounds = None;
+    }
+
     pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
+        if !self.disabled && disabled {
+            self.finish_composition(cx);
+        }
+        if self.disabled != disabled {
+            self.advance_owner_activation();
+        }
         self.disabled = disabled;
         self.focus = self.focus.clone().tab_stop(!disabled);
         cx.notify();
@@ -297,195 +404,5 @@ impl TextInput {
         self.selection = range;
         self.reversed = false;
         self.restart_blink(cx);
-    }
-
-    /// Keeps what `filter` and `max_len` allow of `incoming`.
-    fn admit(&self, incoming: &str, keep: usize) -> String {
-        let allowed: String = incoming
-            .chars()
-            .filter(|ch| self.filter.as_ref().is_none_or(|allow| allow(*ch)))
-            .collect();
-        match self.max_len {
-            Some(max) => allowed.chars().take(max.saturating_sub(keep)).collect(),
-            None => allowed,
-        }
-    }
-
-    /// The selection the last edit replaced, for an owner's undo to go back to.
-    pub(crate) fn edited_from(&self) -> Range<usize> {
-        self.edited_from.clone()
-    }
-
-    /// How many edits it took, and whether an input method is composing.
-    pub(crate) fn edits(&self) -> (u64, bool) {
-        (self.edits, self.marked.is_some())
-    }
-
-    pub(crate) fn replace(
-        &mut self,
-        range: Range<usize>,
-        incoming: &str,
-        typing: bool,
-        cx: &mut Context<Self>,
-    ) {
-        if self.disabled {
-            return;
-        }
-        self.edited_from = self.selection.clone();
-        let incoming = if self.rows.is_none() {
-            incoming.replace(['\n', '\r'], " ")
-        } else {
-            incoming.replace("\r\n", "\n")
-        };
-        let kept = self.text.chars().count() - self.text[range.clone()].chars().count();
-        let incoming = self.admit(&incoming, kept);
-        if incoming.is_empty() && range.is_empty() {
-            return;
-        }
-        self.edits += 1;
-        let composed = self.composing.take();
-        let before = composed.clone().unwrap_or_else(|| self.snapshot());
-        let caret = match &self.fit {
-            Some(fit) => {
-                let (base, range) = match &composed {
-                    Some(start) => (start.text.as_str(), start.selection.clone()),
-                    None => (self.text.as_str(), range),
-                };
-                let (text, caret) = fit(base, range, &incoming);
-                self.text = text;
-                caret
-            }
-            None => {
-                self.text.replace_range(range.clone(), &incoming);
-                range.start + incoming.len()
-            }
-        };
-        self.selection = caret..caret;
-        self.reversed = false;
-        self.marked = None;
-        self.commit(before, typing, cx);
-        self.restart_blink(cx);
-    }
-
-    /// Makes `before` one undo step, if the text moved on from it.
-    fn commit(&mut self, before: Snapshot, typing: bool, cx: &mut Context<Self>) {
-        if before.text != self.text {
-            self.history.record(before, typing);
-            cx.emit(InputEvent::Changed);
-        }
-    }
-
-    /// The state as committed, so undo never keeps an input method's text before it commits.
-    fn snapshot(&self) -> Snapshot {
-        self.composing.clone().unwrap_or_else(|| Snapshot {
-            text: self.text.clone(),
-            selection: self.selection.clone(),
-        })
-    }
-
-    pub(crate) fn restore(&mut self, snapshot: Snapshot, cx: &mut Context<Self>) {
-        self.text = snapshot.text;
-        self.selection = snapshot.selection;
-        self.reversed = false;
-        self.marked = None;
-        self.composing = None;
-        cx.emit(InputEvent::Changed);
-        self.restart_blink(cx);
-    }
-
-    pub(crate) fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
-        self.selection = offset..offset;
-        self.reversed = false;
-        self.restart_blink(cx);
-    }
-
-    pub(crate) fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
-        if self.reversed {
-            self.selection.start = offset;
-        } else {
-            self.selection.end = offset;
-        }
-        if self.selection.end < self.selection.start {
-            self.reversed = !self.reversed;
-            self.selection = self.selection.end..self.selection.start;
-        }
-        self.restart_blink(cx);
-    }
-
-    /// Shows the caret now and restarts its blink.
-    fn restart_blink(&mut self, cx: &mut Context<Self>) {
-        self.caret_on = true;
-        self.blink_epoch += 1;
-        let epoch = self.blink_epoch;
-        let still = cx.theme().reduced_motion;
-        self._blink = (!still && self.focused).then(|| {
-            cx.spawn(async move |input, cx| {
-                loop {
-                    cx.background_executor().timer(BLINK).await;
-                    let alive = input.update(cx, |input, cx| {
-                        if input.blink_epoch == epoch {
-                            input.caret_on = !input.caret_on;
-                            cx.notify();
-                        }
-                    });
-                    if alive.is_err() {
-                        return;
-                    }
-                }
-            })
-        });
-        cx.notify();
-    }
-
-    /// What the element shows: bullets when masked.
-    pub(crate) fn display_text(&self) -> String {
-        if self.masked {
-            BULLET.to_string().repeat(self.grapheme_count())
-        } else {
-            self.text.clone()
-        }
-    }
-
-    fn grapheme_count(&self) -> usize {
-        unicode_segmentation::UnicodeSegmentation::graphemes(self.text.as_str(), true).count()
-    }
-
-    pub(crate) fn display_offset(&self, offset: usize) -> usize {
-        if self.masked {
-            edit::masked_offset(&self.text, offset, BULLET)
-        } else {
-            offset
-        }
-    }
-
-    pub(crate) fn content_offset(&self, display: usize) -> usize {
-        if self.masked {
-            edit::unmasked_offset(&self.text, display, BULLET)
-        } else {
-            display
-        }
-    }
-
-    pub(crate) fn highlights(&self, cx: &App) -> Vec<(Range<usize>, Highlight)> {
-        match (&self.highlighter, self.masked) {
-            (Some(highlight), false) => highlight(&self.text, cx),
-            _ => Vec::new(),
-        }
-    }
-
-    pub(crate) fn marked(&self) -> Option<Range<usize>> {
-        self.marked.clone()
-    }
-
-    pub(crate) fn selecting(&self) -> bool {
-        self.selecting
-    }
-
-    pub(crate) fn caret_on(&self) -> bool {
-        self.caret_on
-    }
-
-    pub(crate) fn focus(&self) -> &FocusHandle {
-        &self.focus
     }
 }

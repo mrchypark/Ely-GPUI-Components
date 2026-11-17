@@ -3,10 +3,10 @@ use std::time::Duration;
 use gpui::{
     AnyElement, App, AppContext, Axis, Bounds, Context, InteractiveElement, IntoElement, Modifiers,
     MouseButton, ParentElement, Pixels, Point, Render, StatefulInteractiveElement, Styled,
-    TestAppContext, VisualTestContext, Window, div, point, px,
+    TestAppContext, TouchDragEvent, TouchPhase, VisualTestContext, Window, div, point, px,
 };
 
-use super::{Drawer, PaneGroup, SplitPane};
+use super::{Drawer, MasterDetail, PaneGroup, SplitPane};
 use crate::theme::Theme;
 
 type Build = Box<dyn Fn(&mut Window, &mut App) -> AnyElement>;
@@ -63,7 +63,8 @@ fn opened(cx: &mut TestAppContext, reduced: bool) -> &mut VisualTestContext {
     });
     let (_, cx) = cx.add_window_view(|_, _| Pulled);
     cx.run_until_parked();
-    std::thread::sleep(Duration::from_millis(if reduced { 10 } else { 250 }));
+    cx.executor()
+        .advance_clock(Duration::from_millis(if reduced { 10 } else { 250 }));
     cx.update(|window, _| window.refresh());
     cx
 }
@@ -282,7 +283,8 @@ fn wheel_page(inner: Pixels, cx: &mut TestAppContext) -> Pixels {
         move |_, _| Nested(inner, page)
     });
     cx.run_until_parked();
-    cx.simulate_event(gpui::ScrollWheelEvent {
+    cx.simulate_event(gpui::ScrollEvent {
+        source: gpui::ScrollSource::Pointer,
         position: point(px(50.0), px(50.0)),
         delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(-40.0))),
         modifiers: Modifiers::none(),
@@ -300,4 +302,111 @@ fn a_scroll_area_keeps_a_wheel_it_can_use(cx: &mut TestAppContext) {
 #[gpui::test]
 fn a_scroll_area_with_no_room_passes_the_wheel_on(cx: &mut TestAppContext) {
     assert_eq!(wheel_page(px(50.0), cx), px(-40.0));
+}
+
+/// Two panes split by a divider, on a phone or on a desktop.
+struct Split;
+
+impl Render for Split {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let pane = |name: &'static str| div().debug_selector(move || name.into()).size_full();
+        div().w(px(300.0)).h(px(100.0)).child(
+            SplitPane::new("split", Axis::Horizontal, px(10.0))
+                .pane(pane("first"))
+                .pane(pane("second")),
+        )
+    }
+}
+
+#[gpui::test]
+fn a_touch_split_handle_is_a_thumb(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
+    });
+    let (_, cx) = cx.add_window_view(|_, _| Split);
+    cx.run_until_parked();
+    let handle = cx.debug_bounds("split-handle").expect("the divider");
+    assert!(
+        handle.size.width >= px(48.),
+        "the divider is a touch target: {handle:?}"
+    );
+    cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = false));
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let handle = cx.debug_bounds("split-handle").expect("the divider");
+    assert!(
+        handle.size.width < px(48.),
+        "the desktop keeps its thin divider: {handle:?}"
+    );
+}
+
+#[gpui::test]
+fn a_touch_drag_moves_a_split_divider(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
+    });
+    let (_, cx) = cx.add_window_view(|_, _| Split);
+    cx.run_until_parked();
+    let first = cx.debug_bounds("first").expect("first pane");
+    let handle = cx.debug_bounds("split-handle").expect("the divider");
+    let start = handle.center();
+    for (phase, position) in [
+        (TouchPhase::Started, start),
+        (TouchPhase::Moved, start + point(px(40.), px(0.))),
+        (TouchPhase::Ended, start + point(px(40.), px(0.))),
+    ] {
+        cx.simulate_event(TouchDragEvent {
+            phase,
+            start_position: start,
+            position,
+        });
+    }
+    assert!(
+        cx.debug_bounds("first").expect("first pane").size.width > first.size.width,
+        "a phone swipe must move the divider"
+    );
+}
+
+struct AdaptiveMasterDetail;
+
+impl Render for AdaptiveMasterDetail {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        MasterDetail::new(
+            "adaptive",
+            div()
+                .debug_selector(|| "adaptive-master".into())
+                .size_full(),
+            div()
+                .debug_selector(|| "adaptive-detail".into())
+                .size_full(),
+            px(40.),
+        )
+    }
+}
+
+#[gpui::test]
+fn master_detail_adapts_when_a_touch_window_changes_size(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
+    });
+    let (_, cx) = cx.add_window_view(|_, _| AdaptiveMasterDetail);
+    for (width, height, stacked) in [(390., 844., true), (1024., 768., false), (320., 600., true)] {
+        cx.simulate_resize(gpui::size(px(width), px(height)));
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        let master = cx.debug_bounds("adaptive-master").expect("master");
+        let detail = cx.debug_bounds("adaptive-detail").expect("detail");
+        if stacked {
+            assert!(detail.top() >= master.bottom(), "{master:?} {detail:?}");
+        } else {
+            assert!(detail.left() >= master.right(), "{master:?} {detail:?}");
+        }
+    }
 }

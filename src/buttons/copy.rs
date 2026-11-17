@@ -82,6 +82,7 @@ impl RenderOnce for CopyButton {
             .id(self.id)
             .flex_none()
             .size(theme.control_height(ControlSize::Sm))
+            .map(|el| theme.touch_target(el))
             .flex()
             .items_center()
             .justify_center()

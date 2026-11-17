@@ -69,6 +69,26 @@ pub(crate) fn handle_boxes(frame: &Frame, side: f32) -> Vec<(Handle, Frame)> {
         .collect()
 }
 
+/// Touch expands each handle hit square around its center; the drawn marker stays unchanged.
+pub(crate) fn handle_hits(frame: &Frame, side: f32, touch: bool) -> Vec<(Handle, Frame)> {
+    let hit_side = if touch {
+        super::touch::touch_target(side)
+    } else {
+        side
+    };
+    Handle::ALL
+        .into_iter()
+        .map(|handle| {
+            let (sx, sy) = handle.at();
+            let (x, y) = (
+                frame.x + frame.w * sx - hit_side / 2.0,
+                frame.y + frame.h * sy - hit_side / 2.0,
+            );
+            (handle, Frame::new(x, y, hit_side, hit_side))
+        })
+        .collect()
+}
+
 impl RenderOnce for TransformHandles {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();

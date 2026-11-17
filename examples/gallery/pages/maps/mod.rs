@@ -63,7 +63,11 @@ pub(super) fn tile(tile: Tile) -> ImageSource {
     picture(format!("{TILES}/{}/{}/{}.png", tile.z, tile.x, tile.y))
 }
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(world(window, cx))
         .child(coordinates(cx))

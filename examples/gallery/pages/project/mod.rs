@@ -152,7 +152,11 @@ fn board(window: &mut Window, cx: &mut App) -> Entity<Vec<Task>> {
     keep("project-work", || work(today()), window, cx)
 }
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(tasks::marks(cx))
         .child(tasks::fields(window, cx))
@@ -160,7 +164,7 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(tasks::subtasks(window, cx))
         .child(boards::kanban(window, cx))
         .child(boards::panel(window, cx))
-        .child(boards::labels(window, cx))
+        .child(boards::labels(window, cx, bounds))
         .child(plans::roadmap(cx))
         .child(plans::burndown(cx))
         .child(plans::milestones(cx))

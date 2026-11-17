@@ -1,9 +1,9 @@
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Bounds, ElementId, Entity, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
-    canvas, div, prelude::*,
+    AnyElement, App, Bounds, ElementId, Entity, InteractiveElement, IntoElement, KeyboardType,
+    MouseButton, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
+    Styled, Window, canvas, div, prelude::*,
 };
 
 use super::{
@@ -174,6 +174,22 @@ pub const COUNTRIES: [(&str, &str, &str, &str); 6] = [
     ("CN", "+86", "🇨🇳", "999 9999 9999"),
 ];
 
+fn country_choice(code: &str, dial: &str, flag: &str, android: bool) -> String {
+    if android {
+        format!("{code} {dial}")
+    } else {
+        format!("{flag}  {code}")
+    }
+}
+
+fn country_prefix(code: &str, dial: &str, flag: &str, android: bool) -> String {
+    if android {
+        format!("{code} {dial}")
+    } else {
+        format!("{flag} {dial}")
+    }
+}
+
 type OnCountry = Rc<dyn Fn(&'static str, &mut Window, &mut App)>;
 
 /// A phone number: a country picker for the code, then its number pattern.
@@ -216,6 +232,9 @@ struct Picker {
 
 impl RenderOnce for PhoneInput {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        self.state.update(cx, |input, cx| {
+            input.set_keyboard_type(KeyboardType::Phone, cx)
+        });
         let picker = window.use_keyed_state((self.id.clone(), "picker"), cx, |_, _| Picker {
             open: false,
             anchor: Bounds::default(),
@@ -229,7 +248,13 @@ impl RenderOnce for PhoneInput {
         let (hover, muted) = (theme.colors.hover, theme.colors.fg_muted);
         let rows: Vec<Choice> = COUNTRIES
             .iter()
-            .map(|(code, dial, flag, _)| Choice::new(*code, format!("{flag}  {code}")).note(*dial))
+            .map(|(code, dial, flag, _)| {
+                Choice::new(
+                    *code,
+                    country_choice(code, dial, flag, cfg!(target_os = "android")),
+                )
+                .note(*dial)
+            })
             .collect();
         let (toggle, close, measure) = (picker.clone(), picker.clone(), picker.clone());
         let on_country = self.on_country;
@@ -262,7 +287,12 @@ impl RenderOnce for PhoneInput {
                     cx.notify();
                 })
             })
-            .child(format!("{flag} {dial}"))
+            .child(country_prefix(
+                self.country,
+                dial,
+                flag,
+                cfg!(target_os = "android"),
+            ))
             .child(
                 Icon::new(IconName::ChevronDown)
                     .size(IconSize::Xs)
@@ -312,7 +342,41 @@ impl RenderOnce for PhoneInput {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_mask, mask_hint, refit};
+    use gpui::{
+        AppContext, Context, Entity, EntityInputHandler, IntoElement, KeyboardType, Render,
+        TestAppContext, VisualTestContext, Window,
+    };
+
+    use super::{PhoneInput, apply_mask, country_choice, country_prefix, mask_hint, refit};
+    use crate::{forms::TextInput, theme::Theme};
+
+    struct Phone {
+        input: Entity<TextInput>,
+        country: &'static str,
+    }
+
+    impl Render for Phone {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            PhoneInput::new("hint-phone", &self.input, self.country)
+        }
+    }
+
+    fn draw(cx: &mut VisualTestContext) {
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        cx.run_until_parked();
+    }
+
+    fn requested_keyboard(input: &Entity<TextInput>, cx: &mut VisualTestContext) -> KeyboardType {
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                EntityInputHandler::text_input_configuration(input, window, cx)
+            })
+        })
+        .keyboard_type
+    }
 
     fn typed(mask: &str, keys: &str) -> String {
         keys.chars().fold(String::new(), |text, key| {
@@ -355,5 +419,45 @@ mod tests {
             fit("(999) 999-9999", "", 0..0, "(555) 123-4567"),
             ("(555) 123-4567".into(), 14)
         );
+    }
+
+    #[test]
+    fn android_phone_labels_use_iso_and_dial_without_flags() {
+        assert_eq!(country_choice("US", "+1", "🇺🇸", true), "US +1");
+        assert_eq!(country_choice("US", "+1", "🇺🇸", false), "🇺🇸  US");
+        assert_eq!(country_prefix("US", "+1", "🇺🇸", true), "US +1");
+        assert_eq!(country_prefix("US", "+1", "🇺🇸", false), "🇺🇸 +1");
+    }
+
+    #[gpui::test]
+    fn reused_phone_state_requests_phone_across_country_and_focus_changes(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            crate::forms::bind_keys(cx);
+        });
+        let (view, cx) = cx.add_window_view(|window, cx| Phone {
+            input: cx.new(|cx| TextInput::new(window, cx)),
+            country: "US",
+        });
+        cx.update(|window, _| window.activate_window());
+        draw(cx);
+        cx.update(|window, cx| window.focus_next(cx));
+        draw(cx);
+        let input = view.read_with(cx, |view, _| view.input.clone());
+        assert_eq!(requested_keyboard(&input, cx), KeyboardType::Phone);
+
+        view.update(cx, |view, cx| {
+            view.country = "GB";
+            cx.notify();
+        });
+        draw(cx);
+        assert_eq!(requested_keyboard(&input, cx), KeyboardType::Phone);
+
+        cx.update(|window, cx| {
+            window.blur(cx);
+            window.focus_next(cx);
+        });
+        draw(cx);
+        assert_eq!(requested_keyboard(&input, cx), KeyboardType::Phone);
     }
 }

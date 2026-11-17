@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ElementId, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Point, RenderOnce, Styled, Window, anchored, div, prelude::*,
+    Animation, AnimationExt, AnyElement, App, Bounds, ElementId, InteractiveElement, IntoElement,
+    MouseButton, ParentElement, Pixels, Point, RenderOnce, Styled, Window, anchored, div,
+    prelude::*,
 };
 use smallvec::SmallVec;
 
@@ -27,6 +28,7 @@ pub enum Place {
 pub struct Backdrop {
     id: ElementId,
     place: Place,
+    content_bounds: Option<Bounds<Pixels>>,
     on_dismiss: Option<Dismiss>,
     children: SmallVec<[AnyElement; 1]>,
 }
@@ -36,6 +38,7 @@ impl Backdrop {
         Self {
             id: id.into(),
             place: Place::Center,
+            content_bounds: None,
             on_dismiss: None,
             children: SmallVec::new(),
         }
@@ -44,6 +47,12 @@ impl Backdrop {
     /// Edges stretch children along that edge.
     pub fn place(mut self, place: Place) -> Self {
         self.place = place;
+        self
+    }
+
+    /// Places children within logical window bounds while the scrim still covers the window.
+    pub fn content_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.content_bounds = Some(bounds);
         self
     }
 
@@ -89,6 +98,13 @@ impl RenderOnce for Backdrop {
                     .w(viewport.width)
                     .h(viewport.height)
                     .flex()
+                    .when_some(self.content_bounds, |layer, bounds| {
+                        layer
+                            .pl(bounds.left().max(Pixels::ZERO))
+                            .pt(bounds.top().max(Pixels::ZERO))
+                            .pr((viewport.width - bounds.right()).max(Pixels::ZERO))
+                            .pb((viewport.height - bounds.bottom()).max(Pixels::ZERO))
+                    })
                     .map(|layer| match self.place {
                         Place::Center => layer.items_center().justify_center(),
                         Place::Left => layer.flex_row().justify_start(),

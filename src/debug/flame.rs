@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{
     App, Bounds, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     MouseMoveEvent, ParentElement, Pixels, RenderOnce, SharedString, Styled, TextAlign, Window,
-    canvas, div, fill, point, size,
+    canvas, div, fill, point, prelude::FluentBuilder, size,
 };
 
 use crate::{
@@ -197,6 +197,7 @@ impl RenderOnce for Flamegraph {
             (placed.clone(), placed.clone(), placed.clone());
         let (hovered, palette) = (self.hovered.clone(), colors.chart);
         let (on_focus, on_hover) = (self.on_focus, self.on_hover);
+        let press_hover = on_hover.clone();
         let (fg, hover_ring, text_size) = (colors.fg, colors.focus, theme.text_size(TextSize::Xs));
         let font = theme.mono_family.clone();
         let gap = theme.chart().hairline;
@@ -222,6 +223,7 @@ impl RenderOnce for Flamegraph {
             .child(
                 div()
                     .id(self.id.clone())
+                    .debug_selector(|| "flame-frames".into())
                     .relative()
                     .w_full()
                     .h(row * depth as f32)
@@ -229,23 +231,30 @@ impl RenderOnce for Flamegraph {
                     .on_mouse_down(
                         MouseButton::Left,
                         move |event: &MouseDownEvent, window, cx| {
-                            if let (Some(on_focus), Some(path)) = (
-                                &on_focus,
-                                hit(&press_placed, pressed_at.get(), event.position),
-                            ) {
+                            let Some(path) = hit(&press_placed, pressed_at.get(), event.position)
+                            else {
+                                return;
+                            };
+                            // A finger has no hover to read, so the press reports the frame it landed on.
+                            if let Some(on_hover) = &press_hover {
+                                on_hover(Some(path.clone()), window, cx)
+                            }
+                            if let Some(on_focus) = &on_focus {
                                 log::info!("flamegraph: focus {path:?}");
                                 on_focus(path, window, cx)
                             }
                         },
                     )
-                    .on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
-                        if let Some(on_hover) = &on_hover {
-                            on_hover(
-                                hit(&move_placed, moved_at.get(), event.position),
-                                window,
-                                cx,
-                            )
-                        }
+                    .when(!theme.touch_mode, |frames| {
+                        frames.on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
+                            if let Some(on_hover) = &on_hover {
+                                on_hover(
+                                    hit(&move_placed, moved_at.get(), event.position),
+                                    window,
+                                    cx,
+                                )
+                            }
+                        })
                     })
                     .child(
                         canvas(

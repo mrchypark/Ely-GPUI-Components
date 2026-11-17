@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ElementId, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, Styled, Window, div, prelude::*,
+    Animation, AnimationExt, AnyElement, App, Bounds, ElementId, InteractiveElement, IntoElement,
+    ParentElement, Pixels, RenderOnce, SharedString, Styled, Window, div, prelude::*,
 };
 use smallvec::SmallVec;
 
@@ -120,6 +120,7 @@ pub struct FormLabel {
     text: SharedString,
     required: bool,
     help: Option<SharedString>,
+    usable_bounds: Option<Bounds<Pixels>>,
 }
 
 impl FormLabel {
@@ -129,6 +130,7 @@ impl FormLabel {
             text: text.into(),
             required: false,
             help: None,
+            usable_bounds: None,
         }
     }
 
@@ -142,11 +144,18 @@ impl FormLabel {
         self.help = Some(text.into());
         self
     }
+
+    /// Usable logical window bounds for this label's help disclosure.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
 }
 
 impl RenderOnce for FormLabel {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let colors = &cx.theme().colors;
+        let help_label = format!("Help for {}", self.text);
         div()
             .flex()
             .items_center()
@@ -156,7 +165,11 @@ impl RenderOnce for FormLabel {
                 label.child(div().text_color(colors.danger).child("*"))
             })
             .when_some(self.help, |label, help| {
-                label.child(HelpTooltip::new((self.id, "help"), help))
+                label.child(
+                    HelpTooltip::new((self.id, "help"), help)
+                        .touch_label(help_label)
+                        .when_some(self.usable_bounds, |tip, bounds| tip.usable_bounds(bounds)),
+                )
             })
     }
 }
@@ -236,6 +249,12 @@ impl FormField {
 
     pub fn description(mut self, text: impl Into<SharedString>) -> Self {
         self.description = Some(text.into());
+        self
+    }
+
+    /// Delegates the current usable rectangle to the field label's help disclosure.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.label = self.label.usable_bounds(bounds);
         self
     }
 

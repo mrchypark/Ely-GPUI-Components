@@ -1,8 +1,8 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Context, CursorStyle, DragMoveEvent, ElementId, EmptyView, Entity, EntityId,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, SharedString,
+    AnyElement, App, Context, ElementId, Entity, EntityId, InteractiveElement, IntoElement,
+    KeyboardType, MouseButton, ParentElement, Pixels, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*,
 };
 
@@ -34,7 +34,7 @@ pub(crate) fn parse(text: &str) -> Option<f64> {
 }
 
 /// Rounds to `precision` places, then clamps to the rounded numbers in `min..=max`.
-fn settle(value: f64, min: f64, max: f64, precision: usize) -> f64 {
+pub(super) fn settle(value: f64, min: f64, max: f64, precision: usize) -> f64 {
     let scale = 10f64.powi(precision as i32);
     let (low, high) = (
         on_grid(min, scale, f64::ceil),
@@ -45,6 +45,15 @@ fn settle(value: f64, min: f64, max: f64, precision: usize) -> f64 {
         "no {precision}-place number lies in {min}..={max}"
     );
     ((value * scale).round() / scale).clamp(low, high)
+}
+
+fn keyboard_hint(min: f64, precision: usize) -> KeyboardType {
+    match (min < 0.0, precision > 0) {
+        (false, false) => KeyboardType::NumberPad,
+        (true, false) => KeyboardType::SignedNumber,
+        (false, true) => KeyboardType::Decimal,
+        (true, true) => KeyboardType::SignedDecimal,
+    }
 }
 
 /// `bound` on the `1 / scale` grid: kept if float error alone put it off, else moved `inward`.
@@ -59,12 +68,12 @@ fn on_grid(bound: f64, scale: f64, inward: fn(f64) -> f64) -> f64 {
 }
 
 /// A number's live settings, read by its input's event handler.
-struct Numeric {
+pub(super) struct Numeric {
     input: Entity<TextInput>,
     on_change: Option<OnChange>,
     on_commit: Option<OnChange>,
-    value: f64,
-    limits: (f64, f64, f64, usize),
+    pub(super) value: f64,
+    pub(super) limits: (f64, f64, f64, usize),
     /// Shows no number; an empty field commits nothing.
     blank: bool,
     /// The owner's value as shown; a new one replaces a draft once focus leaves.
@@ -101,7 +110,7 @@ fn show(
 }
 
 /// Settles `next` into the limits and shows it.
-fn commit(state: &Entity<Numeric>, next: f64, window: &mut Window, cx: &mut App) {
+pub(super) fn commit(state: &Entity<Numeric>, next: f64, window: &mut Window, cx: &mut App) {
     let (input, on_change, on_commit, (min, max, _, precision)) = {
         let numeric = state.read(cx);
         (
@@ -172,53 +181,15 @@ fn numeric(id: &ElementId, window: &mut Window, cx: &mut App) -> Entity<Numeric>
     })
 }
 
-struct Scrub {
-    owner: EntityId,
-    start: Rc<Cell<Option<(Pixels, f64)>>>,
+pub(super) struct Scrub {
+    pub(super) owner: EntityId,
+    pub(super) start: Rc<Cell<Option<(Pixels, f64)>>>,
 }
 
-/// Wraps `face` so dragging it sideways moves the number, one step per notch.
-fn scrub_handle(
-    id: ElementId,
-    face: AnyElement,
-    state: Entity<Numeric>,
-    window: &mut Window,
-    cx: &mut App,
-) -> impl IntoElement + use<> {
-    let owner = window
-        .use_keyed_state(id.clone(), cx, |_, _| ())
-        .entity_id();
-    let notch = cx.theme().handle_hit().to_pixels(window.rem_size());
-    div()
-        .id(id)
-        .cursor(CursorStyle::ResizeLeftRight)
-        .on_drag(
-            Scrub {
-                owner,
-                start: Rc::new(Cell::new(None)),
-            },
-            |scrub, _, _, cx| {
-                scrub.start.set(None);
-                cx.new(|_| EmptyView)
-            },
-        )
-        .on_drag_move(move |event: &DragMoveEvent<Scrub>, window, cx| {
-            let scrub = event.drag(cx);
-            if scrub.owner != owner {
-                return;
-            }
-            let (start, x) = (scrub.start.clone(), event.event.position.x);
-            let (anchor, from) = start.get().unwrap_or_else(|| {
-                let fresh = (x, state.read(cx).current(cx));
-                start.set(Some(fresh));
-                fresh
-            });
-            let notches = f64::from(((x - anchor) / notch).trunc());
-            let step = state.read(cx).limits.2;
-            commit(&state, from + notches * step, window, cx);
-        })
-        .child(face)
-}
+#[path = "number/scrub_handle.rs"]
+mod scrub_handle;
+
+use scrub_handle::scrub_handle;
 
 /// A number field: arrows or the stepper move it, dragging the grip scrubs it.
 #[derive(IntoElement)]
@@ -336,11 +307,15 @@ impl RenderOnce for NumberInput {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = numeric(&self.id, window, cx);
         let (value, min, max, step) = (self.value, self.min, self.max, self.step);
+        let keyboard_type = keyboard_hint(min, self.precision);
         let shown = match self.blank {
             Some(_) => String::new(),
             None => format::number(value, self.precision, Separators::EN),
         };
         let input = state.read(cx).input.clone();
+        input.update(cx, |input, cx| input.set_keyboard_type(keyboard_type, cx));
+        #[cfg(all(test, feature = "test-support"))]
+        keyboard_hint_tests::record(self.id.clone(), input.clone());
         let editing = input.read(cx).focus().is_focused(window);
         let echo = input.read(cx).text() == shown;
         let reseed = state.update(cx, |numeric, _| {
@@ -380,6 +355,7 @@ impl RenderOnce for NumberInput {
         let label = self.scrub_label.take().map(|label| {
             let theme = cx.theme();
             let face = div()
+                .debug_selector(|| "scrub-label".into())
                 .flex_none()
                 .min_w(theme.control_height(ControlSize::Md))
                 .whitespace_nowrap()
@@ -496,3 +472,6 @@ pub use scrub::ScrubInput;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "test-support"))]
+mod keyboard_hint_tests;

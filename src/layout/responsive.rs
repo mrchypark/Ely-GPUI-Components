@@ -1,0 +1,248 @@
+use gpui::{Bounds, Pixels, Point, ScrollHandle, point, size};
+
+/// Insets in logical window coordinates, before keyboard avoidance.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ViewportInsets {
+    pub top: Pixels,
+    pub right: Pixels,
+    pub bottom: Pixels,
+    pub left: Pixels,
+}
+
+/// `keyboard_bottom` includes safe-area occlusion; pass zero if the host resized for the keyboard.
+pub fn usable_bounds(
+    viewport: Bounds<Pixels>,
+    safe: ViewportInsets,
+    keyboard_bottom: Pixels,
+) -> Bounds<Pixels> {
+    let width = viewport.size.width.max(Pixels::ZERO);
+    let height = viewport.size.height.max(Pixels::ZERO);
+    let left = safe.left.max(Pixels::ZERO).min(width);
+    let top = safe.top.max(Pixels::ZERO).min(height);
+    let right = safe.right.max(Pixels::ZERO).min(width - left);
+    let bottom = safe
+        .bottom
+        .max(keyboard_bottom)
+        .max(Pixels::ZERO)
+        .min(height - top);
+    Bounds::new(
+        viewport.origin + point(left, top),
+        size(width - left - right, height - top - bottom),
+    )
+}
+
+fn above_below(
+    frame: Bounds<Pixels>,
+    keyboard: Bounds<Pixels>,
+    gap: Pixels,
+) -> [Bounds<Pixels>; 2] {
+    let above = (keyboard.top() - gap).clamp(frame.top(), frame.bottom());
+    let below = (keyboard.bottom() + gap).clamp(frame.top(), frame.bottom());
+    [
+        Bounds::new(frame.origin, size(frame.size.width, above - frame.top())),
+        Bounds::new(
+            point(frame.left(), below),
+            size(frame.size.width, frame.bottom() - below),
+        ),
+    ]
+}
+
+/// The largest rectangle in the viewport that clears a floating keyboard.
+pub fn keyboard_clear_bounds(frame: Bounds<Pixels>, keyboard: Bounds<Pixels>) -> Bounds<Pixels> {
+    let hit = frame.intersect(&keyboard);
+    if hit.size.width <= Pixels::ZERO || hit.size.height <= Pixels::ZERO {
+        return frame;
+    }
+    let [above, below] = above_below(frame, hit, Pixels::ZERO);
+    let left = Bounds::new(
+        frame.origin,
+        size(hit.left() - frame.left(), frame.size.height),
+    );
+    let right = Bounds::new(
+        point(hit.right(), frame.top()),
+        size(frame.right() - hit.right(), frame.size.height),
+    );
+    let area = |b: &Bounds<Pixels>| f32::from(b.size.width) * f32::from(b.size.height);
+    [left, right, below, above]
+        .into_iter()
+        .max_by(|a, b| area(a).total_cmp(&area(b)))
+        .unwrap()
+}
+
+/// The nearest region a vertically scrolling field can use around a floating keyboard.
+pub fn keyboard_reveal_region(
+    field: Bounds<Pixels>,
+    frame: Bounds<Pixels>,
+    keyboard: Option<Bounds<Pixels>>,
+    gap: Pixels,
+) -> Option<Bounds<Pixels>> {
+    let Some(keyboard) = keyboard.filter(|keyboard| {
+        let hit = frame.intersect(keyboard);
+        hit.size.width > Pixels::ZERO && hit.size.height > Pixels::ZERO
+    }) else {
+        return Some(frame);
+    };
+    if field.right() <= keyboard.left() || field.left() >= keyboard.right() {
+        return Some(frame);
+    }
+    above_below(frame, keyboard, gap)
+        .into_iter()
+        .filter(|region| region.size.height >= field.size.height)
+        .min_by(|a, b| {
+            let shift = |region| f32::from(reveal_offset(field, region).y).abs();
+            shift(*a).total_cmp(&shift(*b))
+        })
+}
+
+/// The caller chooses its breakpoint in logical pixels, independently of the operating system.
+pub fn is_compact(available: Bounds<Pixels>, breakpoint: Pixels) -> bool {
+    available.size.width < breakpoint
+}
+
+/// Translation for a painted field to fit; an oversized field reveals its leading edge.
+pub fn reveal_offset(field: Bounds<Pixels>, visible: Bounds<Pixels>) -> Point<Pixels> {
+    fn shift(start: Pixels, end: Pixels, first: Pixels, last: Pixels) -> Pixels {
+        if start < first {
+            first - start
+        } else if end > last {
+            (last - end).max(first - start)
+        } else {
+            Pixels::ZERO
+        }
+    }
+    point(
+        shift(field.left(), field.right(), visible.left(), visible.right()),
+        shift(field.top(), field.bottom(), visible.top(), visible.bottom()),
+    )
+}
+
+/// Call after layout changes; bounds use window coordinates. Host must add keyboard reach; movement is clamped and may not fully reveal the field.
+pub fn reveal_in_bounds(
+    scroll: &ScrollHandle,
+    field: Bounds<Pixels>,
+    visible: Bounds<Pixels>,
+) -> bool {
+    let frame = scroll.bounds();
+    let left = frame.left().max(visible.left());
+    let top = frame.top().max(visible.top());
+    let right = frame.right().min(visible.right());
+    let bottom = frame.bottom().min(visible.bottom());
+    if right <= left || bottom <= top {
+        return false;
+    }
+    let delta = reveal_offset(
+        field,
+        Bounds::new(point(left, top), size(right - left, bottom - top)),
+    );
+    if delta == Point::default() {
+        return false;
+    }
+    let before = scroll.offset();
+    let maximum = scroll.max_offset();
+    let proposed = before + delta;
+    let after = point(
+        proposed.x.clamp(-maximum.x, Pixels::ZERO),
+        proposed.y.clamp(-maximum.y, Pixels::ZERO),
+    );
+    if after == before {
+        return false;
+    }
+    scroll.set_offset(after);
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::px;
+
+    fn rect(x: f32, y: f32, w: f32, h: f32) -> Bounds<Pixels> {
+        Bounds::new(point(px(x), px(y)), size(px(w), px(h)))
+    }
+
+    #[test]
+    fn floating_keyboard_keeps_space_beside_it_and_reveals_only_overlapping_fields() {
+        let frame = rect(0., 0., 400., 300.);
+        let keyboard = rect(200., 80., 200., 140.);
+        assert_eq!(
+            keyboard_clear_bounds(frame, keyboard),
+            rect(0., 0., 200., 300.)
+        );
+        assert_eq!(
+            keyboard_clear_bounds(frame, rect(0., 300., 400., 100.)),
+            frame
+        );
+        assert_eq!(
+            keyboard_reveal_region(rect(20., 100., 100., 30.), frame, Some(keyboard), px(10.)),
+            Some(frame)
+        );
+        assert_eq!(
+            keyboard_reveal_region(rect(230., 92., 100., 30.), frame, Some(keyboard), px(10.)),
+            Some(rect(0., 0., 400., 70.))
+        );
+        assert_eq!(
+            keyboard_reveal_region(rect(230., 195., 100., 30.), frame, Some(keyboard), px(10.)),
+            Some(rect(0., 230., 400., 70.))
+        );
+        assert!(
+            keyboard_reveal_region(rect(0., 90., 400., 120.), frame, Some(frame), px(10.))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn keyboard_overlaps_safe_bottom_and_preserves_origin() {
+        let safe = ViewportInsets {
+            top: px(20.),
+            bottom: px(30.),
+            ..Default::default()
+        };
+        assert_eq!(
+            usable_bounds(rect(10., 15., 400., 800.), safe, px(300.)),
+            rect(10., 35., 400., 480.)
+        );
+        assert_eq!(
+            usable_bounds(rect(0., 0., 400., 800.), safe, px(10.)),
+            rect(0., 20., 400., 750.)
+        );
+    }
+
+    #[test]
+    fn empty_and_excessive_insets_do_not_invert_bounds() {
+        let view = rect(4., 5., 100., 80.);
+        assert_eq!(
+            usable_bounds(view, ViewportInsets::default(), Pixels::ZERO),
+            view
+        );
+        let safe = ViewportInsets {
+            left: px(200.),
+            top: px(90.),
+            right: px(20.),
+            bottom: px(20.),
+        };
+        assert_eq!(usable_bounds(view, safe, px(100.)), rect(104., 85., 0., 0.));
+        assert!(is_compact(view, px(101.)));
+        assert!(!is_compact(view, px(100.)));
+    }
+
+    #[test]
+    fn reveal_is_minimal_and_prioritizes_oversized_field_start() {
+        let visible = rect(10., 20., 100., 100.);
+        assert_eq!(
+            reveal_offset(rect(20., 30., 20., 20.), visible),
+            Point::default()
+        );
+        assert_eq!(
+            reveal_offset(rect(90., 110., 40., 30.), visible),
+            point(px(-20.), px(-20.))
+        );
+        assert_eq!(
+            reveal_offset(rect(0., 10., 200., 200.), visible),
+            point(px(10.), px(10.))
+        );
+        assert_eq!(
+            reveal_offset(rect(20., 30., 200., 200.), visible),
+            point(px(-10.), px(-10.))
+        );
+    }
+}

@@ -307,6 +307,7 @@ impl RenderOnce for HuddleIndicator {
             .text_color(colors.success)
             .when_some(self.on_join, |chip, join| {
                 chip.cursor_pointer()
+                    .map(|chip| theme.touch_target(chip))
                     .tab_index(0)
                     .focus_ring(cx)
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())

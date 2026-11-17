@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::{
     App, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    SharedString, Styled, Window, div,
+    SharedString, Styled, Window, div, prelude::*,
 };
 
 use crate::{
@@ -72,16 +72,24 @@ struct Draft {
 /// A Feedback button that opens a short form: how it is going, as four faces, and a note. Send waits for a face, hands both on, then says thanks. Each opening starts fresh.
 #[derive(IntoElement)]
 pub struct FeedbackWidget {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     on_send: OnFeedback,
 }
 
 impl FeedbackWidget {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         on_send: impl Fn(Sentiment, &str, &mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             on_send: Rc::new(on_send),
         }
@@ -94,6 +102,9 @@ impl RenderOnce for FeedbackWidget {
         let on_send = self.on_send;
         Popover::new(id.clone(), "Feedback", move |window, cx| {
             form(id, on_send, window, cx)
+        })
+        .when_some(self.usable_bounds, |overlay, bounds| {
+            overlay.usable_bounds(bounds)
         })
         .icon(IconName::MessageSquare)
         .variant(ButtonVariant::Ghost)

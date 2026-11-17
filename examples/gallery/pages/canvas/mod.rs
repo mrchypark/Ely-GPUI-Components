@@ -42,12 +42,16 @@ const SCRIPT: &[Step] = &[
     Step::Shot("drawn"),
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(plane::plane(window, cx))
         .child(tools::tools(window, cx))
         .child(panels::arrange(window, cx))
-        .child(looks::styles(window, cx))
+        .child(looks::styles(window, cx, bounds))
         .child(looks::rules(window, cx))
         .child(graphs::nodes(window, cx))
         .child(boards::flow(window, cx))

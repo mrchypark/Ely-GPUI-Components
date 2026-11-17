@@ -81,10 +81,14 @@ const SCRIPT: &[Step] = &[
     Step::Wait(300),
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(editing::editing(window, cx))
-        .child(reading::reading(window, cx))
-        .child(knowledge::knowledge(window, cx))
+        .child(reading::reading(window, cx, bounds))
+        .child(knowledge::knowledge(window, cx, bounds))
         .into_any_element()
 }

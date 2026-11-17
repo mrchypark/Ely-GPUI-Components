@@ -72,7 +72,11 @@ const SCRIPT: &[Step] = &[
     Step::UpAt("chat-sources", 20.0, 10.0),
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     let draft = compose::draft(window, cx);
     let history = history::history(window, cx);
     let toaster = keep("chat-toaster", Toaster::default, window, cx);
@@ -86,12 +90,12 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(controls::actions(window, cx))
         .child(controls::status(window, cx))
         .child(controls::thinking(window, cx))
-        .child(cite::citations(window, cx))
+        .child(cite::citations(window, cx, bounds))
         .child(cite::search(window, cx))
         .child(compose::composer(&draft, window, cx))
-        .child(compose::pickers(&draft, window, cx))
+        .child(compose::pickers(&draft, window, cx, bounds))
         .child(compose::tuning(window, cx))
-        .child(history::conversations_section(&history, window, cx))
+        .child(history::conversations_section(&history, window, cx, bounds))
         .child(history::projects_section(window, cx))
         .child(history::shared_section(&history, &toaster, window, cx))
         .child(welcome::welcome_section(&opening, &toaster, window, cx))

@@ -1,11 +1,12 @@
 use gpui::{App, Entity, FocusHandle, SharedString, Window};
 
 use super::{
-    edit::{Tool, hit},
-    gesture::{Gesture, Hand, Handlers, PEN, REACH, Scene, path, spanned},
-    marks::handle_boxes,
+    edit::Tool,
+    gesture::{Gesture, Hand, Handlers, PEN, Scene, path, spanned},
+    marks::handle_hits,
     paint::in_view,
     shape::ShapeKind,
+    touch::hit_touch,
     view::Frame,
     writing,
 };
@@ -19,6 +20,8 @@ pub(super) struct Press {
     pub count: usize,
     pub shift: bool,
     pub side: f32,
+    /// Whether the press came from a finger, which reaches further than a mouse.
+    pub touch: bool,
     pub back: FocusHandle,
 }
 
@@ -45,11 +48,11 @@ pub(super) fn pressed(
                 .then(|| spanned(&scene.shapes, &scene.selected))
                 .flatten()
                 .and_then(|frame| {
-                    handle_boxes(&in_view(&view, &frame), press.side)
+                    handle_hits(&in_view(&view, &frame), press.side, press.touch)
                         .into_iter()
                         .find(|(_, square)| square.contains(press.view_at))
                 });
-            match (held, hit(&scene.shapes, at, REACH / view.zoom)) {
+            match (held, hit_touch(&scene.shapes, at, view.zoom, press.touch)) {
                 (Some((handle, _)), _) => Gesture::Resizing {
                     key: scene.selected[0].clone(),
                     handle,
@@ -99,7 +102,7 @@ pub(super) fn pressed(
                 (None, None) => Gesture::Marquee { from: at, to: at },
             }
         }
-        Tool::Connector => match hit(&scene.shapes, at, REACH / view.zoom) {
+        Tool::Connector => match hit_touch(&scene.shapes, at, view.zoom, press.touch) {
             Some(ix) => Gesture::Linking {
                 from: scene.shapes[ix].key.clone(),
                 to: at,

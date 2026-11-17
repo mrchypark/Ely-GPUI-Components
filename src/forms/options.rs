@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, ElementId, Entity,
+    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, Edges, ElementId, Entity,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, ScrollHandle,
     SharedString, Stateful, StatefulInteractiveElement, Styled, Window, anchored, canvas, div,
     prelude::*,
@@ -112,6 +112,7 @@ pub(crate) fn marked_row(
     let id = id.into();
     let theme = cx.theme();
     let colors = &theme.colors;
+    let name = format!("option-row-{id}");
     let fg = if choice.disabled {
         colors.fg_disabled
     } else {
@@ -119,16 +120,21 @@ pub(crate) fn marked_row(
     };
     div()
         .id(id.clone())
+        .debug_selector(move || name.clone())
         .flex()
         .items_center()
         .gap_2()
         .px_2()
         .py_1()
+        .map(|row| theme.touch_target(row))
         .rounded(theme.radius(Radius::Md))
         .text_color(fg)
         .when(highlighted && !choice.disabled, |row| row.bg(colors.hover))
         .when(!choice.disabled, |row| {
-            row.cursor_pointer().hover(|style| style.bg(colors.hover))
+            row.cursor_pointer()
+                .hover(|style| style.bg(colors.hover))
+                // A phone never hovers, so the press itself shows the row pressed.
+                .active(|style| style.bg(colors.hover))
         })
         .when_some(checked, |row, on| {
             row.child(
@@ -188,17 +194,31 @@ pub(crate) fn float(
     window: &Window,
     cx: &App,
 ) -> AnyElement {
-    let theme = cx.theme();
-    let rem = window.rem_size();
-    let row = theme.control_height(ControlSize::Md).to_pixels(rem);
-    let height = (row * (rows + 1) as f32).min(theme.list_max_height().to_pixels(rem));
+    let height = list_height(rows, window, cx);
     float_height(id, anchor, height, content, window, cx)
 }
 
+fn list_height(rows: usize, window: &Window, cx: &App) -> Pixels {
+    let theme = cx.theme();
+    let rem = window.rem_size();
+    let row = theme.touch_minimum(theme.control_height(ControlSize::Md).to_pixels(rem));
+    (row * (rows + 1) as f32).min(theme.list_max_height().to_pixels(rem))
+}
+
+fn side_room(anchor: Bounds<Pixels>, visible: Bounds<Pixels>, up: bool, margin: Pixels) -> Pixels {
+    let (edge, anchor) = if up {
+        (visible.top(), anchor.top())
+    } else {
+        (anchor.bottom(), visible.bottom())
+    };
+    (anchor - edge - margin).max(Pixels::ZERO)
+}
+
 /// Whether `height` goes over `anchor`: it does not fit below, and above has more room.
-pub(crate) fn opens_up(anchor: Bounds<Pixels>, height: Pixels, viewport: Pixels) -> bool {
-    let below = viewport - anchor.bottom();
-    height > below && anchor.top() > below
+pub(crate) fn opens_up(anchor: Bounds<Pixels>, height: Pixels, visible: Bounds<Pixels>) -> bool {
+    let below = (visible.bottom() - anchor.bottom()).max(Pixels::ZERO);
+    let above = (anchor.top() - visible.top()).max(Pixels::ZERO);
+    height > below && above > below
 }
 
 /// Floats `content` of a known `height` under `anchor`, or over it when only above has room; `id` is its owner's.
@@ -210,7 +230,15 @@ pub(crate) fn float_height(
     window: &Window,
     cx: &App,
 ) -> AnyElement {
-    let up = opens_up(anchor, height, window.viewport_size().height);
+    let viewport = window.viewport_size();
+    let visible = window.fully_visible_bounds();
+    let up = opens_up(anchor, height, visible);
+    let margins = Edges {
+        top: visible.top(),
+        right: (viewport.width - visible.right()).max(Pixels::ZERO),
+        bottom: (viewport.height - visible.bottom()).max(Pixels::ZERO),
+        left: visible.left(),
+    };
     let enter =
         Animation::new(motion::duration(motion::FAST, cx)).with_easing(motion::ease_out_cubic);
     let placed = if up {
@@ -235,7 +263,7 @@ pub(crate) fn float_height(
                     }),
             )
     };
-    raise(id, placed.snap_to_window())
+    raise(id, placed.snap_to_window_with_margin(margins))
         .with_priority(1)
         .into_any_element()
 }
@@ -294,7 +322,20 @@ pub(crate) struct Popup<'a> {
 impl Popup<'_> {
     pub fn render(self, window: &Window, cx: &App) -> AnyElement {
         let theme = cx.theme();
+        let visible = window.fully_visible_bounds();
         let (anchor, pick) = (self.anchor, self.pick);
+        let height = list_height(self.rows.len(), window, cx);
+        let margin = theme.window_margin();
+        let row = theme.touch_minimum(
+            theme
+                .control_height(ControlSize::Md)
+                .to_pixels(window.rem_size()),
+        );
+        // One row plus the list's top and bottom padding remains usable in short layouts.
+        let minimum = (row + window.rem_size() * 0.5)
+            .min((visible.size.height - margin * 2.0).max(Pixels::ZERO));
+        let room =
+            side_room(anchor, visible, opens_up(anchor, height, visible), margin).max(minimum);
         let rows = self.rows.iter().enumerate().map(|(ix, choice)| {
             let pick = pick.clone();
             let checked = self.checked.map(|values| values.contains(&choice.value));
@@ -315,12 +356,18 @@ impl Popup<'_> {
         });
         let list = surface(self.id.clone(), cx)
             .debug_selector(|| "option-list".into())
+            .occlude()
             .min_w(theme.tooltip_max_width())
             .when(anchor.size.width > Pixels::ZERO, |list| {
                 list.min_w(anchor.size.width)
             })
-            .max_w(window.viewport_size().width - theme.window_margin() * 2.0)
-            .max_h(theme.list_max_height())
+            .max_w((visible.size.width - theme.window_margin() * 2.0).max(Pixels::ZERO))
+            .max_h(
+                theme
+                    .list_max_height()
+                    .to_pixels(window.rem_size())
+                    .min(room),
+            )
             .occlude()
             .overflow_y_scroll()
             .when_some(self.scroll, |list, handle| list.track_scroll(handle))
@@ -340,31 +387,5 @@ impl Popup<'_> {
 }
 
 #[cfg(test)]
-mod tests {
-    use gpui::{Bounds, point, px, size};
-
-    use super::{Choice, opens_up, step};
-
-    #[test]
-    fn a_panel_opens_up_only_when_it_does_not_fit_below_and_above_has_more() {
-        let low = Bounds::new(point(px(0.0), px(600.0)), size(px(80.0), px(28.0)));
-        assert!(opens_up(low, px(260.0), px(790.0)));
-        assert!(!opens_up(low, px(120.0), px(790.0)));
-        let high = Bounds::new(point(px(0.0), px(100.0)), size(px(80.0), px(28.0)));
-        assert!(!opens_up(high, px(700.0), px(790.0)));
-    }
-
-    #[test]
-    fn stepping_wraps_and_skips_disabled_rows() {
-        let rows = [
-            Choice::new("a", "A"),
-            Choice::new("b", "B").disabled(),
-            Choice::new("c", "C"),
-        ];
-        assert_eq!(step(&rows, 0, 1), 2);
-        assert_eq!(step(&rows, 2, 1), 0);
-        assert_eq!(step(&rows, 0, -1), 2);
-        let none = [Choice::new("a", "A").disabled()];
-        assert_eq!(step(&none, 0, 1), 0);
-    }
-}
+#[path = "options_tests.rs"]
+mod tests;

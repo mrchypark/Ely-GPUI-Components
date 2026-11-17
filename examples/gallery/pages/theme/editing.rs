@@ -3,6 +3,7 @@ use ely_gpui_component::{
     settings::{ThemeDraft, ThemeEditor},
     theme::{ActiveTheme, Density, Mode, Theme},
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
 
 use crate::ui::section;
@@ -36,7 +37,11 @@ fn restore(cx: &mut App) {
     Theme::set_high_contrast(false, cx);
 }
 
-pub fn editor(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn editor(
+    _: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let draft = ThemeDraft::of(cx.theme());
     section(
         "ThemeEditor · DensityProvider · RadiusProvider · FontProvider · HighContrastMode · ReducedMotionProvider",
@@ -49,7 +54,7 @@ pub fn editor(_: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .flex()
             .flex_col()
             .gap_4()
-            .child(ThemeEditor::new("theme-editor", draft, |draft, _, cx| apply(draft, cx)))
+            .child(ThemeEditor::new("theme-editor", draft, |draft, _, cx| apply(draft, cx)).when_some(bounds, |overlay, area| overlay.usable_bounds(area)))
             .child(
                 div().flex().child(
                     Button::new("theme-restore", "Back to Ely's theme")

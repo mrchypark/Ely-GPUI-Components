@@ -8,15 +8,22 @@ use ely_gpui_component::{
     },
     theme::{ActiveTheme, HUE_NAMES},
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{AnyElement, App, Entity, IntoElement, ParentElement, Styled, div, px};
 
 use super::window::{Fields, Prefs, SIZE};
 use crate::ui::change;
 
 /// The open section's page.
-pub(super) fn page(prefs: &Entity<Prefs>, fields: &Fields, section: &str, cx: &App) -> AnyElement {
+pub(super) fn page(
+    prefs: &Entity<Prefs>,
+    fields: &Fields,
+    section: &str,
+    cx: &App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     match section {
-        "appearance" => appearance(prefs, fields, cx),
+        "appearance" => appearance(prefs, fields, cx, bounds),
         "keyboard" => keyboard(prefs, fields, cx),
         "network" => network(prefs, cx),
         "privacy" => privacy(prefs, cx),
@@ -28,7 +35,12 @@ pub(super) fn page(prefs: &Entity<Prefs>, fields: &Fields, section: &str, cx: &A
     }
 }
 
-fn appearance(prefs: &Entity<Prefs>, fields: &Fields, cx: &App) -> AnyElement {
+fn appearance(
+    prefs: &Entity<Prefs>,
+    fields: &Fields,
+    cx: &App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     let now = prefs.read(cx);
     let presets = HUE_NAMES
         .iter()
@@ -46,12 +58,15 @@ fn appearance(prefs: &Entity<Prefs>, fields: &Fields, cx: &App) -> AnyElement {
         .row(
             SettingsRow::new("Accent color")
                 .description("Buttons, links and what is chosen.")
-                .control(AccentColorPicker::new(
-                    "settings-accent",
-                    now.accent,
-                    presets,
-                    move |next, _, cx| change(&accent, cx, |prefs| prefs.accent = next),
-                )),
+                .control(
+                    AccentColorPicker::new(
+                        "settings-accent",
+                        now.accent,
+                        presets,
+                        move |next, _, cx| change(&accent, cx, |prefs| prefs.accent = next),
+                    )
+                    .when_some(bounds, |overlay, area| overlay.usable_bounds(area)),
+                ),
         )
         .row(SettingsRow::new("Font size").control(FontSizeControl::new(
             "settings-size",

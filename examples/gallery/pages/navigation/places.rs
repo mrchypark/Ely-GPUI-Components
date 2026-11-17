@@ -10,6 +10,7 @@ use ely_gpui_component::{
     theme::{ActiveTheme, Radius},
     typography::{Heading, Paragraph},
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Entity, InteractiveElement, IntoElement, ParentElement, ScrollHandle, SharedString,
     StatefulInteractiveElement, Styled, Window, div, px,
@@ -160,6 +161,7 @@ const CHAPTERS: [(&str, &str, usize); 5] = [
 ];
 
 pub fn contents(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+    let stacked = window.viewport_size().width < px(684.0);
     let scroll = keep("toc-scroll", ScrollHandle::new, window, cx)
         .read(cx)
         .clone();
@@ -198,17 +200,125 @@ pub fn contents(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .flex()
             .items_start()
             .gap_6()
-            .child(probe("toc", div().w(px(200.0)).child(toc)))
+            .when(stacked, |demo| demo.flex_col())
+            .child(probe(
+                "toc",
+                div()
+                    .w(px(200.0))
+                    .debug_selector(|| "gallery-toc-list".into())
+                    .child(toc),
+            ))
             .child(
                 div()
                     .id("toc-document")
-                    .w(px(420.0))
+                    .w_full()
+                    .min_w_0()
+                    .max_w(px(420.0))
                     .h(px(260.0))
+                    .debug_selector(|| "gallery-toc-document".into())
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .children(document),
             ),
     )
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use ely_gpui_component::theme::Theme;
+    use gpui::{Context, Modifiers, Render, TestAppContext, Window, px, size};
+
+    use super::*;
+
+    struct ContentsDemo;
+    struct NavigationMenuDemo;
+
+    impl Render for ContentsDemo {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            contents(window, cx)
+        }
+    }
+
+    impl Render for NavigationMenuDemo {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            menu(window, cx)
+        }
+    }
+
+    #[gpui::test]
+    fn contents_stack_on_phone_and_keep_two_columns_on_tablet(cx: &mut TestAppContext) {
+        cx.update(ely_gpui_component::init_for_tests);
+        let (_, cx) = cx.add_window_view(|_, _| ContentsDemo);
+
+        for (viewport, stacked) in [(320., true), (768., false)] {
+            cx.simulate_resize(size(px(viewport), px(844.)));
+            for _ in 0..3 {
+                cx.update(|window, cx| {
+                    window.refresh();
+                    window.draw(cx).clear(cx);
+                });
+            }
+
+            let toc = cx.debug_bounds("gallery-toc-list").expect("TOC list");
+            let document = cx
+                .debug_bounds("gallery-toc-document")
+                .expect("TOC document");
+            assert_eq!(toc.size.width, px(200.));
+            assert!(document.right() <= px(viewport));
+            if stacked {
+                assert!(document.top() >= toc.bottom());
+            } else {
+                assert!(document.left() >= toc.right());
+                assert_eq!(document.size.width, px(420.));
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn navigation_menu_uses_one_uncut_column_on_phone(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            ely_gpui_component::init_for_tests(cx);
+            Theme::update(cx, |theme| {
+                theme.touch_mode = true;
+                theme.reduced_motion = true;
+            });
+        });
+        let (_, cx) = cx.add_window_view(|_, _| NavigationMenuDemo);
+        cx.simulate_resize(size(px(390.), px(844.)));
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+        }
+
+        let title = cx
+            .debug_bounds("navigation-menu-title-0")
+            .expect("Product trigger");
+        cx.simulate_click(title.center(), Modifiers::none());
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+        }
+
+        let panel = cx
+            .debug_bounds("navigation-menu-panel")
+            .expect("open Product menu");
+        assert!(panel.left() >= px(0.) && panel.right() <= px(390.));
+        let links = [
+            cx.debug_bounds("navigation-menu-link-0").unwrap(),
+            cx.debug_bounds("navigation-menu-link-1").unwrap(),
+            cx.debug_bounds("navigation-menu-link-2").unwrap(),
+            cx.debug_bounds("navigation-menu-link-3").unwrap(),
+        ];
+        for link in links {
+            assert!(link.left() >= panel.left() && link.right() <= panel.right());
+        }
+        assert_eq!(links[0].left(), links[1].left());
+        assert!(links[1].top() >= links[0].bottom());
+    }
 }
 
 pub fn go_to_line(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {

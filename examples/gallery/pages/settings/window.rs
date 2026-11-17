@@ -196,7 +196,11 @@ fn home(key: &str) -> &'static str {
     }
 }
 
-pub fn settings(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn settings(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let accent = cx.theme().colors.accent;
     let prefs = keep("settings-prefs", move || Prefs::new(accent), window, cx);
     let search = field("settings-search", "Search settings", window, cx);
@@ -247,7 +251,7 @@ pub fn settings(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         ),
     ];
     let selected = prefs.read(cx).section.clone();
-    let page = pages::page(&prefs, &fields, &selected, cx);
+    let page = pages::page(&prefs, &fields, &selected, cx, bounds);
     let [found, picked] = [(); 2].map(|_| prefs.clone());
     section(
         "SettingsLayout · SettingsSection · SettingsRow · SettingsSearch",
@@ -259,7 +263,7 @@ pub fn settings(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             .flex()
             .flex_col()
             .gap_6()
-            .child(div().w(px(360.)).child(SettingsSearch::new("settings-search", entries, &search, 
+            .child(div().w(px(360.)).child(SettingsSearch::new("settings-search", entries, &search,
                 move |key, _, cx| change(&found, cx, |prefs| prefs.section = home(key).into()),
             )))
             .child(probe(

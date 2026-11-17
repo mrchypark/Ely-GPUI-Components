@@ -54,7 +54,12 @@ pub(crate) fn measure_anchor(state: Entity<Picker>) -> impl IntoElement {
     canvas(
         move |bounds, _, cx| {
             if state.read(cx).anchor != bounds {
-                state.update(cx, |picker, _| picker.anchor = bounds);
+                state.update(cx, |picker, cx| {
+                    picker.anchor = bounds;
+                    if picker.open {
+                        cx.notify();
+                    }
+                });
             }
         },
         |_, _, _, _| {},
@@ -97,6 +102,7 @@ pub(crate) fn field_button(
         .items_center()
         .gap_2()
         .h(theme.control_height(size))
+        .map(|field| theme.touch_target(field))
         .px(theme.control_padding(size))
         .rounded(theme.radius(Radius::Md))
         .border_1()

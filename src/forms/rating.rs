@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Pixels, RenderOnce, StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*,
-    transparent_black,
+    Pixels, RenderOnce, StatefulInteractiveElement, Styled, TouchPhase, Window, canvas, div,
+    prelude::*, transparent_black,
 };
 
 use crate::{
@@ -71,7 +71,20 @@ impl RenderOnce for Rating {
         );
         let focused = focus.is_focused(window);
         let hover = window.use_keyed_state((self.id.clone(), "hover"), cx, |_, _| None::<u8>);
-        let shown = hover.read(cx).unwrap_or(value);
+        // Touch previews on press; pointers preview on hover and keep it after release.
+        let pressed = window.use_keyed_state((self.id.clone(), "pressed"), cx, |_, _| None::<u8>);
+        // Keep a committed rating until changed; ignore locks tied to an older rating.
+        let locked_state =
+            window.use_keyed_state((self.id.clone(), "locked"), cx, |_, _| None::<(u8, u8)>);
+        let locked = locked_state
+            .read(cx)
+            .filter(|(committed, _)| *committed == value)
+            .map(|(_, star)| star);
+        let shown = pressed
+            .read(cx)
+            .or(*hover.read(cx))
+            .or(locked)
+            .unwrap_or(value);
         let rate: OnRate = {
             let (id, on_change) = (self.id.clone(), self.on_change);
             Rc::new(move |next, window, cx| {
@@ -89,36 +102,61 @@ impl RenderOnce for Rating {
                 let filled = n <= shown;
                 let color = if filled { on } else { off };
                 let (hover, rate) = (hover.clone(), rate.clone());
+                let (pressed, rate) = (pressed.clone(), rate.clone());
+                let (locked, rate) = (locked_state.clone(), rate.clone());
                 div()
                     .id(("star", n as usize))
-                    .size(theme.icon_size(IconSize::Lg))
+                    .debug_selector(move || format!("rating-star-{n}"))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .map(|star| theme.touch_target(star))
                     .child(
-                        canvas(
-                            |_, _, _| {},
-                            move |bounds, _, window, _| paint_star(bounds, filled, color, window),
-                        )
-                        .size_full(),
+                        div().flex_none().size(theme.icon_size(IconSize::Lg)).child(
+                            canvas(
+                                |_, _, _| {},
+                                move |bounds, _, window, _| {
+                                    paint_star(bounds, filled, color, window)
+                                },
+                            )
+                            .size_full(),
+                        ),
                     )
                     .when(!self.disabled, |star| {
                         star.cursor_pointer()
                             .on_hover(move |inside, _, cx| {
-                                if *inside {
+                                // Touch has no hover, so only the pressed rating previews.
+                                if *inside && !cx.theme().touch_mode {
                                     hover.update(cx, |hover, cx| {
                                         *hover = Some(n);
                                         cx.notify();
                                     });
                                 }
                             })
-                            .on_mouse_down(MouseButton::Left, |_, window, _| {
-                                window.prevent_default()
+                            // A tap has no hover, so press shows the pointer preview.
+                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                                window.prevent_default();
+                                pressed.update(cx, |hover, cx| {
+                                    *hover = Some(n);
+                                    cx.notify();
+                                });
                             })
                             .on_click(move |_, window, cx| {
-                                rate(if n == value { 0 } else { n }, window, cx)
+                                let next = if n == value { 0 } else { n };
+                                if !cx.theme().touch_mode {
+                                    // Keep the committed rating when the pointer leaves.
+                                    locked.update(cx, |locked, cx| {
+                                        *locked = Some((value, n));
+                                        cx.notify();
+                                    });
+                                }
+                                rate(next, window, cx)
                             })
                     })
             })
             .collect();
-        let (leave, keys) = (hover, rate);
+        let (leave, keys) = (hover, rate.clone());
+        let keys_locked = locked_state.clone();
         div()
             .id(self.id)
             .track_focus(&focus)
@@ -133,12 +171,54 @@ impl RenderOnce for Rating {
                 transparent_black()
             })
             .when(self.disabled, |row| row.opacity(0.5))
+            .when(shown != value, |row| {
+                row.debug_selector(|| "rating-preview".into())
+            })
             .on_hover(move |inside, _, cx| {
-                if !*inside {
+                // The release clears the press, so a pointer keeps its hover preview.
+                if !*inside && !cx.theme().touch_mode {
                     leave.update(cx, |hover, cx| {
                         *hover = None;
                         cx.notify();
                     });
+                }
+            })
+            // A finger lifts off the star, so the press preview goes with it.
+            .on_mouse_up(MouseButton::Left, {
+                let pressed = pressed.clone();
+                move |_, _, cx| {
+                    pressed.update(cx, |pressed, cx| {
+                        if pressed.is_some() {
+                            *pressed = None;
+                            cx.notify();
+                        }
+                    });
+                }
+            })
+            // A finger that leaves the row before it lifts takes the press preview with it.
+            .on_mouse_up_out(MouseButton::Left, {
+                let pressed = pressed.clone();
+                move |_, _, cx| {
+                    pressed.update(cx, |pressed, cx| {
+                        if pressed.is_some() {
+                            *pressed = None;
+                            cx.notify();
+                        }
+                    });
+                }
+            })
+            // Clear the preview when scrolling or cancellation prevents release.
+            .on_scroll({
+                let pressed = pressed.clone();
+                move |event, _, cx| {
+                    if matches!(event.touch_phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+                        pressed.update(cx, |pressed, cx| {
+                            if pressed.is_some() {
+                                *pressed = None;
+                                cx.notify();
+                            }
+                        });
+                    }
                 }
             })
             .when(!self.disabled, |row| {
@@ -152,6 +232,11 @@ impl RenderOnce for Rating {
                     };
                     cx.stop_propagation();
                     if next != value {
+                        // Keyboard input clears the preview left by a click.
+                        keys_locked.update(cx, |locked, cx| {
+                            *locked = None;
+                            cx.notify();
+                        });
                         keys(next, window, cx);
                     }
                 })

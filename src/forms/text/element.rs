@@ -296,7 +296,7 @@ impl Element for TextElement {
         let (focus, scroll, selecting) = (input.focus().clone(), input.scroll, input.selecting());
         window.handle_input(
             &focus,
-            ElementInputHandler::new(bounds, self.input.clone()),
+            ElementInputHandler::new(input.reveal_bounds().unwrap_or(bounds), self.input.clone()),
             cx,
         );
         let line_height = window.line_height();

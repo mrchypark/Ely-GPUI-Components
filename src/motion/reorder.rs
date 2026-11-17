@@ -1,9 +1,9 @@
 use std::{collections::HashMap, rc::Rc};
 
 use gpui::{
-    AnyElement, App, AppContext as _, ElementId, EmptyView, EntityId, InteractiveElement,
-    IntoElement, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
-    Styled, Window, canvas, div,
+    AnyElement, App, AppContext as _, DispatchPhase, ElementId, EmptyView, EntityId,
+    InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, TouchDragEvent, TouchPhase, Window, canvas, div,
 };
 
 use super::Flip;
@@ -21,6 +21,8 @@ struct Hold {
     target: usize,
     top: Pixels,
     grab: Pixels,
+    touch: bool,
+    origin: Pixels,
 }
 
 type OnReorder = Rc<dyn Fn(usize, usize, &mut Window, &mut App)>;
@@ -31,6 +33,7 @@ pub struct Reorder {
     id: ElementId,
     rows: Vec<(SharedString, AnyElement)>,
     on_reorder: Option<OnReorder>,
+    touch_grip: Option<Pixels>,
 }
 
 impl Reorder {
@@ -39,6 +42,7 @@ impl Reorder {
             id: id.into(),
             rows: Vec::new(),
             on_reorder: None,
+            touch_grip: None,
         }
     }
 
@@ -52,6 +56,12 @@ impl Reorder {
         handler: impl Fn(usize, usize, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_reorder = Some(Rc::new(handler));
+        self
+    }
+
+    /// Claim touch drags that start within this width at the leading edge of a row.
+    pub fn touch_grip(mut self, width: Pixels) -> Self {
+        self.touch_grip = Some(width);
         self
     }
 }
@@ -82,7 +92,7 @@ impl RenderOnce for Reorder {
             HashMap::<SharedString, Pixels>::new()
         });
         let owner = hold.entity_id();
-        if hold.read(cx).is_some() && !cx.has_active_drag() {
+        if hold.read(cx).as_ref().is_some_and(|held| !held.touch) && !cx.has_active_drag() {
             log::debug!("reorder {:?}: the drag ended elsewhere", self.id);
             hold.update(cx, |hold, _| *hold = None);
         }
@@ -112,6 +122,13 @@ impl RenderOnce for Reorder {
         for ix in order {
             let key = keys[ix].clone();
             let (grab, measured) = (hold.clone(), sizes.clone());
+            let (touch_hold, touch_keys, touch_heights, touch_callback) = (
+                hold.clone(),
+                keys.clone(),
+                heights.clone(),
+                self.on_reorder.clone(),
+            );
+            let (touch_key, touch_grip) = (key.clone(), self.touch_grip);
             let row = div()
                 .id((self.id.clone(), key.clone()))
                 .relative()
@@ -130,7 +147,93 @@ impl RenderOnce for Reorder {
                                 }
                             }
                         },
-                        |_, _, _, _| {},
+                        move |bounds, _, window, _| {
+                            let Some(width) = touch_grip else { return };
+                            let (hold, keys, heights, callback, key) = (
+                                touch_hold.clone(),
+                                touch_keys.clone(),
+                                touch_heights.clone(),
+                                touch_callback.clone(),
+                                touch_key.clone(),
+                            );
+                            window.on_mouse_event(
+                                move |event: &TouchDragEvent, phase, window, cx| {
+                                    if phase != DispatchPhase::Bubble {
+                                        return;
+                                    }
+                                    if event.phase == TouchPhase::Started {
+                                        if window.default_prevented()
+                                            || callback.is_none()
+                                            || !bounds.contains(&event.start_position)
+                                            || event.start_position.x >= bounds.left() + width
+                                            || heights.iter().any(|height| *height <= Pixels::ZERO)
+                                        {
+                                            return;
+                                        }
+                                        let top = heights
+                                            .iter()
+                                            .take(ix)
+                                            .copied()
+                                            .fold(Pixels::ZERO, |a, b| a + b);
+                                        hold.update(cx, |held, cx| {
+                                            *held = Some(Hold {
+                                                key: key.clone(),
+                                                target: ix,
+                                                top,
+                                                grab: event.start_position.y - bounds.top(),
+                                                touch: true,
+                                                origin: bounds.top() - top,
+                                            });
+                                            cx.notify();
+                                        });
+                                        window.prevent_default();
+                                        cx.stop_propagation();
+                                        return;
+                                    }
+                                    if !hold
+                                        .read(cx)
+                                        .as_ref()
+                                        .is_some_and(|held| held.touch && held.key == key)
+                                    {
+                                        return;
+                                    }
+                                    if event.phase == TouchPhase::Cancelled {
+                                        hold.update(cx, |held, cx| {
+                                            *held = None;
+                                            cx.notify();
+                                        });
+                                        return;
+                                    }
+                                    let result = hold.update(cx, |slot, cx| {
+                                        let held = slot.as_mut()?;
+                                        let from = keys.iter().position(|key| *key == held.key)?;
+                                        let total = heights
+                                            .iter()
+                                            .copied()
+                                            .fold(Pixels::ZERO, |a, b| a + b);
+                                        held.top = (event.position.y - held.origin - held.grab)
+                                            .clamp(
+                                                Pixels::ZERO,
+                                                (total - heights[from]).max(Pixels::ZERO),
+                                            );
+                                        held.target = landing(&heights, from, held.top);
+                                        let result = (from, held.target);
+                                        if event.phase == TouchPhase::Ended {
+                                            *slot = None;
+                                        }
+                                        cx.notify();
+                                        Some(result)
+                                    });
+                                    if event.phase == TouchPhase::Ended
+                                        && let (Some((from, to)), Some(callback)) =
+                                            (result, &callback)
+                                        && from != to
+                                    {
+                                        callback(from, to, window, cx);
+                                    }
+                                },
+                            );
+                        },
                     )
                     .absolute()
                     .top_0()
@@ -150,6 +253,8 @@ impl RenderOnce for Reorder {
                                 target: ix,
                                 top: Pixels::ZERO,
                                 grab: offset.y,
+                                touch: false,
+                                origin: Pixels::ZERO,
                             });
                             cx.notify();
                         });
@@ -222,5 +327,109 @@ mod tests {
         assert_eq!(landing(&heights, 0, px(0.0)), 0);
         assert_eq!(landing(&heights, 4, px(0.0)), 0);
         assert_eq!(landing(&heights, 2, px(70.0)), 4);
+    }
+}
+
+#[cfg(all(test, feature = "test-support"))]
+mod touch_tests {
+    use super::*;
+    use gpui::{
+        Context, Render, ScrollHandle, TestAppContext, TouchEvent, TouchId, VisualTestContext,
+        point, px,
+    };
+
+    struct Host {
+        moves: Vec<(usize, usize)>,
+        scroll: ScrollHandle,
+    }
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let owner = cx.entity();
+            let list = (0..3).fold(
+                Reorder::new("touch-rows").touch_grip(px(48.)).on_reorder(
+                    move |from, to, _, cx| {
+                        owner.update(cx, |host, _| host.moves.push((from, to)));
+                    },
+                ),
+                |list, row| {
+                    list.row(
+                        format!("{row}"),
+                        div()
+                            .debug_selector(move || format!("touch-row-{row}"))
+                            .w(px(240.))
+                            .h(px(60.)),
+                    )
+                },
+            );
+            div()
+                .id("touch-parent")
+                .w(px(240.))
+                .h(px(180.))
+                .overflow_y_scroll()
+                .track_scroll(&self.scroll)
+                .child(list)
+                .child(div().h(px(800.)))
+        }
+    }
+
+    fn send(cx: &mut VisualTestContext, phase: TouchPhase, at: gpui::Point<Pixels>) {
+        cx.simulate_event(TouchEvent {
+            id: TouchId(1),
+            phase,
+            position: at,
+            predicted_position: None,
+            force: None,
+        });
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            cx.run_until_parked();
+        }
+    }
+
+    #[gpui::test]
+    fn grip_drag_reorders_once_cancel_and_outside_scroll(cx: &mut TestAppContext) {
+        cx.update(crate::init_for_tests);
+        cx.update(|cx| crate::theme::Theme::update(cx, |theme| theme.reduced_motion = true));
+        let (view, cx) = cx.add_window_view(|_, _| Host {
+            moves: Vec::new(),
+            scroll: ScrollHandle::new(),
+        });
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            cx.run_until_parked();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        let row = cx.debug_bounds("touch-row-0").unwrap();
+        assert!(cx.debug_bounds("touch-row-1").unwrap().top() >= row.bottom());
+        let grip = row.origin + point(px(20.), px(30.));
+        let down = grip + point(px(0.), px(120.));
+        send(cx, TouchPhase::Started, grip);
+        send(cx, TouchPhase::Moved, down);
+        send(cx, TouchPhase::Ended, down);
+        assert_eq!(
+            view.read_with(cx, |view, _| view.moves.clone()),
+            vec![(0, 2)]
+        );
+        assert_eq!(view.read_with(cx, |view, _| view.scroll.offset().y), px(0.));
+        send(cx, TouchPhase::Started, grip);
+        send(cx, TouchPhase::Moved, down);
+        send(cx, TouchPhase::Cancelled, down);
+        assert_eq!(view.read_with(cx, |view, _| view.moves.len()), 1);
+        let outside = row.origin + point(px(120.), px(140.));
+        send(cx, TouchPhase::Started, outside);
+        send(cx, TouchPhase::Moved, outside - point(px(0.), px(100.)));
+        send(cx, TouchPhase::Ended, outside - point(px(0.), px(100.)));
+        assert!(view.read_with(cx, |view, _| view.scroll.offset().y) < px(0.));
+        assert_eq!(view.read_with(cx, |view, _| view.moves.len()), 1);
     }
 }

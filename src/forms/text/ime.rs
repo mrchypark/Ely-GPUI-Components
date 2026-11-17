@@ -1,7 +1,8 @@
 use std::ops::Range;
 
 use gpui::{
-    Bounds, ClipboardItem, Context, EntityInputHandler, Pixels, Point, UTF16Selection, Window,
+    Bounds, ClipboardItem, Context, EntityInputHandler, Pixels, Point, TextInputConfiguration,
+    UTF16Selection, Window,
 };
 
 use super::{
@@ -10,6 +11,14 @@ use super::{
 };
 
 impl TextInput {
+    pub(super) fn finish_composition(&mut self, cx: &mut Context<Self>) {
+        let Some(marked) = self.marked.clone() else {
+            return;
+        };
+        let composed = self.text[marked.clone()].to_string();
+        self.replace(marked, &composed, true, cx);
+    }
+
     fn range_from_utf16(&self, range: &Range<usize>) -> Range<usize> {
         from_utf16(&self.text, range.start)..from_utf16(&self.text, range.end)
     }
@@ -20,6 +29,23 @@ impl TextInput {
 }
 
 impl EntityInputHandler for TextInput {
+    fn text_input_configuration(
+        &mut self,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> TextInputConfiguration {
+        TextInputConfiguration {
+            keyboard_type: self.keyboard_type,
+            secure: self.secure,
+            ..self.input_configuration.clone()
+        }
+    }
+
+    fn accepts_text_input(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.report_input_owner(window, cx);
+        true
+    }
+
     fn paste(&mut self, item: ClipboardItem, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = item.text() {
             self.replace(self.selection.clone(), &text, false, cx);
@@ -55,11 +81,7 @@ impl EntityInputHandler for TextInput {
     }
 
     fn unmark_text(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(marked) = self.marked.clone() else {
-            return;
-        };
-        let composed = self.text[marked.clone()].to_string();
-        self.replace(marked, &composed, true, cx);
+        self.finish_composition(cx);
     }
 
     fn replace_text_in_range(

@@ -3,7 +3,10 @@ use ely_gpui_component::{
     theme::{ActiveTheme, ContainerSize, Radius, TextSize},
     typography::Caption,
 };
-use gpui::{App, Div, Hsla, IntoElement, ParentElement, SharedString, Styled, div, px};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    App, Div, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div, px,
+};
 
 use crate::ui::{code, section, specimen, specimens};
 
@@ -62,11 +65,17 @@ pub fn flex(cx: &App) -> impl IntoElement + use<> {
         outline(cx)
             .p_2()
             .w(px(420.0))
+            .when(cx.theme().touch_mode, |view| view.w_full().min_w_0())
+            .debug_selector(|| "gallery-flex-frame".into())
             .flex()
             .gap_2()
-            .child(tile("fixed", cx))
-            .child(tile("flex_1", cx).flex_1())
-            .child(tile("fixed", cx)),
+            .child(tile("fixed", cx).debug_selector(|| "gallery-flex-first".into()))
+            .child(
+                tile("flex_1", cx)
+                    .flex_1()
+                    .debug_selector(|| "gallery-flex-grow".into()),
+            )
+            .child(tile("fixed", cx).debug_selector(|| "gallery-flex-last".into())),
     )
 }
 
@@ -74,13 +83,23 @@ pub fn grid(cx: &App) -> impl IntoElement + use<> {
     section("Grid / GridItem", "gpui's .grid() and .col_span().", cx).child(
         div()
             .w(px(420.0))
+            .when(cx.theme().touch_mode, |view| view.w_full().min_w_0())
+            .debug_selector(|| "gallery-grid-frame".into())
             .grid()
             .grid_cols(3)
             .gap_2()
-            .child(tile("span 2", cx).col_span(2))
-            .child(tile("1", cx))
-            .child(tile("1", cx))
-            .child(tile("span 2", cx).col_span(2)),
+            .child(
+                tile("span 2", cx)
+                    .col_span(2)
+                    .debug_selector(|| "gallery-grid-wide-top".into()),
+            )
+            .child(tile("1", cx).debug_selector(|| "gallery-grid-single-top".into()))
+            .child(tile("1", cx).debug_selector(|| "gallery-grid-single-bottom".into()))
+            .child(
+                tile("span 2", cx)
+                    .col_span(2)
+                    .debug_selector(|| "gallery-grid-wide-bottom".into()),
+            ),
     )
 }
 

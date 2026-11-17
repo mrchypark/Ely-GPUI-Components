@@ -1,12 +1,16 @@
 use gpui::{
-    App, Context, FocusHandle, InteractiveElement, IntoElement, KeyUpEvent, Keystroke, Modifiers,
-    MouseButton, ParentElement, Render, SharedString, Styled, TestAppContext, VisualTestContext,
-    Window, div, point, prelude::*, px,
+    App, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, KeyUpEvent, Keystroke,
+    Modifiers, MouseButton, ParentElement, Pixels, Render, SharedString, Styled, TestAppContext,
+    VisualTestContext, Window, div, point, prelude::*, px, size,
 };
+use std::time::Duration;
+use std::{cell::RefCell, rc::Rc};
 
 mod more;
+mod overlay;
+mod scroll;
 
-use super::{ContextMenu, DropdownMenu, Menu, MenuItem, SearchableMenu};
+use super::{ContextMenu, DropdownMenu, Menu, MenuDismiss, MenuItem, SearchableMenu};
 use crate::{primitives::FocusScope, theme::Theme};
 
 /// What the rows did, and the state the check and radio rows show.
@@ -45,7 +49,7 @@ impl Desk {
         let edit = Menu::new()
             .item(
                 MenuItem::new("Cut")
-                    .keys("secondary-x")
+                    .keys("secondary-shift-x")
                     .on_click(run("cut")),
             )
             .item(MenuItem::new("Copy").disabled(true).on_click(run("copy")))
@@ -107,8 +111,9 @@ pub(super) fn settle(cx: &mut VisualTestContext) {
 pub(super) fn press(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
     settle(cx);
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).expect("a key"),
+        keystroke: Keystroke::parse_with_os(key, os).expect("a key"),
     });
     settle(cx);
 }
@@ -117,6 +122,27 @@ fn desk(cx: &mut TestAppContext) -> (gpui::Entity<Desk>, &mut VisualTestContext)
     cx.update(|cx| {
         Theme::init(cx);
         crate::forms::bind_keys(cx);
+    });
+    let (view, cx) = cx.add_window_view(|_, cx| Desk {
+        root: cx.focus_handle(),
+        ran: Vec::new(),
+        wrap: false,
+        theme: "light".into(),
+        view_rows: true,
+        enters_above: 0,
+        shift: false,
+        asked: None,
+    });
+    settle(cx);
+    (view, cx)
+}
+
+/// The same desk with touch mode on, where a long press opens the context menu.
+fn touch_desk(cx: &mut TestAppContext) -> (gpui::Entity<Desk>, &mut VisualTestContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        crate::forms::bind_keys(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
     });
     let (view, cx) = cx.add_window_view(|_, cx| Desk {
         root: cx.focus_handle(),
@@ -154,6 +180,25 @@ fn the_keyboard_opens_walks_past_disabled_rows_and_runs(cx: &mut TestAppContext)
     press("down", cx);
     press("enter", cx);
     assert_eq!(ran(&view, cx), ["paste"], "the release left the menu shut");
+}
+
+#[gpui::test]
+fn touch_menu_gives_long_key_hint_space_back_to_the_action(cx: &mut TestAppContext) {
+    let (view, cx) = desk(cx);
+    cx.simulate_resize(size(px(220.), px(640.)));
+    cx.update(|window, cx| window.focus_next(cx));
+    press("enter", cx);
+    assert!(cx.debug_bounds("menu-key-hint").is_some());
+
+    cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    settle(cx);
+    assert!(cx.debug_bounds("menu-key-hint").is_none());
+    let row = cx
+        .debug_bounds("menu-row-Cut")
+        .expect("touch action stays visible");
+    cx.simulate_click(row.center(), Modifiers::none());
+    settle(cx);
+    assert_eq!(ran(&view, cx), ["cut"]);
 }
 
 #[gpui::test]
@@ -217,6 +262,37 @@ fn a_right_click_opens_the_context_menu_where_it_lands(cx: &mut TestAppContext) 
     press("down", cx);
     press("enter", cx);
     assert_eq!(ran(&view, cx), ["cut"]);
+}
+
+#[gpui::test]
+fn a_long_press_opens_the_context_menu_on_touch(cx: &mut TestAppContext) {
+    let (view, cx) = touch_desk(cx);
+    let at = point(px(60.0), px(80.0));
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
+    cx.executor().advance_clock(Duration::from_millis(600));
+    settle(cx);
+    cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
+    settle(cx);
+    press("down", cx);
+    press("enter", cx);
+    assert_eq!(ran(&view, cx), ["cut"]);
+}
+
+#[gpui::test]
+fn a_short_press_leaves_the_context_menu_shut_on_touch(cx: &mut TestAppContext) {
+    let (view, cx) = touch_desk(cx);
+    let at = point(px(60.0), px(80.0));
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
+    settle(cx);
+    press("down", cx);
+    press("enter", cx);
+    assert!(
+        ran(&view, cx).is_empty(),
+        "a short press opened the context menu"
+    );
 }
 
 #[gpui::test]
@@ -408,3 +484,5 @@ fn clearing_the_filter_marks_the_first_row_again(cx: &mut TestAppContext) {
     press("enter", cx);
     assert_eq!(ran(&view, cx), ["cut"]);
 }
+
+mod observers;

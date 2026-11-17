@@ -1,3 +1,5 @@
+use gpui::prelude::FluentBuilder as _;
+
 use std::time::Duration;
 
 use ely_gpui_component::{
@@ -42,7 +44,11 @@ fn projects() -> Vec<Project> {
     ]
 }
 
-pub fn start(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn start(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let switching = keep("panels-switcher", || false, window, cx);
     let opened = keep("panels-opened", || None::<SharedString>, window, cx);
     let show = keep("panels-welcome", || true, window, cx);
@@ -138,7 +144,7 @@ pub fn start(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 .on_show(move |on, _, cx| set(&toggle, on, cx)),
         ),
     )
-    .child(row().child(Button::new("panels-switch", "Switch project…").on_click(move |_, _, cx| set(&opener, true, cx))))
+    .child(row().child(Button::new("panels-switch", "Switch project…").debug_selector(|| "gallery-project-switcher".into()).on_click(move |_, _, cx| set(&opener, true, cx))))
     .children(said.map(Caption::new))
     .child(
         row()
@@ -165,6 +171,7 @@ pub fn start(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .children(now_switching.then(|| {
         ProjectSwitcher::new("panels-switcher-palette", projects(), move |_, cx| set(&close, false, cx))
+            .when_some(bounds, |palette, area| palette.usable_bounds(area))
             .on_open(move |ix, _, cx| set(&pick, Some(format!("Switched to {}.", projects()[ix].name).into()), cx))
     }))
 }

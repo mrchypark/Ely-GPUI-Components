@@ -200,6 +200,15 @@ impl RenderOnce for TableOfContents {
                     .flex()
                     .items_center()
                     .min_h(theme.control_height(ControlSize::Sm))
+                    .when(theme.touch_mode, |row| {
+                        row.min_h(
+                            theme.touch_minimum(
+                                theme
+                                    .control_height(ControlSize::Sm)
+                                    .to_pixels(window.rem_size()),
+                            ),
+                        )
+                    })
                     .pr_2()
                     .rounded(theme.radius(Radius::Sm))
                     .text_size(theme.text_size(TextSize::Sm))

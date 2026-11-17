@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::{
     App, ElementId, InteractiveElement, IntoElement, ObjectFit, ParentElement, RenderOnce,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, relative,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*, relative,
 };
 
 use crate::{
@@ -19,6 +19,7 @@ type OnCover = Rc<dyn Fn(Option<SharedString>, &mut Window, &mut App)>;
 /// A page's cover, a picture across its top; on hover, covers to switch to and a way to take it off.
 #[derive(IntoElement)]
 pub struct PageCover {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     source: SharedString,
     choices: Vec<SharedString>,
@@ -26,9 +27,16 @@ pub struct PageCover {
 }
 
 impl PageCover {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     /// `source` is a file or a web address.
     pub fn new(id: impl Into<ElementId>, source: impl Into<SharedString>) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             source: source.into(),
             choices: Vec::new(),
@@ -62,7 +70,7 @@ impl RenderOnce for PageCover {
                     .right_2()
                     .flex()
                     .gap_1()
-                    .opacity(0.0)
+                    .opacity(if theme.touch_mode { 1.0 } else { 0.0 })
                     .group_hover(group.clone(), |tools| tools.opacity(1.0))
                     .child(
                         Popover::new((self.id.clone(), "change"), "Change cover", move |_, cx| {
@@ -90,6 +98,9 @@ impl RenderOnce for PageCover {
                                         )
                                 }),
                             )
+                        })
+                        .when_some(self.usable_bounds, |overlay, bounds| {
+                            overlay.usable_bounds(bounds)
                         })
                         .icon(IconName::Image)
                         .variant(ButtonVariant::Secondary),
@@ -121,14 +132,22 @@ impl RenderOnce for PageCover {
 /// A page's icon, an emoji set large; on hover, a way to pick another.
 #[derive(IntoElement)]
 pub struct PageIcon {
+    usable_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     id: ElementId,
     emoji: SharedString,
     on_change: Option<OnValue>,
 }
 
 impl PageIcon {
+    /// Current window-space bounds after safe-area and keyboard exclusions; refresh each render.
+    pub fn usable_bounds(mut self, bounds: gpui::Bounds<gpui::Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
+    }
+
     pub fn new(id: impl Into<ElementId>, emoji: impl Into<SharedString>) -> Self {
         Self {
+            usable_bounds: None,
             id: id.into(),
             emoji: emoji.into(),
             on_change: None,
@@ -151,7 +170,7 @@ impl RenderOnce for PageIcon {
         let picker = self.on_change.map(|on_change| {
             let (id, emoji) = (self.id.clone(), self.emoji.clone());
             div()
-                .opacity(0.0)
+                .opacity(if theme.touch_mode { 1.0 } else { 0.0 })
                 .group_hover(group.clone(), |picker| picker.opacity(1.0))
                 .child(
                     Popover::new((self.id.clone(), "change"), "Change icon", move |_, _| {
@@ -161,6 +180,9 @@ impl RenderOnce for PageIcon {
                                 log::info!("page icon: {glyph}");
                                 on_change(&SharedString::from(glyph.to_string()), window, cx)
                             })
+                    })
+                    .when_some(self.usable_bounds, |overlay, bounds| {
+                        overlay.usable_bounds(bounds)
                     })
                     .icon(IconName::Smile)
                     .variant(ButtonVariant::Ghost),

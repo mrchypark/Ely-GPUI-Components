@@ -1,3 +1,5 @@
+mod select;
+
 use gpui::{
     AppContext as _, Context, Entity, IntoElement, KeyUpEvent, Keystroke, Modifiers, ParentElement,
     Render, SharedString, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
@@ -30,8 +32,9 @@ struct Radios {
 }
 
 fn release(key: &str, cx: &mut VisualTestContext) {
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).unwrap(),
+        keystroke: Keystroke::parse_with_os(key, os).unwrap(),
     });
 }
 
@@ -288,194 +291,147 @@ fn a_full_enter_press_opens_a_multi_select_and_keeps_it_open(cx: &mut TestAppCon
     assert_eq!(view.read_with(cx, |view, _| view.chosen.clone()), ["a"]);
 }
 
-struct Typed {
-    state: Entity<TextInput>,
-    chosen: Option<SharedString>,
-}
-
-impl Render for Typed {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity();
-        let mut combo = Combobox::new(
-            "typed",
-            &self.state,
-            [
-                Choice::new("a", "A").disabled(),
-                Choice::new("b", "B"),
-                Choice::new("c", "C"),
-            ],
-        )
-        .on_change(move |value, _, cx| {
-            view.update(cx, |view, cx| {
-                view.chosen = Some(value.clone());
-                cx.notify();
-            })
-        });
-        if let Some(value) = self.chosen.clone() {
-            combo = combo.selected(value);
-        }
-        combo
-    }
-}
-
-fn typed<'a>(
-    chosen: Option<&str>,
-    cx: &'a mut TestAppContext,
-) -> (Entity<Typed>, &'a mut VisualTestContext) {
-    setup(cx);
-    let chosen = chosen.map(|value| SharedString::from(value.to_string()));
-    cx.add_window_view(move |window, cx| Typed {
-        state: cx.new(|cx| TextInput::new(window, cx)),
-        chosen,
-    })
-}
-
-#[gpui::test]
-fn enter_in_a_combobox_skips_a_disabled_first_row(cx: &mut TestAppContext) {
-    let (view, cx) = typed(None, cx);
-    cx.update(|window, cx| window.focus_next(cx));
-    cx.simulate_keystrokes("enter");
-    assert_eq!(
-        view.read_with(cx, |view, _| view.chosen.clone()),
-        Some("b".into())
-    );
-}
-
-#[gpui::test]
-fn a_combobox_shows_the_value_its_owner_sets(cx: &mut TestAppContext) {
-    let (view, cx) = typed(Some("b"), cx);
-    let state = view.read_with(cx, |view, _| view.state.clone());
-    assert_eq!(
-        state.read_with(cx, |input, _| input.text().to_string()),
-        "B"
-    );
-    view.update(cx, |view, cx| {
-        view.chosen = Some("c".into());
-        cx.notify();
-    });
-    cx.run_until_parked();
-    assert_eq!(
-        state.read_with(cx, |input, _| input.text().to_string()),
-        "C"
-    );
-}
-
-struct Stars {
-    value: u8,
+struct DisabledMulti {
+    chosen: Vec<SharedString>,
     disabled: bool,
+    changes: usize,
+    next: Entity<TextInput>,
 }
 
-impl Render for Stars {
+impl Render for DisabledMulti {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity();
-        Rating::new("stars", self.value)
-            .disabled(self.disabled)
-            .on_change(move |value, _, cx| {
-                view.update(cx, |view, cx| {
-                    view.value = value;
-                    cx.notify();
-                })
-            })
-    }
-}
-
-#[gpui::test]
-fn a_disabled_rating_ignores_the_arrows(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|_, _| Stars {
-        value: 2,
-        disabled: false,
-    });
-    cx.update(|window, cx| window.focus_next(cx));
-    view.update(cx, |view, cx| {
-        view.disabled = true;
-        cx.notify();
-    });
-    cx.simulate_keystrokes("right");
-    assert_eq!(view.read_with(cx, |view, _| view.value), 2);
-}
-
-struct Free {
-    state: Entity<TextInput>,
-}
-
-impl Render for Free {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        Combobox::new("free", &self.state, abc(false)).free()
-    }
-}
-
-#[gpui::test]
-fn a_free_combobox_keeps_the_text_it_mounts_with(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|window, cx| Free {
-        state: cx.new(|cx| {
-            let mut input = TextInput::new(window, cx);
-            input.set_text("custom label", cx);
-            input
-        }),
-    });
-    let state = view.read_with(cx, |view, _| view.state.clone());
-    assert_eq!(
-        state.read_with(cx, |input, _| input.text().to_string()),
-        "custom label"
-    );
-}
-
-/// A select with nothing to pick, open or shut.
-struct Empty(bool);
-
-impl Render for Empty {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().child(
-            Select::new("empty", [])
-                .placeholder("Nothing yet")
-                .disabled(self.0),
-        )
-    }
-}
-
-#[gpui::test]
-fn a_shut_select_may_be_empty(cx: &mut TestAppContext) {
-    setup(cx);
-    let (_, cx) = cx.add_window_view(|_, _| Empty(true));
-    cx.run_until_parked();
-    cx.update(|window, cx| window.focus_next(cx));
-    assert!(cx.update(|window, cx| window.focused(cx).is_none()));
-}
-
-#[gpui::test]
-#[should_panic(expected = "has no choices")]
-fn an_open_select_with_nothing_to_pick_fails(cx: &mut TestAppContext) {
-    setup(cx);
-    cx.add_window_view(|_, _| Empty(false));
-}
-
-/// A select whose one choice runs long.
-struct Named;
-
-impl Render for Named {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let long = Choice::new("long", "A very long microphone name that runs past the box");
         div()
-            .w(px(200.0))
-            .child(Select::new("long", [long, Choice::new("b", "B")]))
+            .flex()
+            .flex_col()
+            .child(
+                MultiSelect::new("disabled-multi", abc(false))
+                    .selected(self.chosen.clone())
+                    .disabled(self.disabled)
+                    .on_change(move |next, _, cx| {
+                        view.update(cx, |view, cx| {
+                            view.chosen = next.to_vec();
+                            view.changes += 1;
+                            cx.notify();
+                        });
+                    }),
+            )
+            .child(crate::forms::Input::new(&self.next))
     }
 }
 
 #[gpui::test]
-fn a_long_choice_keeps_its_list_inside_the_window(cx: &mut TestAppContext) {
+fn disabling_an_open_multi_select_closes_it_and_blocks_changes(cx: &mut TestAppContext) {
     setup(cx);
-    let (_, cx) = cx.add_window_view(|_, _| Named);
-    cx.simulate_resize(gpui::size(px(280.0), px(600.0)));
+    let (view, cx) = cx.add_window_view(|window, cx| DisabledMulti {
+        chosen: vec!["a".into()],
+        disabled: false,
+        changes: 0,
+        next: cx.new(|cx| TextInput::new(window, cx)),
+    });
     cx.run_until_parked();
     cx.update(|window, cx| window.focus_next(cx));
     cx.simulate_keystrokes("enter");
     release("enter", cx);
     cx.run_until_parked();
-    let list = cx.debug_bounds("option-list").expect("the list opens");
-    assert!(
-        list.left() >= px(0.0) && list.right() <= px(280.0),
-        "{list:?}"
+    assert!(cx.debug_bounds("option-list").is_some());
+
+    view.update(cx, |view, cx| {
+        view.disabled = true;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("option-list").is_none());
+    let chip = cx.debug_bounds("multi-chip-0").expect("selected chip");
+    cx.simulate_click(
+        point(chip.right() - px(4.), chip.center().y),
+        Modifiers::none(),
     );
+    let field = cx.debug_bounds("multi-select-root").expect("multi select");
+    cx.simulate_click(field.center(), Modifiers::none());
+    cx.simulate_keystrokes("backspace enter space down");
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("option-list").is_none());
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.chosen, ["a"]);
+        assert_eq!(view.changes, 0);
+    });
+    cx.update(|window, cx| {
+        window.blur(cx);
+        window.focus_next(cx);
+        assert!(view.read(cx).next.read(cx).focus().is_focused(window));
+    });
+    view.update(cx, |view, cx| {
+        view.disabled = false;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let chip = cx.debug_bounds("multi-chip-0").expect("enabled chip");
+    cx.simulate_click(
+        point(chip.right() - px(10.), chip.center().y),
+        Modifiers::none(),
+    );
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert!(view.chosen.is_empty());
+        assert_eq!(view.changes, 1);
+    });
+}
+
+struct MultiWithDisabledChoice {
+    chosen: Vec<SharedString>,
+    changes: usize,
+}
+
+impl Render for MultiWithDisabledChoice {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        MultiSelect::new("multi-disabled-choice", abc(true))
+            .selected(self.chosen.clone())
+            .on_change(move |next, _, cx| {
+                view.update(cx, |view, cx| {
+                    view.chosen = next.to_vec();
+                    view.changes += 1;
+                    cx.notify();
+                });
+            })
+    }
+}
+
+#[gpui::test]
+fn disabled_selected_choice_cannot_be_removed_by_chip_or_backspace(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| MultiWithDisabledChoice {
+        chosen: vec!["a".into(), "b".into()],
+        changes: 0,
+    });
+    cx.run_until_parked();
+    let disabled_chip = cx
+        .debug_bounds("multi-chip-1")
+        .expect("disabled selected chip");
+    cx.simulate_click(
+        point(disabled_chip.right() - px(4.), disabled_chip.center().y),
+        Modifiers::none(),
+    );
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.chosen, ["a", "b"]);
+        assert_eq!(view.changes, 0);
+    });
+    cx.update(|window, cx| {
+        window.blur(cx);
+        window.focus_next(cx);
+    });
+    cx.simulate_keystrokes("backspace");
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.chosen, ["b"]);
+        assert_eq!(view.changes, 1);
+    });
+    cx.simulate_keystrokes("backspace");
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.chosen, ["b"]);
+        assert_eq!(view.changes, 1);
+    });
 }

@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, App, AppContext as _, Bounds, ElementId, EmptyView, Entity, EntityId,
     InteractiveElement, IntoElement, ParentElement, Pixels, Point, RenderOnce, ScrollDelta,
-    SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, fill, size,
+    SharedString, StatefulInteractiveElement, Styled, TouchPhase, Window, canvas, div, fill, size,
 };
 
 use super::{
@@ -34,7 +34,7 @@ struct Plane {
     grip: Option<(Point<Pixels>, Viewport)>,
 }
 
-/// An endless plane: a dot grid that thins as it zooms out, rulers along the top and left, guides, artboards with their names, and shapes. A drag on empty space pans it from where it was pressed, a wheel scrolls it, and Command or Control with the wheel zooms about the pointer. The owner keeps the viewport; a new one from the owner shows at once.
+/// Endless plane; drag/wheel pans, modifier-wheel or GPUI pinch zooms. Do not combine pinch paths.
 #[derive(IntoElement)]
 pub struct InfiniteCanvas {
     id: ElementId,
@@ -374,6 +374,7 @@ impl RenderOnce for InfiniteCanvas {
             .size_full()
         };
         let owner = plane.entity_id();
+        let (pinch, pinched, zoomed) = (set.clone(), plane.clone(), local.clone());
         let (wheel, pan, drop) = (set.clone(), set, plane.clone());
         let (scrolled, dragged, pressed) = (plane.clone(), plane.clone(), plane);
         let (live, held) = (local.clone(), local.clone());
@@ -384,7 +385,34 @@ impl RenderOnce for InfiniteCanvas {
             .overflow_hidden()
             .bg(colors.sunken)
             .cursor_grab()
-            .on_scroll_wheel(move |event, window, cx| {
+            .on_pinch(move |event, window, cx| {
+                cx.stop_propagation();
+                if event.phase == TouchPhase::Cancelled {
+                    pinched.update(cx, |plane, _| plane.grip = None);
+                    return;
+                }
+                let factor = 1.0 + event.delta;
+                if !factor.is_finite() || factor <= 0.0 {
+                    return;
+                }
+                let pointer = event.position - pinched.read(cx).bounds.origin;
+                let about = (f32::from(pointer.x), f32::from(pointer.y));
+                if !about.0.is_finite() || !about.1.is_finite() {
+                    return;
+                }
+                if event.delta == 0.0 {
+                    if event.phase == TouchPhase::Started {
+                        pinched.update(cx, |plane, _| plane.grip = None);
+                    }
+                    return;
+                }
+                let next = zoomed.read(cx).value.zoomed(factor, about);
+                if next.x.is_finite() && next.y.is_finite() {
+                    pinched.update(cx, |plane, _| plane.grip = None);
+                    pinch(next, window, cx);
+                }
+            })
+            .on_scroll(move |event, window, cx| {
                 let bounds = scrolled.read(cx).bounds;
                 let delta = match event.delta {
                     ScrollDelta::Pixels(delta) => (f32::from(delta.x), f32::from(delta.y)),

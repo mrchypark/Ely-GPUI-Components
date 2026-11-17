@@ -1,9 +1,10 @@
 use std::{rc::Rc, time::Duration};
 
 use gpui::{
-    Animation, AnimationExt, App, ElementId, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Task,
-    Window, div, prelude::*, relative,
+    Animation, AnimationExt, App, DispatchPhase, ElementId, FontWeight, GestureTuning,
+    HitboxBehavior, InteractiveElement, IntoElement, LongPressEvent, MouseButton, MouseMoveEvent,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Task, TouchPhase,
+    Window, canvas, div, prelude::*, relative,
 };
 
 use super::button::{ButtonVariant, label_size, tone};
@@ -20,6 +21,11 @@ const ARMED: Duration = Duration::from_millis(3000);
 /// How long the done state shows.
 const DONE: Duration = Duration::from_millis(1400);
 
+// shortcut: assumes GPUI's default recognition window; revisit if mobile overrides gestures.
+fn touch_hold_after_recognition() -> Duration {
+    HOLD.saturating_sub(GestureTuning::default().long_press_duration)
+}
+
 /// Hold the button down, or click it twice. Keys always press twice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConfirmMode {
@@ -33,6 +39,7 @@ struct Confirm {
     armed: bool,
     done: bool,
     generation: u64,
+    hold_duration: Duration,
     _timer: Option<Task<()>>,
 }
 
@@ -122,6 +129,7 @@ fn confirm_now(
         confirm.holding = false;
         confirm.armed = false;
         confirm.done = true;
+        confirm.hold_duration = Duration::ZERO;
         confirm.generation += 1;
     });
     let timer = expire(state, DONE, |confirm| confirm.done = false, window, cx);
@@ -134,16 +142,55 @@ fn confirm_now(
     }
 }
 
+fn begin_hold(
+    state: &gpui::Entity<Confirm>,
+    handler: &Option<OnConfirm>,
+    duration: Duration,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    if state.read(cx).done || state.read(cx).holding {
+        return;
+    }
+    state.update(cx, |confirm, _| {
+        confirm.holding = true;
+        confirm.armed = false;
+        confirm.generation += 1;
+        confirm.hold_duration = duration;
+    });
+    let (weak, handler) = (state.downgrade(), handler.clone());
+    let generation = state.read(cx).generation;
+    let timer = window.spawn(cx, async move |cx| {
+        cx.background_executor().timer(duration).await;
+        let held = cx.update(|window, cx| {
+            let Some(state) = weak.upgrade() else {
+                return;
+            };
+            if state.read(cx).holding && state.read(cx).generation == generation {
+                confirm_now(&state, &handler, window, cx);
+            }
+        });
+        if let Err(error) = held {
+            log::error!("confirm button: window gone during a hold: {error:#}");
+        }
+    });
+    state.update(cx, |confirm, cx| {
+        confirm._timer = Some(timer);
+        cx.notify();
+    });
+}
+
 impl RenderOnce for ConfirmButton {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window.use_keyed_state(self.id.clone(), cx, |_, _| Confirm::default());
-        let (holding, armed, done, generation) = {
+        let (holding, armed, done, generation, hold_duration) = {
             let confirm = state.read(cx);
             (
                 confirm.holding,
                 confirm.armed,
                 confirm.done,
                 confirm.generation,
+                confirm.hold_duration,
             )
         };
         let theme = cx.theme();
@@ -166,8 +213,54 @@ impl RenderOnce for ConfirmButton {
             (state.clone(), state.clone(), state.clone(), state.clone());
         let hold = self.mode == ConfirmMode::Hold;
         let (hold_handler, click_handler) = (handler.clone(), handler);
+        let touch = hold.then(|| {
+            let (press_outside, started, handler) =
+                (state.clone(), state.clone(), hold_handler.clone());
+            canvas(
+                |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+                move |_, hitbox, window, _| {
+                    let moved_hitbox = hitbox.clone();
+                    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                        if phase == DispatchPhase::Bubble
+                            && event.pressed_button == Some(MouseButton::Left)
+                            && press_outside.read(cx).holding
+                            && !moved_hitbox.is_hovered_at(event.position, window)
+                        {
+                            let_go(&press_outside, cx);
+                        }
+                    });
+                    window.on_mouse_event(move |event: &LongPressEvent, phase, window, cx| {
+                        if phase != DispatchPhase::Bubble
+                            || !hitbox.is_hovered_at(event.start_position, window)
+                        {
+                            return;
+                        }
+                        match event.phase {
+                            TouchPhase::Started => {
+                                window.prevent_default();
+                                begin_hold(
+                                    &started,
+                                    &handler,
+                                    touch_hold_after_recognition(),
+                                    window,
+                                    cx,
+                                );
+                            }
+                            TouchPhase::Ended | TouchPhase::Cancelled => let_go(&started, cx),
+                            TouchPhase::Moved if !hitbox.is_hovered_at(event.position, window) => {
+                                let_go(&started, cx);
+                            }
+                            TouchPhase::Moved => {}
+                        }
+                    });
+                },
+            )
+            .absolute()
+            .inset_0()
+        });
         div()
             .id(self.id)
+            .debug_selector(|| "confirm-button".into())
             .relative()
             .overflow_hidden()
             .flex()
@@ -176,6 +269,7 @@ impl RenderOnce for ConfirmButton {
             .justify_center()
             .gap_1p5()
             .h(theme.control_height(self.size))
+            .map(|el| theme.touch_target(el))
             .px(theme.control_padding(self.size))
             .rounded(theme.radius(Radius::Md))
             .border_1()
@@ -190,33 +284,10 @@ impl RenderOnce for ConfirmButton {
             .hover(|style| style.bg(tone.hover))
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 window.prevent_default();
-                if !hold || press.read(cx).done {
+                if !hold {
                     return;
                 }
-                press.update(cx, |confirm, _| {
-                    confirm.holding = true;
-                    confirm.generation += 1;
-                });
-                let (weak, handler) = (press.downgrade(), hold_handler.clone());
-                let generation = press.read(cx).generation;
-                let timer = window.spawn(cx, async move |cx| {
-                    cx.background_executor().timer(HOLD).await;
-                    let held = cx.update(|window, cx| {
-                        let Some(state) = weak.upgrade() else {
-                            return;
-                        };
-                        if state.read(cx).holding && state.read(cx).generation == generation {
-                            confirm_now(&state, &handler, window, cx);
-                        }
-                    });
-                    if let Err(error) = held {
-                        log::error!("confirm button: window gone during a hold: {error:#}");
-                    }
-                });
-                press.update(cx, |confirm, cx| {
-                    confirm._timer = Some(timer);
-                    cx.notify();
-                });
+                begin_hold(&press, &hold_handler, HOLD, window, cx);
             })
             .on_mouse_up(MouseButton::Left, move |_, _, cx| let_go(&release, cx))
             .on_mouse_up_out(MouseButton::Left, move |_, _, cx| let_go(&out, cx))
@@ -230,7 +301,9 @@ impl RenderOnce for ConfirmButton {
                 }
                 log::info!("confirm button: armed");
                 click.update(cx, |confirm, _| {
+                    confirm.holding = false;
                     confirm.armed = true;
+                    confirm.hold_duration = Duration::ZERO;
                     confirm.generation += 1;
                 });
                 let timer = expire(&click, ARMED, |confirm| confirm.armed = false, window, cx);
@@ -249,11 +322,12 @@ impl RenderOnce for ConfirmButton {
                         .bg(fill)
                         .with_animation(
                             ("confirm-hold", generation),
-                            Animation::new(HOLD),
+                            Animation::new(hold_duration),
                             |bar, t| bar.w(relative(t)),
                         ),
                 )
             })
+            .children(touch)
             .map(|button| {
                 if done {
                     button.child(
@@ -282,8 +356,13 @@ fn let_go(state: &gpui::Entity<Confirm>, cx: &mut App) {
     log::info!("confirm button: released early");
     state.update(cx, |confirm, cx| {
         confirm.holding = false;
+        confirm.hold_duration = Duration::ZERO;
         confirm.generation += 1;
         confirm._timer = None;
         cx.notify();
     });
 }
+
+#[cfg(test)]
+#[path = "confirm_tests.rs"]
+mod tests;

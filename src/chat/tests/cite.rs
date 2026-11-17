@@ -58,8 +58,9 @@ impl Render for Cited {
 
 fn release(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).expect("the key parses"),
+        keystroke: Keystroke::parse_with_os(key, os).expect("the key parses"),
     });
     settle(cx);
 }

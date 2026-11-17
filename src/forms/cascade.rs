@@ -1,14 +1,14 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, ClickEvent, ElementId, Entity, InteractiveElement, IntoElement, ParentElement,
-    Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, canvas, div,
-    prelude::*,
+    App, Bounds, ClickEvent, ElementId, Entity, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Pixels, RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement,
+    Styled, Window, canvas, div, prelude::*,
 };
 
 use super::{
     Choice,
-    options::{OnValues, float, option_row, surface},
+    options::{OnValues, float, float_height, option_row, surface},
     select::{field_button, field_text},
 };
 use crate::{
@@ -101,10 +101,14 @@ struct Trail {
     open: bool,
     trail: Vec<usize>,
     anchor: Bounds<Pixels>,
+    scroll: ScrollHandle,
 }
 
 fn show(state: &Entity<Trail>, open: bool, trail: Vec<usize>, cx: &mut App) {
     state.update(cx, |state, cx| {
+        if state.trail != trail || (open && !state.open) {
+            state.scroll.set_offset(Default::default());
+        }
         state.open = open;
         state.trail = trail;
         cx.notify();
@@ -184,9 +188,14 @@ impl RenderOnce for Cascader {
         if fitted != kept {
             state.update(cx, |state, _| state.trail = fitted);
         }
-        let (open, trail, anchor) = {
+        let (open, trail, anchor, scroll) = {
             let state = state.read(cx);
-            (state.open, state.trail.clone(), state.anchor)
+            (
+                state.open,
+                state.trail.clone(),
+                state.anchor,
+                state.scroll.clone(),
+            )
         };
         let pick: PickTrail = {
             let (id, roots, state, on_change) = (
@@ -217,10 +226,18 @@ impl RenderOnce for Cascader {
         let (enter, key_roots, key_start) = (pick.clone(), roots.clone(), start.clone());
         let lists = open.then(|| {
             let columns = columns(&roots, &trail);
+            let visible = window.fully_visible_bounds();
+            let width = (theme.tooltip_max_width() * 0.75).to_pixels(window.rem_size());
+            let stacked = theme.touch_mode && width * columns.len() as f32 > visible.size.width;
+            let height = theme
+                .list_max_height()
+                .to_pixels(window.rem_size())
+                .min((visible.bottom() - anchor.bottom()).max(anchor.top() - visible.top()));
             let deepest = columns.iter().map(|column| column.len()).max().unwrap_or(0);
             let lists = columns.iter().enumerate().map(|(level, column)| {
                 let rows = column.iter().enumerate().map(|(ix, node)| {
                     let (hover, pick) = (state.clone(), pick.clone());
+                    let press = state.clone();
                     let at: Vec<usize> = trail[..level].iter().copied().chain([ix]).collect();
                     let leaf = node.children.is_empty();
                     let choice = Choice::new(node.value.clone(), node.label.clone());
@@ -238,46 +255,84 @@ impl RenderOnce for Cascader {
                                 .color(colors.fg_subtle),
                         )
                     })
-                    .on_hover({
-                        let at = at.clone();
-                        move |hovered, _, cx| {
-                            if *hovered && hover.read(cx).trail != at {
-                                show(&hover, true, at.clone(), cx);
+                    // Android reports finger movement as pressed pointer movement.
+                    .when(!theme.touch_mode, |row| {
+                        row.on_hover({
+                            let at = at.clone();
+                            move |hovered, _, cx| {
+                                if *hovered && hover.read(cx).trail != at {
+                                    show(&hover, true, at.clone(), cx);
+                                }
                             }
-                        }
+                        })
+                    })
+                    .debug_selector(move || format!("cascade-row-{level}-{ix}"))
+                    .when(!leaf, |row| {
+                        let (at, press) = (at.clone(), press.clone());
+                        row.on_click(move |_, _, cx| show(&press, true, at.clone(), cx))
                     })
                     .when(leaf, |row| {
+                        let at = at.clone();
                         row.on_click(move |_, window, cx| pick(at.clone(), window, cx))
                     })
                 });
                 div()
                     .id(("column", level))
-                    .w(theme.tooltip_max_width() * 0.75)
-                    .max_h(theme.list_max_height())
-                    .overflow_y_scroll()
+                    .debug_selector(move || format!("cascade-column-{level}"))
+                    .when(stacked, |list| list.w_full().flex_none())
+                    .when(!stacked, |list| {
+                        list.w(width)
+                            .max_h(theme.list_max_height())
+                            .overflow_y_scroll()
+                    })
                     .p_1()
                     .flex()
                     .flex_col()
                     .when(level > 0, |list| {
-                        list.border_l_1().border_color(colors.border)
+                        if stacked {
+                            list.border_t_1().border_color(colors.border)
+                        } else {
+                            list.border_l_1().border_color(colors.border)
+                        }
                     })
                     .children(rows)
             });
             let close = state.clone();
-            float(
-                self.id.clone(),
-                anchor,
-                deepest,
-                surface((self.id.clone(), "columns"), cx)
-                    .flex()
-                    .on_mouse_down_out(move |_, _, cx| {
-                        let trail = close.read(cx).trail.clone();
-                        show(&close, false, trail, cx)
-                    })
-                    .children(lists),
-                window,
-                cx,
-            )
+            let panel = surface((self.id.clone(), "columns"), cx)
+                .occlude()
+                .debug_selector(|| "cascade-panel".into())
+                .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                .on_scroll(|_, _, cx| cx.stop_propagation())
+                .on_mouse_down_out(move |_, _, cx| {
+                    let trail = close.read(cx).trail.clone();
+                    show(&close, false, trail, cx)
+                });
+            let panel = if stacked {
+                panel
+                    .flex_col()
+                    .w(width.min(visible.size.width))
+                    .h(height)
+                    .child(
+                        div()
+                            .id((self.id.clone(), "scroll"))
+                            .debug_selector(|| "cascade-scroll".into())
+                            .size_full()
+                            .min_h_0()
+                            .restrict_scroll_to_axis()
+                            .overflow_y_scroll()
+                            .track_scroll(&scroll)
+                            .flex()
+                            .flex_col()
+                            .children(lists),
+                    )
+            } else {
+                panel.flex().children(lists)
+            };
+            if stacked {
+                float_height(self.id.clone(), anchor, height, panel, window, cx)
+            } else {
+                float(self.id.clone(), anchor, deepest, panel, window, cx)
+            }
         });
         field_button(self.id, &focus, self.size, false, window, cx)
             .on_click(move |event, _, cx| {

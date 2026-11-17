@@ -1,3 +1,5 @@
+mod overlay_bounds;
+
 use gpui::{
     AppContext as _, Context, Entity, Focusable, IntoElement, ParentElement, Render, Styled,
     TestAppContext, VisualTestContext, Window, div,

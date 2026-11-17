@@ -236,6 +236,9 @@ pub fn cron(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let rule = field("input-cron", window, cx, |input| {
         input.placeholder("*/15 9-17 * * 1-5")
     });
+    let width = (window.viewport_size().width - px(16.))
+        .max(px(0.))
+        .min(px(520.));
     section(
         "CronEditor",
         "Five fields, read back in words with the next runs. Presets fill it in.",
@@ -244,8 +247,43 @@ pub fn cron(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(probe(
         "cron",
         div()
-            .w(px(520.0))
+            .w(width)
             .child(CronEditor::new("cron-rule", &rule).now(TODAY.at(12, 0, 0, 0))),
     ))
     .child(code("CronRule::parse(\"0 9 * * 1-5\")?.next(now, 3)", cx))
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use gpui::{Context, Render, TestAppContext, Window, px, size};
+
+    use super::*;
+
+    struct CronDemo;
+
+    impl Render for CronDemo {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            cron(window, cx)
+        }
+    }
+
+    #[gpui::test]
+    fn cron_editor_fits_the_viewport(cx: &mut TestAppContext) {
+        cx.update(ely_gpui_component::init_for_tests);
+        let (_, cx) = cx.add_window_view(|_, _| CronDemo);
+        for (viewport, expected) in [(320., 304.), (390., 374.), (1200., 520.)] {
+            cx.simulate_resize(size(px(viewport), px(844.)));
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            let actual = cx.update(|_, cx| {
+                crate::probe::Probes::get("cron", cx)
+                    .expect("cron probe")
+                    .size
+                    .width
+            });
+            assert_eq!(actual, px(expected), "viewport {viewport}");
+        }
+    }
 }

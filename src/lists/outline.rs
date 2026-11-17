@@ -101,9 +101,12 @@ impl RenderOnce for Outline {
             .map(|(ix, (key, title, level))| {
                 let here = self.current.as_ref() == Some(&key);
                 let (select, id) = (on_select.clone(), self.id.clone());
+                let selector = key.clone();
                 div()
                     .id((self.id.clone(), format!("item-{key}")))
+                    .debug_selector(move || format!("outline-item-{selector}"))
                     .relative()
+                    .map(|row| theme.touch_target(row))
                     .py_1()
                     .pl_3()
                     .cursor_pointer()

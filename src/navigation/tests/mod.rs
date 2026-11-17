@@ -1,6 +1,9 @@
+mod editor_tabs_touch;
+mod menu_touch;
 mod pages;
 mod stale;
 mod tabs;
+mod touch_targets;
 
 use gpui::{
     AppContext as _, Context, IntoElement, KeyUpEvent, Keystroke, Render, SharedString,
@@ -25,8 +28,9 @@ fn setup(cx: &mut TestAppContext) {
 
 fn press(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).unwrap(),
+        keystroke: Keystroke::parse_with_os(key, os).unwrap(),
     });
 }
 

@@ -1,4 +1,4 @@
-use gpui::{App, ElementId, Entity, IntoElement, ParentElement, RenderOnce, Window};
+use gpui::{App, ElementId, Entity, IntoElement, ParentElement, RenderOnce, Styled, Window, div};
 
 use super::format::{Format, active, format};
 use crate::{
@@ -104,6 +104,25 @@ impl RenderOnce for FixedFormatToolbar {
         let input = self.field.read(cx);
         let pressed = active(input.text(), input.selection());
         let platform = cx.theme().platform;
+        if cx.theme().touch_mode {
+            // Keep every format reachable without a desktop-width intrinsic row.
+            return div()
+                .flex()
+                .flex_wrap()
+                .min_w_0()
+                .gap_1()
+                .children(INLINE.iter().chain(HEADINGS).chain(BLOCKS).map(|tool_of| {
+                    tool(
+                        &self.id,
+                        &self.field,
+                        *tool_of,
+                        pressed.contains(&tool_of.0),
+                        self.on_link.clone(),
+                        platform,
+                    )
+                }))
+                .into_any_element();
+        }
         let group = |tools: &[Tool]| {
             ToolbarGroup::new().children(tools.iter().map(|tool_of| {
                 let on = pressed.contains(&tool_of.0);
@@ -123,5 +142,6 @@ impl RenderOnce for FixedFormatToolbar {
             .child(group(HEADINGS))
             .child(ToolbarSeparator)
             .child(group(BLOCKS))
+            .into_any_element()
     }
 }

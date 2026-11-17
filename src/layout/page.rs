@@ -170,6 +170,7 @@ pub struct MasterDetail {
     master: AnyElement,
     detail: AnyElement,
     min: Pixels,
+    available_width: Option<Pixels>,
 }
 
 impl MasterDetail {
@@ -184,15 +185,36 @@ impl MasterDetail {
             master: master.into_any_element(),
             detail: detail.into_any_element(),
             min,
+            available_width: None,
         }
+    }
+
+    /// Override the window width for a master-detail view inside a narrower pane.
+    pub fn available_width(mut self, width: Pixels) -> Self {
+        self.available_width = Some(width);
+        self
     }
 }
 
 impl RenderOnce for MasterDetail {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        SplitPane::new(self.id, Axis::Horizontal, self.min)
-            .sizes(&[0.36, 0.64])
-            .pane(self.master)
-            .pane(self.detail)
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        if cx.theme().touch_mode
+            && self.available_width.unwrap_or(window.viewport_size().width)
+                < cx.theme().touch_compact_width()
+        {
+            div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .child(div().flex_1().min_h_0().min_w_0().child(self.master))
+                .child(div().flex_1().min_h_0().min_w_0().child(self.detail))
+                .into_any_element()
+        } else {
+            SplitPane::new(self.id, Axis::Horizontal, self.min)
+                .sizes(&[0.36, 0.64])
+                .pane(self.master)
+                .pane(self.detail)
+                .into_any_element()
+        }
     }
 }

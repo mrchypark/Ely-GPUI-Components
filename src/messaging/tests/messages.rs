@@ -1,5 +1,6 @@
 use gpui::{
-    Context, IntoElement, Modifiers, ParentElement, Render, Styled, TestAppContext, Window, div, px,
+    Context, IntoElement, Modifiers, MouseButton, ParentElement, Render, Styled, TestAppContext,
+    Window, div, px,
 };
 use jiff::{Timestamp, civil::date, tz::TimeZone};
 
@@ -7,6 +8,7 @@ use super::{press, settle, setup, tab_to};
 use crate::{
     data_display::Avatar,
     messaging::{ChatMessage, Delivery, MessageThread, ReadReceipt, ThreadPanel},
+    theme::Theme,
 };
 
 fn at(minute: i8) -> Timestamp {
@@ -66,6 +68,29 @@ fn a_run_shows_its_time_on_hover(cx: &mut TestAppContext) {
     cx.simulate_mouse_move(row.center(), None, Modifiers::none());
     settle(cx);
     assert!(cx.debug_bounds("run-time m2").is_some());
+}
+
+#[gpui::test]
+fn a_run_keeps_its_time_in_touch_mode(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    let (_, cx) = cx.add_window_view(|_, _| Run);
+    settle(cx);
+    assert!(
+        cx.debug_bounds("run-time m2").is_some(),
+        "the time does not wait for a hover"
+    );
+    let row = cx
+        .debug_bounds("message m2")
+        .expect("the second message draws");
+    let at = row.center();
+    cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
+    settle(cx);
+    assert!(
+        cx.debug_bounds("run-time m2").is_some(),
+        "a tap on the message keeps the time in place"
+    );
 }
 
 /// A thread of three replies, and how often it opened.

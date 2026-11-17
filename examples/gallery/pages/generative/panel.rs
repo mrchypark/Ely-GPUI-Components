@@ -4,9 +4,14 @@ use ely_gpui_component::{
     buttons::{Button, ButtonVariant},
     forms::{Form, FormField, TagInput, TextInput},
     generative::{AspectRatioPicker, PromptEnhancer, SeedInput, StylePreset, StylePresetPicker},
+    theme::ActiveTheme,
     typography::Caption,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    App, Entity, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    px,
+};
 
 use crate::{
     probe::probe,
@@ -133,13 +138,13 @@ pub fn panel(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     )
     .child(
-        div().w(px(400.)).child(
+        div().w(px(400.)).when(cx.theme().touch_mode, |view| view.w_full().min_w_0()).child(
             Form::new("gen-form")
                 .on_submit(move |window, cx| submit(window, cx))
                 .child(probe(
                     "gen-enhancer",
-                    div().w(px(400.)).child(FormField::new("gen-prompt-label", "Prompt").child(enhancer)),
-                ))
+                    div().debug_selector(|| "gallery-gen-prompt".into()).w(px(400.)).when(cx.theme().touch_mode, |view| view.w_full().min_w_0()).child(FormField::new("gen-prompt-label", "Prompt").child(enhancer)),
+                ).when(cx.theme().touch_mode, |host| host.flex_col()))
                 .child(
                     FormField::new("gen-left-out", "Leave out").child(
                         TagInput::new("gen-left-out-tags", now.left_out)

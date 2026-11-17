@@ -1,3 +1,5 @@
+use gpui::prelude::FluentBuilder as _;
+
 use ely_gpui_component::{
     buttons::Button,
     forms::TextInput,
@@ -316,7 +318,11 @@ fn branches() -> Vec<Branch> {
     ]
 }
 
-pub fn refs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn refs(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let open = keep("git-branch-open", || false, window, cx);
     let said = keep("git-branch-said", || None::<SharedString>, window, cx);
     let stashes = keep(
@@ -372,7 +378,7 @@ pub fn refs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         "Branches as a palette, local and remote apart, a new name offering a new branch; the lists show how far each branch is from its upstream, tags with their messages, and stashes to apply, pop or drop.",
         cx,
     )
-    .child(row().child(Button::new("git-branch-button", "Switch branch…").on_click(move |_, _, cx| set(&opener, true, cx))))
+    .child(row().child(Button::new("git-branch-button", "Switch branch…").debug_selector(|| "gallery-branch-selector".into()).on_click(move |_, _, cx| set(&opener, true, cx))))
     .children(told.map(Caption::new))
     .child(
         div()
@@ -404,6 +410,7 @@ pub fn refs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .children(now_open.then(|| {
         BranchSelector::new("git-branch-palette", branches(), move |_, cx| set(&close, false, cx))
+            .when_some(bounds, |palette, area| palette.usable_bounds(area))
             .on_pick(move |name, _, cx| set(&pick, Some(format!("Switched to {name}.").into()), cx))
             .on_create(move |name, _, cx| set(&create, Some(format!("Created {name}.").into()), cx))
     }))

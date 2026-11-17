@@ -31,13 +31,17 @@ const SCRIPT: &[Step] = &[
     Step::Shot("subject"),
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(diffs::viewer(window, cx))
         .child(diffs::merges(window, cx))
         .child(work::changes(window, cx))
         .child(work::commits(window, cx))
-        .child(work::refs(window, cx))
+        .child(work::refs(window, cx, bounds))
         .child(people::blame(window, cx))
         .child(people::review(window, cx))
         .into_any_element()

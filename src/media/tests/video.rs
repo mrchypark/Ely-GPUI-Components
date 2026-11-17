@@ -167,6 +167,59 @@ fn a_press_seeks_and_a_handle_drag_moves_its_end_to_the_length(cx: &mut TestAppC
 }
 
 #[gpui::test]
+fn a_touch_drag_can_grab_a_trim_handle_outside_its_glyph(cx: &mut TestAppContext) {
+    let (view, cx) = trimming(cx);
+    cx.update(|_, cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = true));
+    settle(cx);
+    let out = across("video-strip", 0.5, cx) + point(px(18.), px(0.));
+    let end = across("video-strip", 0.75, cx);
+    let none = Modifiers::none();
+    cx.simulate_mouse_down(out, MouseButton::Left, none);
+    cx.simulate_mouse_move(out + point(px(6.), px(0.)), MouseButton::Left, none);
+    cx.simulate_mouse_move(end, MouseButton::Left, none);
+    cx.simulate_mouse_up(end, MouseButton::Left, none);
+    settle(cx);
+    let (at, trim) = view.read_with(cx, |view, _| (view.at, view.trim));
+    assert_eq!(at, Duration::ZERO);
+    assert_eq!(trim.0, SECOND * 10);
+    assert!(trim.1.abs_diff(SECOND * 75) < SECOND, "{trim:?}");
+}
+
+#[gpui::test]
+fn a_native_touch_drag_claims_a_trim_handle_and_releases_it(cx: &mut TestAppContext) {
+    let (view, cx) = trimming(cx);
+    cx.update(|_, cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = true));
+    settle(cx);
+    let start = across("video-strip", 0.5, cx) + point(px(18.), px(0.));
+    let send = |phase, start_position, position, cx: &mut VisualTestContext| {
+        cx.simulate_event(gpui::TouchDragEvent {
+            phase,
+            start_position,
+            position,
+        });
+        settle(cx);
+    };
+    let unclaimed = across("video-strip", 0.3, cx);
+    let end = across("video-strip", 0.75, cx);
+    send(gpui::TouchPhase::Started, unclaimed, unclaimed, cx);
+    send(gpui::TouchPhase::Ended, unclaimed, end, cx);
+    assert_eq!(
+        view.read_with(cx, |view, _| view.trim),
+        (SECOND * 10, SECOND * 50)
+    );
+
+    send(gpui::TouchPhase::Started, start, start, cx);
+    send(gpui::TouchPhase::Moved, start, end, cx);
+    send(gpui::TouchPhase::Ended, start, end, cx);
+    let (at, trim) = view.read_with(cx, |view, _| (view.at, view.trim));
+    assert_eq!(at, Duration::ZERO);
+    assert_eq!(trim.0, SECOND * 10);
+    assert!(trim.1.abs_diff(SECOND * 75) < SECOND, "{trim:?}");
+    send(gpui::TouchPhase::Moved, start, unclaimed, cx);
+    assert_eq!(view.read_with(cx, |view, _| view.trim), trim);
+}
+
+#[gpui::test]
 fn command_o_leaves_the_trim_to_the_app(cx: &mut TestAppContext) {
     let (view, cx) = trimming(cx);
     let press_at = across("video-strip", 0.3, cx);

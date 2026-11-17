@@ -120,7 +120,11 @@ pub fn install(cx: &mut App) {
     );
 }
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(messages(cx))
         .child(formats(cx))

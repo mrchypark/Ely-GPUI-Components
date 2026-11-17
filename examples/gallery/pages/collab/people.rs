@@ -3,8 +3,10 @@ use ely_gpui_component::{
     forms::{Input, TextInput},
     theme::{ActiveTheme, TextSize},
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
+    App, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
+    Window, div, px,
 };
 
 use crate::{
@@ -46,7 +48,11 @@ fn draft(window: &mut Window, cx: &mut App) -> Entity<TextInput> {
     })
 }
 
-pub fn presence(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn presence(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let following = keep("collab-following", || None::<SharedString>, window, cx);
     let now = following.read(cx).clone();
     let people = peers();
@@ -68,25 +74,31 @@ pub fn presence(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(
         div()
             .w(px(760.))
+            .when(theme.touch_mode, |view| view.w_full().min_w_0())
+            .debug_selector(|| "gallery-presence-frame".into())
             .flex()
             .flex_col()
             .gap_3()
             .child(
                 div()
                     .flex()
+                    .when(theme.touch_mode, |view| view.flex_wrap().min_w_0())
+                    .debug_selector(|| "gallery-presence-header".into())
                     .items_center()
                     .gap_3()
                     .child(
                         div()
                             .flex_1()
+                            .when(theme.touch_mode, |view| view.w_full().flex_none().min_w_0())
+                            .debug_selector(|| "gallery-presence-title".into())
                             .text_size(theme.text_size(TextSize::Sm))
                             .font_weight(FontWeight::MEDIUM)
                             .child("Handbook / Color / Lift"),
                     )
-                    .child(LiveIndicator::new("collab-live", people.len()))
+                    .child(div().debug_selector(|| "gallery-presence-live".into()).child(LiveIndicator::new("collab-live", people.len())))
                     .child(probe(
                         "collab-peers",
-                        PresenceAvatars::new("collab-peers", people.clone()).follow(
+                        PresenceAvatars::new("collab-peers", people.clone()).when_some(bounds, |overlay, area| overlay.usable_bounds(area)).follow(
                             now,
                             move |key, _, cx| {
                                 let next =
@@ -94,7 +106,7 @@ pub fn presence(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                                 set(&toggle, next, cx)
                             },
                         ),
-                    )),
+                    ).debug_selector(|| "gallery-presence-peers".into())),
             )
             .child(
                 FollowMode::new("collab-follow", followed, move |_, cx| set(&stop, None, cx))
@@ -102,6 +114,7 @@ pub fn presence(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                         div().p_2().child(
                             div()
                                 .relative()
+                                .debug_selector(|| "gallery-presence-document".into())
                                 .child(Input::new(&draft))
                                 .child(RemoteSelection::new(
                                     &people[2],

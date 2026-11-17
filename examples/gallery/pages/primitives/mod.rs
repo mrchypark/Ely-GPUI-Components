@@ -48,7 +48,11 @@ const SCRIPT: &[Step] = &[
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(native::boxes(cx))
         .child(native::text(cx))
@@ -75,6 +79,6 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(parts::measure(window, cx))
         .child(parts::intersection(window, cx))
         .child(native::clipboard(window, cx))
-        .child(parts::tooltip(cx))
+        .child(parts::tooltip(cx, bounds))
         .into_any_element()
 }

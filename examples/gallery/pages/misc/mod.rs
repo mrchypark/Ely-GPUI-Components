@@ -89,7 +89,11 @@ fn zone(name: &str) -> TimeZone {
     TimeZone::get(name).unwrap_or_else(|error| panic!("the zone {name}: {error}"))
 }
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(clocks(cx))
         .child(stopwatch(cx))

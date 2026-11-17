@@ -4,14 +4,14 @@ use std::{
 };
 
 use gpui::{
-    Context, Entity, InteractiveElement, IntoElement, Modifiers, ParentElement, Pixels, Point,
-    Render, ScrollDelta, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled,
-    TestAppContext, TouchPhase, VisualTestContext, Window, div, point, px,
+    Context, Entity, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement,
+    Pixels, Point, Render, ScrollDelta, ScrollEvent, SharedString, StatefulInteractiveElement,
+    Styled, TestAppContext, TouchPhase, VisualTestContext, Window, div, point, px,
 };
 
 use super::{
-    DirEntry, DirectoryListing, InfiniteList, ListItem, SelectableList, SortableList, SwipeAction,
-    SwipeableListItem, VirtualList,
+    DirEntry, DirectoryListing, InfiniteList, ListItem, Outline, SelectableList, SortableList,
+    SwipeAction, SwipeableListItem, VirtualList,
 };
 use crate::{
     primitives::{IconName, Measure},
@@ -120,6 +120,61 @@ fn presses_pick_one_toggle_with_cmd_and_range_with_shift(cx: &mut TestAppContext
 }
 
 #[gpui::test]
+fn a_finger_picks_a_row_and_the_row_keeps_a_finger_sized_target(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    let (view, cx) = cx.add_window_view(|_, _| Picks(Vec::new(), Vec::new(), None, false));
+    settle(cx);
+
+    // A phone has no hover, so the row must be a finger-sized target of its own.
+    let bounds = cx.debug_bounds("list-item-b").expect("the second row");
+    assert!(
+        bounds.size.height >= px(48.),
+        "a list row keeps a finger-sized target, got {:?}",
+        bounds.size.height
+    );
+
+    // The press shows the row as pressed, and the release picks it.
+    cx.simulate_mouse_down(bounds.center(), MouseButton::Left, Modifiers::none());
+    settle(cx);
+    assert_eq!(
+        picks(&view, cx),
+        Vec::<String>::new(),
+        "the press has not lifted"
+    );
+    cx.simulate_mouse_up(bounds.center(), MouseButton::Left, Modifiers::none());
+    settle(cx);
+    assert_eq!(picks(&view, cx), ["b"], "the tap picked the row");
+}
+
+#[gpui::test]
+fn an_outline_row_keeps_a_finger_sized_target(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = true));
+    struct TestOutline;
+    impl Render for TestOutline {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(px(240.0)).child(
+                Outline::new("outline")
+                    .item("one", "One", 1)
+                    .on_select(|_, _, _| {}),
+            )
+        }
+    }
+    let (_, cx) = cx.add_window_view(|_, _| TestOutline);
+    settle(cx);
+
+    let bounds = cx
+        .debug_bounds("outline-item-one")
+        .expect("the outline row");
+    assert!(
+        bounds.size.height >= px(48.),
+        "an outline row must be finger-sized, got {:?}",
+        bounds.size.height
+    );
+}
+
+#[gpui::test]
 fn the_cursor_starts_on_the_first_selected_row(cx: &mut TestAppContext) {
     setup(cx);
     let (view, cx) = cx.add_window_view(|_, _| Picks(vec!["c".into()], Vec::new(), None, false));
@@ -183,11 +238,12 @@ impl Render for Swiped {
 }
 
 fn scroll(cx: &mut VisualTestContext, phase: TouchPhase, x: f32, y: f32) {
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: point(px(160.0), px(20.0)),
         delta: ScrollDelta::Pixels(point(px(x), px(y))),
         modifiers: Modifiers::none(),
         touch_phase: phase,
+        source: Default::default(),
     });
     settle(cx);
 }
@@ -414,71 +470,4 @@ fn the_cursor_stays_on_its_row_when_the_rows_reorder(cx: &mut TestAppContext) {
     assert_eq!(picks(&view, cx), ["b"], "up moves from where that row went");
 }
 
-/// A listing 280 wide.
-struct Narrow;
-
-impl Render for Narrow {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let then = jiff::Timestamp::from_second(1_700_000_000).expect("a time");
-        let entries = [
-            DirEntry::folder("Design", then),
-            DirEntry::file("Brief.md", 4_800, then),
-        ];
-        div()
-            .w(px(280.0))
-            .child(DirectoryListing::new("listing", ["Home"], entries))
-    }
-}
-
-#[gpui::test]
-fn a_narrow_listing_keeps_room_for_the_name(cx: &mut TestAppContext) {
-    setup(cx);
-    let (_, cx) = cx.add_window_view(|_, _| Narrow);
-    settle(cx);
-    let name = cx
-        .debug_bounds("listing-name")
-        .expect("the name heads its column");
-    let least = cx.update(|window, cx| {
-        use crate::theme::ActiveTheme;
-        cx.theme().label_width().to_pixels(window.rem_size())
-    });
-    assert!(name.size.width >= least, "{name:?} under {least:?}");
-}
-
-/// A list whose row holds a button kept by `row_action`, which keeps what the list reports and what the button heard.
-struct Held(Vec<SharedString>, Rc<Cell<usize>>);
-
-impl Render for Held {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (view, pressed) = (cx.entity(), self.1.clone());
-        let button = div()
-            .id("held-button")
-            .debug_selector(|| "held-button".into())
-            .size(px(24.0))
-            .on_click(move |_, _, _| pressed.set(pressed.get() + 1));
-        SelectableList::new("held")
-            .row(
-                "a",
-                ListItem::new("a", "A").trailing(super::row_action(button)),
-            )
-            .on_change(move |keys, _, cx| view.update(cx, |held, _| held.0 = keys.to_vec()))
-            .w(px(240.0))
-    }
-}
-
-#[gpui::test]
-fn a_press_on_a_rows_button_leaves_the_row_alone(cx: &mut TestAppContext) {
-    setup(cx);
-    let pressed = Rc::new(Cell::new(0));
-    let heard = pressed.clone();
-    let (view, cx) = cx.add_window_view(move |_, _| Held(Vec::new(), heard));
-    settle(cx);
-    let button = cx.debug_bounds("held-button").expect("the row's button");
-    cx.simulate_click(button.center(), Modifiers::none());
-    settle(cx);
-    assert_eq!(pressed.get(), 1, "the button heard its press");
-    assert!(
-        view.read_with(cx, |held, _| held.0.is_empty()),
-        "the row stayed unselected"
-    );
-}
+mod rows;

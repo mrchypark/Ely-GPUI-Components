@@ -151,11 +151,15 @@ impl RenderOnce for CrashReporter {
                     .justify_end()
                     .gap_2()
                     .children(action(
-                        Button::new("crash-dismiss", "Don't send").variant(ButtonVariant::Ghost),
+                        Button::new("crash-dismiss", "Don't send")
+                            .debug_selector(|| "shell-crash-dismiss".into())
+                            .variant(ButtonVariant::Ghost),
                         self.on_dismiss,
                     ))
                     .children(action(
-                        Button::new("crash-send", "Send report").primary(),
+                        Button::new("crash-send", "Send report")
+                            .debug_selector(|| "shell-crash-send".into())
+                            .primary(),
                         self.on_send,
                     )),
             )

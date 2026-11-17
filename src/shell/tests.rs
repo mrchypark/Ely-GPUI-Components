@@ -59,8 +59,9 @@ fn settle(cx: &mut VisualTestContext) {
 fn press(key: &str, cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(key);
     settle(cx);
+    let os = cx.update(|_, cx| cx.platform_info().os);
     cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse(key).expect("a key"),
+        keystroke: Keystroke::parse_with_os(key, os).expect("a key"),
     });
     settle(cx);
 }
@@ -461,7 +462,7 @@ fn at_280px_the_caption_buttons_stay_inside_the_shell(cx: &mut TestAppContext) {
     let edit = cx.debug_bounds("edit").expect("Edit");
     assert!(items.size.width >= px(32.0), "{items:?} holds a control");
     assert!(items.contains(&edit.origin), "{edit:?} shows in {items:?}");
-    cx.simulate_event(gpui::ScrollWheelEvent {
+    cx.simulate_event(gpui::ScrollEvent {
         position: items.center(),
         delta: gpui::ScrollDelta::Pixels(gpui::point(px(-400.0), px(0.0))),
         ..Default::default()

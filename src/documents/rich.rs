@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, ElementId, Entity, InteractiveElement, IntoElement, KeyBinding, ParentElement,
-    RenderOnce, SharedString, Styled, Window, actions, div, prelude::*,
+    AnyElement, App, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    SharedString, Styled, Window, actions, div, prelude::*,
 };
 
 use super::{
@@ -14,6 +14,7 @@ use super::{
 };
 use crate::{
     forms::{Run, TextInput},
+    load_key_binding,
     overlays::FloatingToolbar,
     theme::{ActiveTheme, Radius, TextSize},
 };
@@ -25,9 +26,9 @@ const CONTEXT: &str = "ElyRichText";
 /// Binds the rich text keys. `init` calls it.
 pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys([
-        KeyBinding::new("secondary-b", ToggleBold, Some(CONTEXT)),
-        KeyBinding::new("secondary-i", ToggleItalic, Some(CONTEXT)),
-        KeyBinding::new("secondary-k", EditLink, Some(CONTEXT)),
+        load_key_binding("secondary-b", ToggleBold, Some(CONTEXT), cx),
+        load_key_binding("secondary-i", ToggleItalic, Some(CONTEXT), cx),
+        load_key_binding("secondary-k", EditLink, Some(CONTEXT), cx),
     ]);
 }
 
@@ -131,6 +132,7 @@ impl RenderOnce for RichTextEditor {
             .on_action(move |_: &EditLink, window, cx| link(window, cx))
             .flex()
             .flex_col()
+            .when(theme.touch_mode, |editor| editor.min_w_0())
             .rounded(theme.radius(Radius::Lg))
             .border_1()
             .border_color(colors.border)
@@ -140,6 +142,7 @@ impl RenderOnce for RichTextEditor {
                     .flex()
                     .items_center()
                     .justify_between()
+                    .when(theme.touch_mode, |row| row.flex_wrap().min_w_0())
                     .px_2()
                     .border_b_1()
                     .border_color(colors.border)

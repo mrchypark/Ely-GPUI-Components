@@ -50,6 +50,7 @@ fn show(state: &Entity<Open>, entry: Option<usize>, cx: &mut App) {
 pub struct NavigationMenu {
     id: ElementId,
     entries: Vec<(SharedString, Vec<Choice>)>,
+    usable_bounds: Option<Bounds<Pixels>>,
     on_select: Option<OnValue>,
 }
 
@@ -58,8 +59,15 @@ impl NavigationMenu {
         Self {
             id: id.into(),
             entries: Vec::new(),
+            usable_bounds: None,
             on_select: None,
         }
+    }
+
+    /// The usable area of the window, so a panel fits a phone's screen.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 
     /// An entry and its links: each link's label is its title, its note a line of detail.
@@ -122,17 +130,38 @@ impl RenderOnce for NavigationMenu {
         };
         let theme = cx.theme();
         let colors = &theme.colors;
+        // On phones, cap panel width at the smaller of its usual, usable, and viewport widths.
+        let panel_width = {
+            let usual = theme.nav_panel_width().to_pixels(window.rem_size());
+            if theme.touch_mode {
+                let viewport = window.viewport_size().width;
+                let usable = self
+                    .usable_bounds
+                    .map(|bounds| bounds.size.width)
+                    .unwrap_or(viewport);
+                usual.min(usable).min(viewport)
+            } else {
+                usual
+            }
+        };
+        let columns: usize = if panel_width < gpui::rems(26.25).to_pixels(window.rem_size()) {
+            1
+        } else {
+            2
+        };
         let triggers = entries.iter().enumerate().map(|(ix, (label, _))| {
             let on = open == Some(ix);
             let (press, hover, measure, into) =
                 (state.clone(), state.clone(), state.clone(), focus.clone());
             div()
                 .id(("entry", ix))
+                .debug_selector(move || format!("navigation-menu-title-{ix}"))
                 .relative()
                 .flex()
                 .items_center()
                 .gap_1()
                 .h(theme.control_height(ControlSize::Md))
+                .map(|entry| theme.touch_target(entry))
                 .px_3()
                 .rounded(theme.radius(Radius::Md))
                 .border_1()
@@ -188,10 +217,13 @@ impl RenderOnce for NavigationMenu {
                 };
                 div()
                     .id(("link", ix))
+                    .debug_selector(move || format!("navigation-menu-link-{ix}"))
                     .flex()
+                    .min_w_0()
                     .gap_3()
                     .p_2()
                     .rounded(theme.radius(Radius::Md))
+                    .map(|row| theme.touch_target(row))
                     .when(!choice.disabled, |row| {
                         row.when(ix == link, |row| row.bg(colors.hover))
                             .cursor_pointer()
@@ -209,6 +241,7 @@ impl RenderOnce for NavigationMenu {
                         div()
                             .flex()
                             .flex_col()
+                            .min_w_0()
                             .gap_0p5()
                             .child(
                                 div()
@@ -228,14 +261,19 @@ impl RenderOnce for NavigationMenu {
             });
             let close = state.clone();
             let content = surface((self.id.clone(), "panel"), cx)
-                .w(theme.nav_panel_width())
+                .debug_selector(|| "navigation-menu-panel".into())
+                // Keep the press on the panel from reaching the page it covers.
+                .occlude()
+                .on_scroll(|_, _, cx| cx.stop_propagation())
+                .w(panel_width)
+                .min_w_0()
                 .p_2()
                 .grid()
-                .grid_cols(2)
+                .grid_cols(columns as u16)
                 .gap_1()
                 .on_mouse_down_out(move |_, _, cx| show(&close, None, cx))
                 .children(links);
-            let rows = entries[entry].1.len().div_ceil(2) * 2;
+            let rows = entries[entry].1.len().div_ceil(columns);
             float(
                 (self.id.clone(), format!("menu-{entry}")),
                 state.read(cx).anchors[entry],
@@ -252,6 +290,7 @@ impl RenderOnce for NavigationMenu {
             .flex()
             .items_center()
             .gap_1()
+            .when(theme.touch_mode, |menu| menu.w_full().min_w_0().flex_wrap())
             .on_key_down(move |event, window, cx| {
                 let key = event.keystroke.key.as_str();
                 let current = marked(keys.read(cx), &key_entries);

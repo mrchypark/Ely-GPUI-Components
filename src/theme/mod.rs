@@ -16,6 +16,7 @@ mod project;
 mod syntax;
 mod tokens;
 mod tooling;
+mod touch;
 
 #[cfg(all(test, feature = "test-support"))]
 mod tests;
@@ -74,6 +75,8 @@ pub struct Theme {
     custom: [Option<Palette>; 2],
     pub colors: Palette,
     pub density: Density,
+    /// Use touch interactions and touch targets on supported controls (defaults true on mobile).
+    pub touch_mode: bool,
     pub radius_scale: f32,
     pub font_scale: f32,
     pub font_family: SharedString,
@@ -104,6 +107,7 @@ impl Theme {
             custom: [None, None],
             colors: Palette::light(false),
             density: Density::Standard,
+            touch_mode: touch::touch_mode_for_target(std::env::consts::OS),
             radius_scale: 1.0,
             font_scale: 1.0,
             font_family: "Inter".into(),

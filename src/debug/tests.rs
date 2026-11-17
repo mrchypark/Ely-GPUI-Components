@@ -1,12 +1,28 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    Context, IntoElement, KeyUpEvent, Keystroke, Modifiers, ParentElement, Render, Styled,
-    TestAppContext, VisualTestContext, Window, div, point, px,
+    AppContext as _, Context, Entity, IntoElement, KeyUpEvent, Keystroke, Modifiers, MouseButton,
+    ParentElement, Render, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
 };
 
-use super::{Breakpoint, BreakpointList, Disassembly, Instruction, Span, TimelineProfiler};
+use super::{
+    Breakpoint, BreakpointList, Disassembly, Instruction, Span, TimelineProfiler, ValueKind, Watch,
+    WatchPanel,
+};
+use crate::forms::TextInput;
 use crate::theme::Theme;
+
+/// The theme as a phone has it: no hover, no motion.
+#[allow(dead_code)]
+fn touch_theme(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| {
+            theme.touch_mode = true;
+            theme.reduced_motion = true;
+        });
+    });
+}
 
 fn settle(cx: &mut VisualTestContext) {
     cx.run_until_parked();
@@ -219,11 +235,12 @@ fn a_zoom_past_the_finest_range_stays_put(cx: &mut TestAppContext) {
     let (owner, cx) = cx.add_window_view(move |_, _| Zooming(start));
     settle(cx);
     for _ in 0..2 {
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: point(px(250.0), px(30.0)),
             delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(400.0))),
             modifiers: Modifiers::none(),
             touch_phase: gpui::TouchPhase::Moved,
+            source: Default::default(),
         });
         settle(cx);
     }
@@ -237,13 +254,16 @@ fn a_wheel_too_large_for_a_zoom_stays_put(cx: &mut TestAppContext) {
     let (owner, cx) = cx.add_window_view(|_, _| Zooming((0.0, 25.0)));
     settle(cx);
     for pixels in [300_000.0, -300_000.0] {
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: point(px(250.0), px(30.0)),
             delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(pixels))),
             modifiers: Modifiers::none(),
             touch_phase: gpui::TouchPhase::Moved,
+            source: Default::default(),
         });
         settle(cx);
     }
     assert_eq!(owner.read_with(cx, |owner, _| owner.0), (0.0, 25.0));
 }
+
+mod watches;

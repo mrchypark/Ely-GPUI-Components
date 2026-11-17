@@ -4,10 +4,10 @@ use gpui::{
     Context, IntoElement, KeyUpEvent, Keystroke, Modifiers, ParentElement, Render, Styled,
     TestAppContext, Window, div, point, px,
 };
-use jiff::civil::{Date, Time, date, time};
+use jiff::civil::{Date, DateTime, Time, date, time};
 
 use super::setup;
-use crate::forms::{Calendar, DatePicker, DateRangePicker, TimePicker};
+use crate::forms::{Calendar, DatePicker, DateRangePicker, DateTimePicker, TimePicker};
 
 const TODAY: Date = date(2026, 9, 25);
 
@@ -114,6 +114,241 @@ fn a_time_picker_steps_with_the_arrows(cx: &mut TestAppContext) {
         view.read_with(cx, |view, _| view.value),
         Some(time(10, 0, 0, 0))
     );
+}
+
+#[gpui::test]
+fn time_picker_rows_fit_touch_and_desktop_and_keep_the_selected_hour_visible(
+    cx: &mut TestAppContext,
+) {
+    setup(cx);
+    for touch in [false, true] {
+        cx.update(|cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = touch));
+        let (view, cx) = cx.add_window_view(|_, _| Clock {
+            value: Some(time(9, 30, 0, 0)),
+        });
+        cx.simulate_resize(gpui::size(px(390.), px(844.)));
+        cx.update(|window, cx| window.focus_next(cx));
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        let hour = cx.debug_bounds("time-hour-9").expect("selected hour");
+        let minute = cx.debug_bounds("time-minute-45").expect("minute choice");
+        let expected = if touch { px(48.) } else { px(24.) };
+        assert_eq!(hour.size.height, expected);
+        assert_eq!(minute.size.height, expected);
+        if touch {
+            assert!(hour.size.width >= px(48.));
+            assert!(minute.size.width >= px(48.));
+        }
+        let hours = cx.debug_bounds("time-column-hours").expect("hour column");
+        assert!(hour.top() >= hours.top() && hour.bottom() <= hours.bottom());
+        cx.simulate_click(minute.center(), Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(
+            view.read_with(cx, |view, _| view.value),
+            Some(time(9, 45, 0, 0))
+        );
+    }
+}
+
+struct Moment {
+    value: Option<DateTime>,
+}
+
+impl Render for Moment {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        div().p_4().child(
+            DateTimePicker::new("moment", self.value)
+                .today(TODAY)
+                .step(15)
+                .on_change(move |picked, _, cx| {
+                    view.update(cx, |view, cx| {
+                        view.value = Some(picked);
+                        cx.notify();
+                    })
+                }),
+        )
+    }
+}
+
+#[gpui::test]
+fn date_time_popup_keeps_time_columns_inside_narrow_windows(cx: &mut TestAppContext) {
+    setup(cx);
+    for touch in [true, false] {
+        cx.update(|cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = touch));
+        for (width, height) in [(320., 600.), (390., 844.)] {
+            let (_, cx) = cx.add_window_view(|_, _| Moment {
+                value: Some(date(2026, 9, 10).to_datetime(time(9, 30, 0, 0))),
+            });
+            cx.simulate_resize(gpui::size(px(width), px(height)));
+            cx.update(|window, cx| window.focus_next(cx));
+            cx.simulate_keystrokes("enter");
+            cx.run_until_parked();
+            let popup = cx.debug_bounds("date-time-popup").expect("popup opened");
+            let last_day = cx.debug_bounds("calendar-day-2026-10-11").unwrap();
+            let hours = cx.debug_bounds("time-column-hours").expect("hour column");
+            assert!(
+                popup.left() >= px(0.) && popup.right() <= px(width),
+                "{touch} {width}x{height}: popup {popup:?} crosses the viewport horizontally"
+            );
+            assert!(
+                popup.top() >= px(0.) && popup.bottom() <= px(height),
+                "{touch} {width}x{height}: popup {popup:?} crosses the viewport vertically"
+            );
+            assert!(
+                hours.top() >= last_day.bottom(),
+                "{touch} {width}x{height}: time columns {hours:?} did not stack under {last_day:?}"
+            );
+            for column in ["time-column-hours", "time-column-minutes"] {
+                let bounds = cx.debug_bounds(column).expect("time column");
+                assert!(
+                    bounds.left() >= popup.left() && bounds.right() <= popup.right(),
+                    "{touch} {width}x{height}: {column} {bounds:?} outside {popup:?}"
+                );
+            }
+        }
+    }
+}
+
+struct LimitedClock {
+    value: Option<Time>,
+    min: Option<Time>,
+    max: Option<Time>,
+    changes: usize,
+}
+
+impl Render for LimitedClock {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let owner = cx.entity();
+        div().size_full().child(
+            TimePicker::new("limited-clock", self.value)
+                .step(15)
+                .range(self.min, self.max)
+                .on_change(move |value, _, cx| {
+                    owner.update(cx, |view, cx| {
+                        view.value = Some(value);
+                        view.changes += 1;
+                        cx.notify();
+                    })
+                }),
+        )
+    }
+}
+
+#[gpui::test]
+fn bounded_time_picker_uses_minute_base_and_disables_unavailable_rows(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = true));
+    let (view, cx) = cx.add_window_view(|_, _| LimitedClock {
+        value: Some(time(9, 5, 0, 0)),
+        min: Some(time(9, 5, 0, 0)),
+        max: Some(time(10, 20, 0, 0)),
+        changes: 0,
+    });
+    cx.simulate_resize(gpui::size(px(390.), px(844.)));
+    cx.update(|window, cx| window.focus_next(cx));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let hour = cx.debug_bounds("time-hour-10").unwrap();
+    cx.simulate_click(hour.center(), Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(
+        view.read_with(cx, |view, _| view.value),
+        Some(time(10, 5, 0, 0))
+    );
+    let invalid = cx.debug_bounds("time-minute-35").unwrap();
+    cx.simulate_click(invalid.center(), Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(view.read_with(cx, |view, _| view.changes), 1);
+    let valid = cx.debug_bounds("time-minute-20").unwrap();
+    cx.simulate_click(valid.center(), Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(
+        view.read_with(cx, |view, _| view.value),
+        Some(time(10, 20, 0, 0))
+    );
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    assert_eq!(view.read_with(cx, |view, _| view.changes), 2);
+}
+
+#[gpui::test]
+fn overnight_time_picker_steps_across_midnight_but_stops_at_its_limit(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| LimitedClock {
+        value: Some(time(23, 45, 0, 0)),
+        min: Some(time(23, 0, 0, 0)),
+        max: Some(time(0, 0, 0, 0)),
+        changes: 0,
+    });
+    cx.update(|window, cx| window.focus_next(cx));
+    cx.simulate_keystrokes("enter down");
+    cx.run_until_parked();
+    assert_eq!(
+        view.read_with(cx, |view, _| view.value),
+        Some(time(0, 0, 0, 0))
+    );
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    assert_eq!(view.read_with(cx, |view, _| view.changes), 1);
+}
+
+#[gpui::test]
+fn one_sided_time_bounds_wrap_toward_the_limit_but_not_past_it(cx: &mut TestAppContext) {
+    setup(cx);
+    for (start, min, max, toward, past, expected) in [
+        (
+            time(0, 0, 0, 0),
+            None,
+            Some(time(23, 45, 0, 0)),
+            "up",
+            "down",
+            time(23, 45, 0, 0),
+        ),
+        (
+            time(23, 45, 0, 0),
+            Some(time(0, 0, 0, 0)),
+            None,
+            "down",
+            "up",
+            time(0, 0, 0, 0),
+        ),
+    ] {
+        let (view, cx) = cx.add_window_view(|_, _| LimitedClock {
+            value: Some(start),
+            min,
+            max,
+            changes: 0,
+        });
+        cx.update(|window, cx| window.focus_next(cx));
+        cx.simulate_keystrokes("enter");
+        cx.simulate_keystrokes(toward);
+        cx.run_until_parked();
+        assert_eq!(view.read_with(cx, |view, _| view.value), Some(expected));
+        cx.simulate_keystrokes(past);
+        cx.run_until_parked();
+        assert_eq!(view.read_with(cx, |view, _| view.changes), 1);
+    }
+}
+
+#[gpui::test]
+fn time_picker_uses_initial_value_as_step_base_without_a_minimum(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| LimitedClock {
+        value: Some(time(12, 31, 0, 0)),
+        min: None,
+        max: None,
+        changes: 0,
+    });
+    cx.update(|window, cx| window.focus_next(cx));
+    cx.simulate_keystrokes("enter down");
+    cx.run_until_parked();
+    assert_eq!(
+        view.read_with(cx, |view, _| view.value),
+        Some(time(12, 46, 0, 0))
+    );
+    assert!(cx.debug_bounds("time-minute-31").is_some());
+    assert!(cx.debug_bounds("time-minute-46").is_some());
 }
 
 struct Bounded {

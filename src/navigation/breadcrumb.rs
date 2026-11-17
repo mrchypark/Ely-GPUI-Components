@@ -128,6 +128,7 @@ impl RenderOnce for Breadcrumb {
                 .text_color(fg)
                 .when(active, |crumb| {
                     crumb
+                        .map(|crumb| theme.touch_target(crumb))
                         .cursor_pointer()
                         .hover(|style| style.bg(colors.hover).text_color(colors.fg))
                 })

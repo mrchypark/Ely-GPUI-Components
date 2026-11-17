@@ -14,7 +14,8 @@ use super::{
 use crate::{
     buttons::{Button, ButtonGroup, ButtonVariant, IconButton},
     forms::TextInput,
-    primitives::IconName,
+    primitives::{IconName, Pressable},
+    theme::ActiveTheme,
 };
 
 pub(crate) type Click = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -70,6 +71,7 @@ pub(crate) fn menu_under(
 /// A button that opens a menu under it.
 #[derive(IntoElement)]
 pub struct DropdownMenu {
+    close_when_unusable: bool,
     id: ElementId,
     label: SharedString,
     icon: Option<IconName>,
@@ -80,6 +82,7 @@ pub struct DropdownMenu {
 impl DropdownMenu {
     pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>, menu: Menu) -> Self {
         Self {
+            close_when_unusable: false,
             id: id.into(),
             label: label.into(),
             icon: None,
@@ -93,6 +96,11 @@ impl DropdownMenu {
         self
     }
 
+    pub(crate) fn close_when_unusable(mut self) -> Self {
+        self.close_when_unusable = true;
+        self
+    }
+
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
         self
@@ -102,8 +110,20 @@ impl DropdownMenu {
 impl RenderOnce for DropdownMenu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = state(&self.id, window, cx);
+        let unavailable = self.close_when_unusable
+            && self
+                .menu
+                .usable_bounds
+                .map(|bounds| super::placement::area(bounds, window.viewport_size()))
+                .is_some_and(|bounds| {
+                    bounds.size.width <= Pixels::ZERO || bounds.size.height <= Pixels::ZERO
+                });
+        if unavailable && state.read(cx).is_open() {
+            Open::close(&state, window, cx);
+        }
         let click = toggle(&state, &self.menu, cx);
         let button = Button::new((self.id.clone(), "button"), self.label)
+            .disabled(unavailable)
             .variant(self.variant)
             .trailing_icon(IconName::ChevronDown)
             .when_some(self.icon, |button, icon| button.icon(icon))
@@ -221,7 +241,7 @@ impl RenderOnce for SplitButton {
     }
 }
 
-/// Its children, and a menu that opens at the pointer on a right click. Styles size the host, so a list inside can fill it.
+/// Its children, and a menu that opens at the pointer on a right click or touch long press. Styles size the host, so a list inside can fill it.
 #[derive(IntoElement)]
 pub struct ContextMenu {
     id: ElementId,
@@ -273,6 +293,9 @@ impl RenderOnce for ContextMenu {
             }
         }
         let (open, shut, menu) = (state.clone(), state.clone(), self.menu.clone());
+        let touch = cx.theme().touch_mode && self.request.is_none();
+        let touch_open = open.clone();
+        let touch_menu = menu.clone();
         self.base
             .id(self.id.clone())
             .relative()
@@ -288,6 +311,20 @@ impl RenderOnce for ContextMenu {
                     window.prevent_default();
                     Open::close(&shut, window, cx);
                 }
+            })
+            .when(touch, |host| {
+                host.child(
+                    Pressable::new((self.id.clone(), "touch"), |_, _, _| {
+                        div().absolute().size_full().into_any_element()
+                    })
+                    .absolute()
+                    .size_full()
+                    .on_long_press(move |window, cx| {
+                        let at = window.mouse_position();
+                        log::info!("context menu: touch long press at {at:?}");
+                        Open::show(&touch_open, &touch_menu, Spot::At(at), false, cx);
+                    }),
+                )
             })
             .children(self.children)
             .child(measure_host(state.clone(), false))

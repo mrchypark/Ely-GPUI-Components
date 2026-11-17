@@ -149,8 +149,9 @@ fn changed_lines_and_hunks_answer_presses(cx: &mut TestAppContext) {
     let press = |cx: &mut VisualTestContext, key: &str| {
         cx.simulate_keystrokes(key);
         settle(cx);
+        let os = cx.update(|_, cx| cx.platform_info().os);
         cx.simulate_event(KeyUpEvent {
-            keystroke: Keystroke::parse(key).expect("a key"),
+            keystroke: Keystroke::parse_with_os(key, os).expect("a key"),
         });
         settle(cx);
     };

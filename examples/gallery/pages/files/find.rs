@@ -1,4 +1,5 @@
 use ely_gpui_component::{
+    buttons::Button,
     debug::HexViewer,
     documents::{Favorite, Favorites},
     files::{
@@ -8,7 +9,9 @@ use ely_gpui_component::{
     forms::TextInput,
     lists::DirEntry,
     overlays::Dialog,
+    theme::ActiveTheme,
 };
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
 };
@@ -26,8 +29,15 @@ fn entry(name: &str, bytes: u64, hours: i64) -> DirEntry {
     DirEntry::file(name.to_string(), bytes, Timestamp::now() - hours.hours())
 }
 
-pub fn previews(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn previews(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
+    let touch = cx.theme().touch_mode;
     let looking = keep("files-looking", || None::<SharedString>, window, cx);
+    let opens = keep("files-look-opens", || 0usize, window, cx);
+    let open_count = *opens.read(cx);
     let picked = keep("files-look-picked", || None::<SharedString>, window, cx);
     let (open, pick) = (looking.clone(), picked.clone());
     let chosen = picked.read(cx).clone();
@@ -42,8 +52,13 @@ pub fn previews(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         entry("Brief.md", 4_800, 2),
         entry("Archive.zip", 48_000_000, 700),
     ];
+    let preview_open = looking.clone();
     let grid = FileGrid::new("files-look-grid", tiles)
-        .on_select(move |name, _, cx| change(&pick, cx, |now| *now = Some(name.clone())));
+        .on_select(move |name, _, cx| change(&pick, cx, |now| *now = Some(name.clone())))
+        .on_open(move |entry, _, cx| {
+            change(&preview_open, cx, |now| *now = Some(entry.name().clone()));
+            change(&opens, cx, |count| *count += 1);
+        });
     let grid = match chosen.clone() {
         Some(name) => grid.selected(name),
         None => grid,
@@ -52,13 +67,13 @@ pub fn previews(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let close = looking.clone();
     section(
         "FilePreview / QuickLook",
-        "A file shown large: its picture in its shape, its text's first lines, or its kind. Space on a picked tile shows it over the page, as a quick look does; Escape puts it away.",
+        "Select a tile then Open for a local preview; Space also opens the selection. Close returns to the tiles. No filesystem operation is performed.",
         cx,
     )
     .child(probe(
         "files-previews",
         div()
-            .w(px(640.))
+            .when(touch, |view| view.w_full().min_w_0().flex_wrap()).when(!touch, |view| view.w(px(640.)))
             .flex()
             .gap_4()
             .child(div().flex_1().min_w_0().child(preview(&"Atrium.jpg".into())))
@@ -68,7 +83,7 @@ pub fn previews(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     .child(probe(
         "files-quick",
         div()
-            .w(px(640.))
+            .when(touch, |view| view.w_full().min_w_0()).when(!touch, |view| view.w(px(640.)))
             .on_key_down(move |event, _, cx| {
                 if event.keystroke.key == "space" {
                     let picked = chosen.clone();
@@ -77,11 +92,21 @@ pub fn previews(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
             })
             .child(grid),
     ))
+    .children((open_count > 0).then(|| div().debug_selector(|| "files-preview-result".into())
+        .child(format!("Preview Open callback {open_count}; local fixture only."))))
     .children(shown.map(|name| {
+        let selector = name.clone();
         Dialog::new("files-quick-look", name.clone(), move |_, cx| {
             change(&close, cx, |now| *now = None)
-        })
-        .child(div().w(px(420.)).child(preview(&name)))
+        }).when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+        .when(touch, |dialog| dialog.action(|close| {
+            Button::new("files-preview-close", "Close")
+                .debug_selector(|| "files-preview-close".into())
+                .on_click(move |_, window, cx| close(window, cx))
+        }))
+        .child(div().when(touch, |view| view.w_full().min_w_0()).when(!touch, |view| view.w(px(420.)))
+            .debug_selector(move || format!("files-preview-{selector}"))
+            .child(preview(&name)))
     }))
 }
 
@@ -113,15 +138,35 @@ pub fn recent(cx: &mut App) -> impl IntoElement + use<> {
     ))
 }
 
-pub fn favorites(cx: &mut App) -> impl IntoElement + use<> {
+pub fn favorites(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let pin = |key: &str, icon: &str, title: &str| Favorite {
         key: key.to_string().into(),
         icon: icon.to_string().into(),
         title: title.to_string().into(),
     };
+    let pages = keep(
+        "files-favorites-pages",
+        || {
+            vec![
+                pin("atrium", "📐", "Atrium"),
+                pin("roadmap", "🗺️", "Roadmap.md"),
+                pin("music", "🎧", "Music"),
+            ]
+        },
+        window,
+        cx,
+    );
+    let removed = keep(
+        "files-favorites-removed",
+        Vec::<SharedString>::new,
+        window,
+        cx,
+    );
+    let now = pages.read(cx).clone();
+    let count = removed.read(cx).len();
     section(
         "Favorites / Bookmarks",
-        "Places pinned for quick reach, as documents::Favorites keeps them: a press opens one, a drag reorders, the star lets one go.",
+        "Tap the star to remove a local favorite. Opening logs the chosen place; no filesystem operation is performed.",
         cx,
     )
     .child(probe(
@@ -129,15 +174,17 @@ pub fn favorites(cx: &mut App) -> impl IntoElement + use<> {
         div().w(px(280.)).child(
             Favorites::new(
                 "files-favorites",
-                [
-                    pin("atrium", "📐", "Atrium"),
-                    pin("roadmap", "🗺️", "Roadmap.md"),
-                    pin("music", "🎧", "Music"),
-                ],
+                now,
             )
+            .on_unpin(move |key, _, cx| {
+                change(&pages, cx, |pages| pages.retain(|page| page.key != *key));
+                change(&removed, cx, |removed| removed.push(key.clone()));
+            })
             .on_open(|key, _, _| log::info!("gallery: open {key}")),
         ),
     ))
+    .children((count > 0).then(|| div().debug_selector(|| "files-favorites-result".into())
+        .child(format!("Removed {count} local favorites."))))
 }
 
 /// Every file of the demo whose name holds `text`, ignoring case.

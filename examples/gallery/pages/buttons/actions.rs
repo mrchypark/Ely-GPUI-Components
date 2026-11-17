@@ -29,8 +29,11 @@ pub fn later(cx: &App) -> impl IntoElement + use<> {
     ))
 }
 
-pub fn fab(cx: &App) -> impl IntoElement + use<> {
+pub fn fab(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let theme = cx.theme();
+    let width = (window.viewport_size().width - px(16.))
+        .max(px(0.))
+        .min(px(420.));
     section(
         "FloatingActionButton",
         "Round and raised for the screen's one main action. It rises in.",
@@ -39,8 +42,9 @@ pub fn fab(cx: &App) -> impl IntoElement + use<> {
     .child(
         div()
             .relative()
-            .w(px(420.0))
+            .w(width)
             .h(px(160.0))
+            .debug_selector(|| "gallery-fab-frame".into())
             .rounded(theme.radius(Radius::Lg))
             .border_1()
             .border_color(theme.colors.border)
@@ -53,12 +57,12 @@ pub fn fab(cx: &App) -> impl IntoElement + use<> {
                     .flex()
                     .items_center()
                     .gap_3()
-                    .child(
+                    .child(div().debug_selector(|| "gallery-fab-compose".into()).child(
                         FloatingActionButton::new("fab-compose", IconName::Pencil).label("Compose"),
-                    )
-                    .child(
+                    ))
+                    .child(div().debug_selector(|| "gallery-fab-add".into()).child(
                         FloatingActionButton::new("fab-add", IconName::Plus).tooltip("New item"),
-                    ),
+                    )),
             ),
     )
 }
@@ -128,8 +132,11 @@ pub fn small_buttons(cx: &App) -> impl IntoElement + use<> {
     ))
 }
 
-pub fn action_bar(cx: &App) -> impl IntoElement + use<> {
+pub fn action_bar(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let theme = cx.theme();
+    let width = (window.viewport_size().width - px(16.))
+        .max(px(0.))
+        .min(px(560.));
     section(
         "ActionBar",
         "Docked along a panel's foot, or floating as a pill.",
@@ -137,8 +144,9 @@ pub fn action_bar(cx: &App) -> impl IntoElement + use<> {
     )
     .child(
         div()
-            .w(px(560.0))
-            .h(px(200.0))
+            .w(width)
+            .min_h(px(200.0))
+            .debug_selector(|| "gallery-action-bar-frame".into())
             .flex()
             .flex_col()
             .justify_end()
@@ -149,31 +157,62 @@ pub fn action_bar(cx: &App) -> impl IntoElement + use<> {
             .border_color(theme.colors.border)
             .bg(theme.colors.sunken)
             .child(
-                div().pb_4().child(
-                    ActionBar::new()
-                        .floating()
-                        .child(
-                            Button::new("bar-reply", "Reply")
-                                .variant(ButtonVariant::Ghost)
-                                .icon(IconName::Reply),
-                        )
-                        .child(
-                            Button::new("bar-forward", "Forward")
-                                .variant(ButtonVariant::Ghost)
-                                .icon(IconName::Forward),
-                        )
-                        .child(
-                            Button::new("bar-archive", "Archive")
-                                .primary()
-                                .icon(IconName::Archive),
-                        ),
-                ),
+                div()
+                    .pb_4()
+                    .debug_selector(|| "gallery-action-bar-floating".into())
+                    .child(
+                        ActionBar::new()
+                            .floating()
+                            .child(
+                                div()
+                                    .debug_selector(|| "gallery-action-reply".into())
+                                    .child(
+                                        Button::new("bar-reply", "Reply")
+                                            .variant(ButtonVariant::Ghost)
+                                            .icon(IconName::Reply),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| "gallery-action-forward".into())
+                                    .child(
+                                        Button::new("bar-forward", "Forward")
+                                            .variant(ButtonVariant::Ghost)
+                                            .icon(IconName::Forward),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| "gallery-action-archive".into())
+                                    .child(
+                                        Button::new("bar-archive", "Archive")
+                                            .primary()
+                                            .icon(IconName::Archive),
+                                    ),
+                            ),
+                    ),
             )
             .child(
-                ActionBar::new()
+                div()
                     .w_full()
-                    .child(Button::new("bar-cancel", "Cancel").variant(ButtonVariant::Ghost))
-                    .child(Button::new("bar-save", "Save changes").primary()),
+                    .debug_selector(|| "gallery-action-bar-docked".into())
+                    .child(
+                        ActionBar::new()
+                            .w_full()
+                            .child(
+                                div()
+                                    .debug_selector(|| "gallery-action-cancel".into())
+                                    .child(
+                                        Button::new("bar-cancel", "Cancel")
+                                            .variant(ButtonVariant::Ghost),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| "gallery-action-save".into())
+                                    .child(Button::new("bar-save", "Save changes").primary()),
+                            ),
+                    ),
             ),
     )
 }
@@ -227,7 +266,11 @@ pub fn bulk(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
 }
 
-pub fn action_sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
+pub fn action_sheet(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> impl IntoElement + use<> {
     let open = window.use_keyed_state("sheet-shown", cx, |_, _| false);
     let shown = *open.read(cx);
     let (show, hide) = (open.clone(), open);
@@ -255,6 +298,7 @@ pub fn action_sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use
                     cx.notify();
                 })
             })
+            .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
             .title("dunes.jpg")
             .message("Taken at dusk. 4.2 MB.")
             .action("Set as wallpaper", |_, _| log::info!("gallery: wallpaper"))
@@ -264,10 +308,13 @@ pub fn action_sheet(window: &mut Window, cx: &mut App) -> impl IntoElement + use
     })
 }
 
-pub fn quick_actions(cx: &App) -> impl IntoElement + use<> {
+pub fn quick_actions(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let note = |label: &'static str| {
         move |_: &mut Window, _: &mut App| log::info!("gallery: quick {label}")
     };
+    let width = (window.viewport_size().width - px(16.))
+        .max(px(0.))
+        .min(px(420.));
     section(
         "QuickActions",
         "Common moves with their keys. Arrows choose, Enter runs.",
@@ -275,28 +322,46 @@ pub fn quick_actions(cx: &App) -> impl IntoElement + use<> {
     )
     .child(probe(
         "quick",
-        div().w(px(420.0)).child(
-            QuickActions::new("quick-actions")
-                .action(
-                    QuickAction::new(IconName::FilePlus, "New document", note("new"))
-                        .note("Blank, or from a template")
-                        .shortcut("cmd-n"),
-                )
-                .action(
-                    QuickAction::new(IconName::FolderOpen, "Open…", note("open")).shortcut("cmd-o"),
-                )
-                .action(
-                    QuickAction::new(IconName::Search, "Search everywhere", note("search"))
-                        .note("Files, symbols, commands")
-                        .shortcut("cmd-shift-p"),
-                )
-                .action(
-                    QuickAction::new(IconName::Settings, "Settings", note("settings"))
-                        .shortcut("cmd-,"),
-                ),
-        ),
+        div()
+            .w(width)
+            .debug_selector(|| "gallery-quick-actions-frame".into())
+            .child(
+                div()
+                    .w_full()
+                    .debug_selector(|| "gallery-quick-actions-panel".into())
+                    .child(
+                        QuickActions::new("quick-actions")
+                            .action(
+                                QuickAction::new(IconName::FilePlus, "New document", note("new"))
+                                    .note("Blank, or from a template")
+                                    .shortcut("cmd-n"),
+                            )
+                            .action(
+                                QuickAction::new(IconName::FolderOpen, "Open…", note("open"))
+                                    .shortcut("cmd-o"),
+                            )
+                            .action(
+                                QuickAction::new(
+                                    IconName::Search,
+                                    "Search everywhere",
+                                    note("search"),
+                                )
+                                .note("Files, symbols, commands")
+                                .shortcut("cmd-shift-p"),
+                            )
+                            .action(
+                                QuickAction::new(IconName::Settings, "Settings", note("settings"))
+                                    .shortcut("cmd-,"),
+                            ),
+                    ),
+            ),
     ))
     .child(Caption::new(SharedString::from(
         "Tab in, then use the arrows.",
     )))
 }
+
+#[cfg(all(test, not(target_family = "wasm")))]
+#[cfg(test)]
+#[path = "actions_tests.rs"]
+mod tests;

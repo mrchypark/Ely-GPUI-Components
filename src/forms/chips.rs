@@ -76,6 +76,7 @@ impl RenderOnce for ChoiceChips {
                 );
                 div()
                     .id(("chip", ix))
+                    .debug_selector(move || format!("choice-chip-{ix}"))
                     .flex()
                     .items_center()
                     .gap_1p5()
@@ -95,7 +96,12 @@ impl RenderOnce for ChoiceChips {
                         chip.tab_index(0)
                             .focus_ring(cx)
                             .cursor_pointer()
-                            .when(!on, |chip| chip.hover(|style| style.bg(colors.hover)))
+                            .when(!on, |chip| {
+                                chip.hover(|style| style.bg(colors.hover))
+                                    // A phone never hovers, so the press itself shows the chip.
+                                    .active(|style| style.bg(colors.hover))
+                            })
+                            .map(|chip| theme.touch_target(chip))
                             .on_mouse_down(MouseButton::Left, |_, window, _| {
                                 window.prevent_default()
                             })

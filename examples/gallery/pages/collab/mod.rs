@@ -45,10 +45,14 @@ const SCRIPT: &[Step] = &[
     Step::Wait(300),
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
-        .child(people::presence(window, cx))
-        .child(talk::comments(window, cx))
+        .child(people::presence(window, cx, bounds))
+        .child(talk::comments(window, cx, bounds))
         .child(talk::annotations(window, cx))
         .child(talk::changes(window, cx))
         .child(sharing::sharing(window, cx))

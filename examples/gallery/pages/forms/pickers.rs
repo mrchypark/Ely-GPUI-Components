@@ -1,12 +1,15 @@
 use ely_gpui_component::{
     forms::{Cascade, Cascader, Choice, Combobox, ListBox, MultiSelect, Select, TransferList},
     primitives::IconName,
+    theme::ActiveTheme,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use gpui::{
+    App, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::FluentBuilder, px,
+};
 
 use super::text::field;
 use crate::{
-    probe::probe,
+    probe::{probe, probe_sized},
     ui::{blocked, keep, section, set, specimen, specimens},
 };
 
@@ -149,14 +152,18 @@ pub fn multi_select(window: &mut Window, cx: &mut App) -> impl IntoElement + use
         "Several values as chips. The list stays open while you pick; Backspace drops the last.",
         cx,
     )
-    .child(probe(
+    .child(probe_sized(
         "multi",
-        div().w(px(360.0)).child(
-            MultiSelect::new("multi-cities", cities())
-                .selected(now)
-                .placeholder("Pick cities")
-                .on_change(move |next, _, cx| set(&picked, next.to_vec(), cx)),
-        ),
+        div()
+            .w(px(360.0))
+            .when(cx.theme().touch_mode, |view| view.w_full().min_w_0())
+            .child(
+                MultiSelect::new("multi-cities", cities())
+                    .selected(now)
+                    .placeholder("Pick cities")
+                    .on_change(move |next, _, cx| set(&picked, next.to_vec(), cx)),
+            ),
+        cx.theme().touch_mode,
     ))
 }
 
@@ -220,13 +227,14 @@ pub fn transfer(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         "Mark rows on one side, then move them across.",
         cx,
     )
-    .child(probe(
+    .child(probe_sized(
         "transfer",
-        div().w(px(560.0)).child(
+        div().w_full().max_w(px(560.0)).child(
             TransferList::new("transfer-cities", cities())
                 .chosen(now)
                 .titles("Cities", "On the tour")
                 .on_change(move |next, _, cx| set(&chosen, next.to_vec(), cx)),
         ),
+        true,
     ))
 }

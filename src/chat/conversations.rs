@@ -175,14 +175,17 @@ impl RenderOnce for ConversationItem {
         let shown = self.active || focus.contains_focused(window, cx);
         let theme = cx.theme();
         let colors = theme.colors.clone();
+        let row_id = self.id.clone();
         div()
             .id(self.id.clone())
+            .debug_selector(move || format!("conversation-row {row_id}"))
             .group(group.clone())
             .track_focus(&focus)
             .flex()
             .items_center()
             .gap_1()
             .h(theme.control_height(ControlSize::Md))
+            .when(pressable, |row| theme.touch_target(row))
             .pl_2()
             .pr_0p5()
             .rounded(theme.radius(Radius::Md))
@@ -220,15 +223,27 @@ impl RenderOnce for ConversationItem {
                     .child(Ellipsis::new(self.conversation.title.clone())),
             )
             .children(menu.map(|menu| {
+                let id = self.id.clone();
+                let inner = id.clone();
                 div()
                     .flex_none()
+                    .debug_selector(move || format!("conversation-actions {id}"))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .when(!shown, |slot| {
+                    .when(!shown && !theme.touch_mode, |slot| {
                         slot.invisible().group_hover(group, |style| style.visible())
                     })
                     .child(
-                        OverflowMenu::new((self.id.clone(), "menu"), menu)
-                            .tooltip("Conversation actions"),
+                        div()
+                            .flex_none()
+                            .when(theme.touch_mode, |slot| {
+                                slot.debug_selector(move || {
+                                    format!("conversation-actions-touch {inner}")
+                                })
+                            })
+                            .child(
+                                OverflowMenu::new((self.id.clone(), "menu"), menu)
+                                    .tooltip("Conversation actions"),
+                            ),
                     )
             }))
     }

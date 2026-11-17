@@ -3,12 +3,13 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 use gpui::{
     AnyElement, AppContext as _, Bounds, Context, Entity, Focusable, InteractiveElement,
     IntoElement, KeyUpEvent, Keystroke, Modifiers, MouseButton, ParentElement, Pixels, Render,
-    ScrollDelta, ScrollWheelEvent, Styled, TestAppContext, TouchPhase, VisualTestContext, Window,
+    ScrollDelta, ScrollEvent, Styled, TestAppContext, TouchPhase, VisualTestContext, Window,
     canvas, div, point, px,
 };
 
 mod cite;
 mod compose;
+mod conversations_touch;
 mod history;
 mod welcome;
 
@@ -77,11 +78,12 @@ fn the_list_follows_the_newest_until_the_reader_scrolls_away(cx: &mut TestAppCon
         let size = window.viewport_size();
         point(size.width / 2.0, size.height / 2.0)
     });
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: middle,
         delta: ScrollDelta::Pixels(point(px(0.0), px(1200.0))),
         modifiers: Modifiers::none(),
         touch_phase: TouchPhase::Moved,
+        source: Default::default(),
     });
     settle(cx);
     let away = newest(&seen);
@@ -242,20 +244,22 @@ fn a_list_that_fits_again_drops_the_way_down(cx: &mut TestAppContext) {
             point(size.width / 2.0, size.height - px(28.0)),
         )
     });
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: middle,
         delta: ScrollDelta::Pixels(point(px(0.0), px(1200.0))),
         modifiers: Modifiers::none(),
         touch_phase: TouchPhase::Moved,
+        source: Default::default(),
     });
     settle(cx);
     cx.simulate_click(button, Modifiers::none());
     assert_eq!(*pressed.borrow(), Some(true), "away, the way down shows");
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: middle,
         delta: ScrollDelta::Pixels(point(px(0.0), px(1200.0))),
         modifiers: Modifiers::none(),
         touch_phase: TouchPhase::Moved,
+        source: Default::default(),
     });
     settle(cx);
     talk.update(cx, |talk, cx| {

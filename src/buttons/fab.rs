@@ -65,6 +65,7 @@ impl RenderOnce for FloatingActionButton {
             .justify_center()
             .gap_2()
             .h(side)
+            .map(|fab| theme.touch_target(fab))
             .map(|fab| match &self.label {
                 Some(_) => fab.pl_5().pr_6(),
                 None => fab.w(side),
