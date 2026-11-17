@@ -1,13 +1,13 @@
+use super::probe;
+
 use ely_gpui_component::charts::{
-    CalendarHeatmap, HeatmapChart, PieChart, RadarChart, Series, Slice, Sunburst, Treemap,
+    CalendarHeatmap, CirclePacking, GeoChart, GeoPoint, GeoProjection, GeoRegion, HeatmapChart,
+    PieChart, PolarChart, RadarChart, Series, Slice, Sunburst, TreeChart, TreeLayoutMode, Treemap,
 };
 use gpui::{App, IntoElement, ParentElement, Styled, div, px};
 use jiff::civil::date;
 
-use crate::{
-    probe::probe,
-    ui::{noise, section},
-};
+use crate::ui::{noise, section};
 
 pub fn pies(cx: &mut App) -> impl IntoElement + use<> {
     let traffic = [
@@ -35,9 +35,10 @@ pub fn pies(cx: &mut App) -> impl IntoElement + use<> {
     .child(
         div()
             .flex()
+            .flex_wrap()
             .gap_6()
-            .child(probe("pie", div().w(px(360.)).child(pie)))
-            .child(probe("donut", div().w(px(360.)).child(donut))),
+            .child(probe("pie", div().w(px(360.)).max_w_full().child(pie)))
+            .child(probe("donut", div().w(px(360.)).max_w_full().child(donut))),
     )
 }
 
@@ -50,7 +51,7 @@ pub fn radar(cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(probe(
         "radar",
-        div().w(px(480.)).child(
+        div().w(px(480.)).max_w_full().child(
             RadarChart::new("compare", axes)
                 .series(Series::new("Ely", [86.0, 92.0, 70.0, 81.0, 88.0, 64.0]))
                 .series(Series::new("Others", [72.0, 68.0, 84.0, 60.0, 55.0, 79.0])),
@@ -96,9 +97,46 @@ pub fn parts(cx: &mut App) -> impl IntoElement + use<> {
     .child(
         div()
             .flex()
+            .flex_wrap()
             .gap_6()
-            .child(probe("treemap", div().w(px(420.)).child(treemap)))
-            .child(probe("sunburst", div().w(px(300.)).child(Sunburst::new("teams", teams)))),
+            .child(probe("treemap", div().w(px(420.)).max_w_full().child(treemap)))
+            .child(probe("sunburst", div().w(px(300.)).max_w_full().child(Sunburst::new("teams", teams.clone())))),
+    )
+    .child(
+        div()
+            .flex()
+            .flex_wrap()
+            .gap_6()
+            .child(div().w(px(360.)).max_w_full().child(CirclePacking::new("packing", teams.clone())))
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    PolarChart::new("polar-traffic")
+                        .slice("Search", 412.0)
+                        .slice("Direct", 288.0)
+                        .slice("Social", 164.0)
+                        .slice("Email", 91.0)
+                        .slice("Referral", 136.0),
+                ),
+            ),
+    )
+    .child(
+        div()
+            .flex()
+            .flex_wrap()
+            .gap_6()
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    TreeChart::from_slices("radial-tree", teams.clone())
+                        .mode(TreeLayoutMode::RadialTree),
+                ),
+            )
+            .child(
+                div().w(px(360.)).max_w_full().child(
+                    TreeChart::from_slices("dendrogram", teams)
+                        .mode(TreeLayoutMode::Cluster)
+                        .horizontal(true),
+                ),
+            ),
     )
 }
 
@@ -139,6 +177,18 @@ pub fn heatmaps(cx: &mut App) -> impl IntoElement + use<> {
         "Load by weekday and hour, and a year of commits a day, Monday first. Hover a cell to read it.",
         cx,
     )
-    .child(probe("load", div().w(px(560.)).child(week)))
-    .child(probe("year", div().w(px(720.)).child(CalendarHeatmap::new("commits", date(2026, 1, 1), commits))))
+    .child(probe("load", div().w(px(560.)).max_w_full().child(week)))
+    .child(probe("year", div().w(px(720.)).max_w_full().child(CalendarHeatmap::new("commits", date(2026, 1, 1), commits))))
+    .child(
+        div().w(px(720.)).max_w_full().child(
+            GeoChart::new("globe-regions")
+                .projection(GeoProjection::Orthographic)
+                .rotate(-127.0, -36.0)
+                .region(GeoRegion::new("East Asia", 82.0, [(100.0, 20.0), (145.0, 20.0), (145.0, 48.0), (100.0, 48.0)]))
+                .region(GeoRegion::new("Oceania", 44.0, [(112.0, -42.0), (155.0, -42.0), (155.0, -10.0), (112.0, -10.0)]))
+                .point(GeoPoint::new("Seoul", 126.97, 37.56, 98.0))
+                .point(GeoPoint::new("Tokyo", 139.69, 35.68, 92.0))
+                .point(GeoPoint::new("Singapore", 103.82, 1.35, 76.0)),
+        ),
+    )
 }

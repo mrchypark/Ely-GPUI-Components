@@ -1,19 +1,5 @@
-use std::rc::Rc;
+use super::*;
 
-use gpui::{
-    App, Bounds, Div, Entity, HoverListenerMode, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PathBuilder, Pixels, Point, Stateful,
-    StatefulInteractiveElement, Styled, Window, canvas, fill, prelude::*, size,
-};
-
-use super::{
-    geometry::{Dot, Geometry, Ink, Rect},
-    paint::{Pen, at, finish, paint, place, ring},
-    plot::{Pick, Plot, State},
-    scale::Band,
-};
-
-/// What the pointer at a place picks: a category's band, the nearest category, or the nearest dot within reach.
 pub(crate) fn pick_at(
     pick: Pick,
     place: (f32, f32),
@@ -195,131 +181,62 @@ pub(crate) fn drawing(
 }
 
 /// A place in window pixels as the plot's own.
-fn local(position: Point<Pixels>, bounds: Bounds<Pixels>) -> (f32, f32) {
+pub(super) fn local(position: Point<Pixels>, bounds: Bounds<Pixels>) -> (f32, f32) {
     let offset = position - bounds.origin;
     (f32::from(offset.x), f32::from(offset.y))
 }
 
-/// Wires the pointer: hover picks, and on a zoomable plot a drag brushes a span and a double press shows all.
-pub(crate) fn answer(
-    root: Stateful<Div>,
+pub(super) fn pick_hover(
     state: &Entity<State>,
-    (pick, horizontal, zoomable): (Pick, bool, bool),
+    place: (f32, f32),
+    (pick, horizontal): (Pick, bool),
     (rect, span, reach): (Rect, (usize, usize), f32),
-    geometry: Rc<Geometry>,
-) -> Stateful<Div> {
-    let (moved, left, pressed, released) =
-        (state.clone(), state.clone(), state.clone(), state.clone());
-    let end_brush = move |_: &MouseUpEvent, _: &mut Window, cx: &mut App| {
-        released.update(cx, |state, cx| {
-            let Some((a, b)) = state.brush.take() else {
-                return;
-            };
-            let middle = rect.y + rect.h / 2.0;
-            let end = |x: f32| {
-                let place = (x.clamp(rect.x, rect.x + rect.w), middle);
-                pick_at(pick, place, rect, false, span, &[], 0.0)
-            };
-            if let (Some(from), Some(to)) = (end(a.min(b)), end(a.max(b)))
-                && to > from
-            {
-                state.span = Some((from, to));
-                log::info!("chart: zoomed to {from}..={to}");
-            }
+    geometry: &Geometry,
+    cx: &mut App,
+) {
+    state.update(cx, |state, cx| {
+        let next = pick_at(pick, place, rect, horizontal, span, &geometry.dots, reach);
+        if state.hover != next || (next.is_some() && pick != Pick::Dot) {
+            state.hover = next;
+            state.pointer = place;
             cx.notify();
-        })
-    };
-    root.on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
-        let place = local(event.position, moved.read(cx).bounds);
-        moved.update(cx, |state, cx| {
-            if event.pressed_button == Some(MouseButton::Left)
-                && let Some(brush) = state.brush.as_mut()
-            {
-                brush.1 = place.0.clamp(rect.x, rect.x + rect.w);
-                cx.notify();
-                return;
-            }
-            let next = pick_at(pick, place, rect, horizontal, span, &geometry.dots, reach);
-            if state.hover != next || (next.is_some() && pick != Pick::Dot) {
-                state.hover = next;
-                state.pointer = place;
-                cx.notify();
-            }
-        })
-    })
-    .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
-    .on_hover(move |inside, _, cx| {
-        if !*inside {
-            left.update(cx, |state, cx| {
-                state.hover = None;
-                cx.notify();
-            })
         }
-    })
-    .when(zoomable, |root| {
-        root.cursor_crosshair()
-            .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
-                let place = local(event.position, pressed.read(cx).bounds);
-                pressed.update(cx, |state, cx| {
-                    if event.click_count == 2 {
-                        state.span = None;
-                        log::info!("chart: zoom reset");
-                    } else if rect.contains(place) {
-                        state.brush = Some((place.0, place.0));
-                    }
-                    cx.notify();
-                })
-            })
-            .on_mouse_up(MouseButton::Left, end_brush.clone())
-            .on_mouse_up_out(MouseButton::Left, end_brush)
-    })
+    });
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+type NormView = ((f64, f64), (f64, f64));
 
-    #[test]
-    fn the_pointer_picks_bands_points_and_dots() {
-        let frame = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 100.0,
-            h: 50.0,
-        };
-        assert_eq!(
-            pick_at(Pick::Band, (30.0, 10.0), frame, false, (0, 3), &[], 0.0),
-            Some(1)
-        );
-        assert_eq!(
-            pick_at(Pick::Point, (40.0, 10.0), frame, false, (2, 4), &[], 0.0),
-            Some(3),
-            "the nearest of three, past the zoomed start"
-        );
-        assert_eq!(
-            pick_at(Pick::Band, (30.0, 60.0), frame, false, (0, 3), &[], 0.0),
-            None,
-            "below the frame"
-        );
-        assert_eq!(
-            pick_at(Pick::Band, (10.0, 30.0), frame, true, (0, 4), &[], 0.0),
-            Some(3),
-            "sideways bands run down"
-        );
-        let dots = [Dot {
-            ink: Ink::Series(0),
-            center: (10.0, 10.0),
-            radius: 2.0,
-            key: 7,
-        }];
-        assert_eq!(
-            pick_at(Pick::Dot, (14.0, 10.0), frame, false, (0, 0), &dots, 6.0),
-            Some(7)
-        );
-        assert_eq!(
-            pick_at(Pick::Dot, (30.0, 10.0), frame, false, (0, 0), &dots, 6.0),
-            None,
-            "out of reach"
-        );
+pub(super) fn zoom_xy_view(
+    current: Option<NormView>,
+    (tx, ty): (f64, f64),
+    factor: f64,
+) -> Option<NormView> {
+    let ((ux0, ux1), (uy0, uy1)) = current.unwrap_or(((0.0, 1.0), (0.0, 1.0)));
+    let cx = ux0 + (ux1 - ux0) * tx.clamp(0.0, 1.0);
+    let cy = uy0 + (uy1 - uy0) * ty.clamp(0.0, 1.0);
+    let nx0 = cx + (ux0 - cx) * factor;
+    let nx1 = cx + (ux1 - cx) * factor;
+    let ny0 = cy + (uy0 - cy) * factor;
+    let ny1 = cy + (uy1 - cy) * factor;
+    if (nx1 - nx0).abs() < 1e-4 || (ny1 - ny0).abs() < 1e-4 {
+        return current;
     }
+    if (nx1 - nx0) > 10.0 || (ny1 - ny0) > 10.0 {
+        return None;
+    }
+    Some(((nx0, nx1), (ny0, ny1)))
+}
+
+pub(super) fn pan_xy_view(
+    current: Option<NormView>,
+    (dx_px, dy_px): (f32, f32),
+    rect: Rect,
+) -> Option<NormView> {
+    if rect.w <= 1.0 || rect.h <= 1.0 {
+        return current;
+    }
+    let ((ux0, ux1), (uy0, uy1)) = current.unwrap_or(((0.0, 1.0), (0.0, 1.0)));
+    let sx = (ux1 - ux0) * f64::from(-dx_px / rect.w);
+    let sy = (uy1 - uy0) * f64::from(dy_px / rect.h);
+    Some(((ux0 + sx, ux1 + sx), (uy0 + sy, uy1 + sy)))
 }

@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Div, ElementId, Entity, HoverListenerMode, InteractiveElement, IntoElement,
-    MouseMoveEvent, ParentElement, PathBuilder, Pixels, Refineable, RenderOnce, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div, fill,
+    App, Div, ElementId, Entity, HoverListenerMode, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, ParentElement, PathBuilder, Pixels, Refineable, RenderOnce,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div, fill,
 };
 
 use super::{
@@ -82,6 +82,18 @@ pub(crate) fn funnel(values: &[f64], frame: Rect) -> Vec<Rect> {
             }
         })
         .collect()
+}
+
+/// The stage under a pointer at `position` in a chart box `bounds`, if the point lands on one.
+fn stage_under(
+    count: usize,
+    bounds: gpui::Bounds<Pixels>,
+    position: gpui::Point<Pixels>,
+    row: f32,
+) -> Option<usize> {
+    let offset = position - bounds.origin;
+    let at = (f32::from(offset.y) / row).floor();
+    (at >= 0.0 && (at as usize) < count).then_some(at as usize)
 }
 
 impl RenderOnce for FunnelChart {
@@ -166,6 +178,7 @@ impl RenderOnce for FunnelChart {
                     .row(Some(tint(&colors, 0)), "Reached", format(values[ix]))
                     .row(None, "Of the first", share(values[ix], first))
                     .row(None, "From the stage before", share(values[ix], before));
+                let card = div().debug_selector(|| "funnel-tooltip".into()).child(card);
                 Some(anchored(
                     (frame.x + frame.w / 2.0 + bar.w / 2.0, bar.y + bar.h / 2.0),
                     false,
@@ -185,6 +198,7 @@ impl RenderOnce for FunnelChart {
             frame.h / self.stages.len().max(1) as f32,
         );
         let count = self.stages.len();
+        let pressed = flows.clone();
         let mut root = div()
             .debug_selector(|| "chart-root".into())
             .relative()
@@ -192,10 +206,17 @@ impl RenderOnce for FunnelChart {
         root.style().refine(self.base.style());
         root.id((self.id.clone(), "funnel"))
             .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
-                let offset = event.position - moved.read(cx).bounds.origin;
-                let row = (f32::from(offset.y) / rows).floor();
-                let next = (row >= 0.0 && (row as usize) < count).then_some(row as usize);
+                let next = stage_under(count, moved.read(cx).bounds, event.position, rows);
                 moved.update(cx, |flows, cx| {
+                    if flows.hover != next {
+                        flows.hover = next;
+                        cx.notify();
+                    }
+                })
+            })
+            .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
+                let next = stage_under(count, pressed.read(cx).bounds, event.position, rows);
+                pressed.update(cx, |flows, cx| {
                     if flows.hover != next {
                         flows.hover = next;
                         cx.notify();
@@ -250,6 +271,8 @@ impl RenderOnce for FunnelChart {
 
 #[cfg(test)]
 mod tests {
+    use gpui::{px, size};
+
     use super::*;
 
     #[test]
@@ -265,5 +288,25 @@ mod tests {
         );
         assert_eq!((bars[0].x, bars[0].w), (0.0, 200.0));
         assert_eq!((bars[1].x, bars[1].w, bars[1].y), (50.0, 100.0, 50.0));
+    }
+
+    #[test]
+    fn a_point_lands_on_the_stage_under_it() {
+        let bounds = gpui::Bounds::new(gpui::point(px(0.0), px(0.0)), size(px(100.0), px(100.0)));
+        assert_eq!(
+            stage_under(2, bounds, gpui::point(px(50.0), px(20.0)), 50.0),
+            Some(0),
+            "the top row is the first stage"
+        );
+        assert_eq!(
+            stage_under(2, bounds, gpui::point(px(50.0), px(70.0)), 50.0),
+            Some(1),
+            "the bottom row is the second stage"
+        );
+        assert_eq!(
+            stage_under(2, bounds, gpui::point(px(50.0), px(120.0)), 50.0),
+            None,
+            "below the chart lands on nothing"
+        );
     }
 }

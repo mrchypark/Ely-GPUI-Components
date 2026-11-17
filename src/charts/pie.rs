@@ -5,8 +5,9 @@ use std::{
 
 use gpui::{
     App, Bounds, Div, ElementId, Entity, HoverListenerMode, Hsla, InteractiveElement, IntoElement,
-    MouseMoveEvent, ParentElement, PathBuilder, Pixels, Point, Refineable, RenderOnce,
-    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div, point,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, PathBuilder, Pixels, Point,
+    Refineable, RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
+    Window, canvas, div, point,
 };
 use web_time::Instant;
 
@@ -66,6 +67,24 @@ pub(crate) fn arc_at(
     }
     arcs.iter()
         .position(|(start, sweep)| angle >= *start && angle < start + sweep)
+}
+
+/// The slice under a pointer at `position` in a chart box `bounds`, if the point lands on one.
+fn slice_under(
+    bounds: Bounds<Pixels>,
+    position: Point<Pixels>,
+    arcs: &[(f32, f32)],
+    inner: f32,
+    outer: f32,
+) -> Option<usize> {
+    let center = bounds.center();
+    arc_at(
+        arcs,
+        (f32::from(center.x), f32::from(center.y)),
+        (f32::from(position.x), f32::from(position.y)),
+        inner,
+        outer,
+    )
 }
 
 /// A point `radius` from `center` toward `angle`.
@@ -269,6 +288,7 @@ impl RenderOnce for PieChart {
                     format::percent(share(ix), 1, false),
                 )
                 .row(None, "Value", compact(raw[ix]));
+            let card = div().debug_selector(|| "pie-tooltip".into()).child(card);
             anchored(place, middle.cos() < 0.0, card)
         });
         let middle = self.center.clone().map(|(value, label)| {
@@ -304,25 +324,40 @@ impl RenderOnce for PieChart {
             |legend, (ix, (name, _))| legend.entry(tint(&colors, ix), name.clone(), false),
         );
         let (moved, left, measured, hit) = (ring.clone(), ring.clone(), ring.clone(), arcs.clone());
+        let pressed = ring.clone();
+        let press_hit = arcs.clone();
         let mut frame = div().debug_selector(|| "chart-root".into()).h(sizes.height);
         frame.style().refine(self.base.style());
         frame.flex().flex_col().gap_2().child(legend).child(
             div()
                 .id((self.id.clone(), "ring"))
+                .debug_selector(|| "pie-plot".into())
                 .relative()
                 .flex_1()
                 .min_h_0()
                 .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
-                    let center = moved.read(cx).bounds.center();
-                    let at = (f32::from(event.position.x), f32::from(event.position.y));
-                    let next = arc_at(
+                    let next = slice_under(
+                        moved.read(cx).bounds,
+                        event.position,
                         &hit,
-                        (f32::from(center.x), f32::from(center.y)),
-                        at,
                         inner,
                         outer + lift,
                     );
                     moved.update(cx, |ring, cx| {
+                        if ring.lift.point(next) {
+                            cx.notify();
+                        }
+                    })
+                })
+                .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
+                    let next = slice_under(
+                        pressed.read(cx).bounds,
+                        event.position,
+                        &press_hit,
+                        inner,
+                        outer + lift,
+                    );
+                    pressed.update(cx, |ring, cx| {
                         if ring.lift.point(next) {
                             cx.notify();
                         }
@@ -367,6 +402,8 @@ impl RenderOnce for PieChart {
 mod tests {
     use std::f32::consts::{FRAC_PI_2, TAU};
 
+    use gpui::{px, size};
+
     use super::*;
 
     #[test]
@@ -396,5 +433,26 @@ mod tests {
             "a slice settling as another lifts"
         );
         assert_eq!(fades(&[0.0, 0.0]), [0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_point_lands_on_the_slice_under_it() {
+        let bounds = Bounds::new(point(px(0.0), px(0.0)), size(px(100.0), px(100.0)));
+        let arcs = sweeps(&[1.0, 3.0]);
+        assert_eq!(
+            slice_under(bounds, point(px(50.0), px(25.0)), &arcs, 0.0, 50.0),
+            Some(0),
+            "straight up is the first slice"
+        );
+        assert_eq!(
+            slice_under(bounds, point(px(75.0), px(50.0)), &arcs, 0.0, 50.0),
+            Some(1),
+            "to the right is the second slice"
+        );
+        assert_eq!(
+            slice_under(bounds, point(px(10.0), px(10.0)), &arcs, 0.0, 50.0),
+            None,
+            "outside the ring lands on nothing"
+        );
     }
 }

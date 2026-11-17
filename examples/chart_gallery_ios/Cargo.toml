@@ -1,0 +1,34 @@
+[package]
+name = "ely-chart-gallery-ios"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# This host is intentionally outside Ely's workspace so it can apply the mobile patches.
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+anyhow = "1"
+ely-gpui-component = { path = "../..", default-features = false }
+gpui-mobile = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui = { package = "gpui-fast", version = "=0.1.14", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png"] }
+jiff = "0.2"
+log = "0.4"
+rust-embed = { version = "8.12", features = ["debug-embed"] }
+qrcode = { version = "0.14", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+web-time = "1.1"
+
+# Cargo only honors these patches in the application workspace.
+[patch.crates-io]
+gpui-fast = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-fast-wgpu = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-pre = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-pre-wgpu = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-fast-macos = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }
+gpui-pre-macos = { git = "https://github.com/mrchypark/gpui-mobile", rev = "fb20b5f19b8a9bf99a028550e88ffc19f6c51dc1" }

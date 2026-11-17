@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use gpui::SharedString;
 
 use super::{
-    scale::{Band, Linear, nice},
-    series::{Points, extent, stacked},
+    scale::{Band, ScaleMode, ValueScale, nice_for},
+    series::{Points, Symbol, extent, stacked, stream_stacked},
 };
 
 /// How a category series draws.
@@ -59,12 +59,14 @@ pub(crate) struct Dot {
     pub ink: Ink,
     pub center: (f32, f32),
     pub radius: f32,
+    pub symbol: Symbol,
     pub key: usize,
 }
 
 /// What a chart draws, in its box's own pixels, for the canvas and for SVG alike.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Geometry {
+    pub value_scale: Option<ValueScale>,
     /// Value ticks: where each sits along the value axis, and its value.
     pub ticks: Vec<(f32, f64)>,
     /// Labels along the other axis and where each sits: categories, or a scatter's x ticks.
@@ -95,9 +97,11 @@ pub(crate) struct Categories<'a> {
     pub values: &'a [Vec<f64>],
     pub mark: Mark,
     pub stacked: bool,
+    pub stream: bool,
     pub horizontal: bool,
     /// The share of each band bars leave empty.
     pub gap: f32,
+    pub y_scale: ScaleMode,
     pub hidden: &'a HashSet<SharedString>,
     pub span: (usize, usize),
 }
@@ -117,24 +121,41 @@ pub(crate) fn categories(chart: &Categories, frame: Rect) -> Geometry {
         .map(|(ix, (_, values))| (ix, &values[first..=last]))
         .collect();
     let runs: Vec<&[f64]> = shown.iter().map(|(_, values)| *values).collect();
-    let stacks = chart.stacked.then(|| stacked(&runs));
-    let (low, high) = match &stacks {
-        Some(stacks) => extent(
-            stacks
-                .iter()
-                .flatten()
-                .flat_map(|(bottom, top)| [*bottom, *top]),
-        ),
-        None => extent(runs.iter().flat_map(|values| values.iter().copied())),
+    let stacks = if chart.stream {
+        Some(stream_stacked(&runs))
+    } else if chart.stacked {
+        Some(stacked(&runs))
+    } else {
+        None
     };
-    let ((low, high), ticks) = nice(low, high, 5);
+    let (low, high) = if matches!(chart.y_scale, ScaleMode::Log(_)) {
+        let pos = runs
+            .iter()
+            .flat_map(|v| v.iter().copied())
+            .filter(|v| *v > 0.0)
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+                (lo.min(v), hi.max(v))
+            });
+        if pos.0 <= pos.1 { pos } else { (1.0, 10.0) }
+    } else {
+        match &stacks {
+            Some(stacks) => extent(
+                stacks
+                    .iter()
+                    .flatten()
+                    .flat_map(|(bottom, top)| [*bottom, *top]),
+            ),
+            None => extent(runs.iter().flat_map(|values| values.iter().copied())),
+        }
+    };
+    let ((low, high), ticks) = nice_for(chart.y_scale, low, high, 5);
     let count = last - first + 1;
     let (value_range, band_range) = if chart.horizontal {
         ((frame.x, frame.x + frame.w), (frame.y, frame.y + frame.h))
     } else {
         ((frame.y + frame.h, frame.y), (frame.x, frame.x + frame.w))
     };
-    let scale = Linear::new((low, high), value_range);
+    let scale = ValueScale::new(chart.y_scale, (low, high), value_range);
     let bars = chart.mark == Mark::Bar;
     let band = Band {
         count,
@@ -156,6 +177,7 @@ pub(crate) fn categories(chart: &Categories, frame: Rect) -> Geometry {
         }
     };
     let mut geometry = Geometry {
+        value_scale: Some(scale),
         ticks: ticks.iter().map(|tick| (scale.at(*tick), *tick)).collect(),
         labels: (0..count)
             .map(|ix| (along(ix), chart.labels[first + ix].clone()))
@@ -163,9 +185,14 @@ pub(crate) fn categories(chart: &Categories, frame: Rect) -> Geometry {
         ..Geometry::default()
     };
     for (lane, (color, values)) in shown.iter().enumerate() {
+        let baseline = if matches!(chart.y_scale, ScaleMode::Log(_)) {
+            low
+        } else {
+            0.0
+        };
         let spans: Vec<(f64, f64)> = match &stacks {
             Some(stacks) => stacks[lane].clone(),
-            None => values.iter().map(|value| (0.0, *value)).collect(),
+            None => values.iter().map(|value| (baseline, *value)).collect(),
         };
         let ink = Ink::Series(*color);
         if bars {
@@ -224,34 +251,73 @@ pub(crate) fn point_at(band: &Band, ix: usize, count: usize) -> f32 {
 }
 
 /// Lays out clouds of points: both axes linear, bubbles sized by area up to `widest`; x ticks read through `format`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn scatter(
     clouds: &[Points],
     hidden: &HashSet<SharedString>,
     frame: Rect,
     (widest, dot): (f32, f32),
+    (x_mode, y_mode): (ScaleMode, ScaleMode),
+    xy_view: Option<((f64, f64), (f64, f64))>,
+    voronoi: bool,
     format: &dyn Fn(f64) -> String,
 ) -> Geometry {
     let shown = || clouds.iter().filter(|cloud| !hidden.contains(&cloud.name));
     let every = || shown().flat_map(|cloud| cloud.points.iter());
-    let (x_low, x_high) = every().fold((f64::MAX, f64::MIN), |(low, high), (x, _)| {
-        (low.min(*x), high.max(*x))
-    });
-    let (y_low, y_high) = every().fold((f64::MAX, f64::MIN), |(low, high), (_, y)| {
-        (low.min(*y), high.max(*y))
-    });
-    if x_low > x_high {
+    let (x_low, x_high) = every()
+        .filter(|(x, _)| !matches!(x_mode, ScaleMode::Log(_)) || *x > 0.0)
+        .fold((f64::MAX, f64::MIN), |(low, high), (x, _)| {
+            (low.min(*x), high.max(*x))
+        });
+    let (y_low, y_high) = every()
+        .filter(|(_, y)| !matches!(y_mode, ScaleMode::Log(_)) || *y > 0.0)
+        .fold((f64::MAX, f64::MIN), |(low, high), (_, y)| {
+            (low.min(*y), high.max(*y))
+        });
+    if x_low > x_high || y_low > y_high {
         return Geometry::default();
     }
-    let ((x_low, x_high), x_ticks) = nice(x_low, x_high, 5);
-    let ((y_low, y_high), y_ticks) = nice(y_low, y_high, 5);
-    let xs = Linear::new((x_low, x_high), (frame.x, frame.x + frame.w));
-    let ys = Linear::new((y_low, y_high), (frame.y + frame.h, frame.y));
+    let ((x_low, x_high), x_ticks) = nice_for(x_mode, x_low, x_high, 5);
+    let ((y_low, y_high), y_ticks) = nice_for(y_mode, y_low, y_high, 5);
+    let (xs, ys, x_ticks, y_ticks) = if let Some(((ux0, ux1), (uy0, uy1))) = xy_view {
+        let base_x = ValueScale::new(x_mode, (x_low, x_high), (0.0, 1.0));
+        let base_y = ValueScale::new(y_mode, (y_low, y_high), (0.0, 1.0));
+        let (zx0, zx1) = (base_x.value(ux0 as f32), base_x.value(ux1 as f32));
+        let (zy0, zy1) = (base_y.value(uy0 as f32), base_y.value(uy1 as f32));
+        let (_, xt) = nice_for(x_mode, zx0, zx1, 5);
+        let (_, yt) = nice_for(y_mode, zy0, zy1, 5);
+        let xs = ValueScale::new(x_mode, (zx0, zx1), (frame.x, frame.x + frame.w));
+        let ys = ValueScale::new(y_mode, (zy0, zy1), (frame.y + frame.h, frame.y));
+        let xt: Vec<f64> = xt
+            .into_iter()
+            .filter(|t| {
+                let px = xs.at(*t);
+                px >= frame.x && px <= frame.x + frame.w
+            })
+            .collect();
+        let yt: Vec<f64> = yt
+            .into_iter()
+            .filter(|t| {
+                let py = ys.at(*t);
+                py >= frame.y && py <= frame.y + frame.h
+            })
+            .collect();
+        (xs, ys, xt, yt)
+    } else {
+        (
+            ValueScale::new(x_mode, (x_low, x_high), (frame.x, frame.x + frame.w)),
+            ValueScale::new(y_mode, (y_low, y_high), (frame.y + frame.h, frame.y)),
+            x_ticks,
+            y_ticks,
+        )
+    };
     let largest = shown()
         .filter_map(|cloud| cloud.sizes.as_ref())
         .flatten()
         .copied()
         .fold(0.0, f64::max);
     let mut geometry = Geometry {
+        value_scale: Some(ys),
         ticks: y_ticks.iter().map(|tick| (ys.at(*tick), *tick)).collect(),
         labels: x_ticks
             .iter()
@@ -269,173 +335,102 @@ pub(crate) fn scatter(
             };
             if !skip {
                 let center = (xs.at(*x), ys.at(*y));
-                geometry.dots.push(Dot {
-                    ink: Ink::Series(color),
-                    center,
-                    radius: radius.max(dot / 2.0),
-                    key,
-                });
+                if xy_view.is_none() || frame.contains(center) {
+                    geometry.dots.push(Dot {
+                        ink: Ink::Series(color),
+                        center,
+                        radius: radius.max(dot / 2.0),
+                        symbol: cloud.symbol,
+                        key,
+                    });
+                }
             }
             key += 1;
+        }
+    }
+    if voronoi && geometry.dots.len() >= 2 {
+        let sites: Vec<(f32, f32)> = geometry.dots.iter().map(|dot| dot.center).collect();
+        for cell in voronoi_cells(&sites, frame) {
+            for pair in cell.windows(2) {
+                geometry.strokes.push((Ink::Rule, pair[0], pair[1]));
+            }
+            if let (Some(&first), Some(&last)) = (cell.first(), cell.last())
+                && cell.len() > 2
+            {
+                geometry.strokes.push((Ink::Rule, last, first));
+            }
         }
     }
     geometry
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn chart<'a>(
-        labels: &'a [SharedString],
-        values: &'a [Vec<f64>],
-        hidden: &'a HashSet<SharedString>,
-        mark: Mark,
-        stacked: bool,
-    ) -> Categories<'a> {
-        static NAMES: [SharedString; 2] = [
-            SharedString::new_static("North"),
-            SharedString::new_static("South"),
-        ];
-        Categories {
-            labels,
-            names: &NAMES,
-            values,
-            mark,
-            stacked,
-            horizontal: false,
-            gap: 0.28,
-            hidden,
-            span: (0, 2),
-        }
+/// Clipped Voronoi polygons inside `frame` using Sutherland-Hodgman bisector clipping.
+pub(crate) fn voronoi_cells(sites: &[(f32, f32)], frame: Rect) -> Vec<Vec<(f32, f32)>> {
+    if sites.is_empty() || frame.w <= 0.0 || frame.h <= 0.0 {
+        return Vec::new();
     }
-
-    fn sales() -> Vec<Vec<f64>> {
-        vec![vec![10.0, 20.0, 30.0], vec![5.0, 5.0, 10.0]]
-    }
-
-    #[test]
-    fn stacked_bars_share_a_band_and_grouped_bars_split_it() {
-        let labels = ["Jan", "Feb", "Mar"].map(SharedString::from);
-        let (values, hidden) = (sales(), HashSet::new());
-        let frame = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 300.0,
-            h: 100.0,
-        };
-        let stack = categories(&chart(&labels, &values, &hidden, Mark::Bar, true), frame);
-        assert_eq!(stack.bars.len(), 6);
-        assert_eq!(
-            stack.bars[0].1.x, stack.bars[3].1.x,
-            "a stack shares its band"
-        );
-        assert_eq!(
-            stack.bars[3].1.y + stack.bars[3].1.h,
-            stack.bars[0].1.y,
-            "the second sits on the first"
-        );
-        let group = categories(&chart(&labels, &values, &hidden, Mark::Bar, false), frame);
-        assert!(
-            group.bars[3].1.x > group.bars[0].1.x + group.bars[0].1.w,
-            "grouped bars stand apart"
-        );
-        assert_eq!(group.ticks.first().map(|tick| tick.1), Some(0.0));
-    }
-
-    #[test]
-    fn lines_run_edge_to_edge_and_hidden_series_drop_out() {
-        let labels = ["Jan", "Feb", "Mar"].map(SharedString::from);
-        let values = sales();
-        let hidden: HashSet<SharedString> = ["South".into()].into_iter().collect();
-        let frame = Rect {
-            x: 10.0,
-            y: 0.0,
-            w: 200.0,
-            h: 100.0,
-        };
-        let lines = categories(&chart(&labels, &values, &hidden, Mark::Line, false), frame);
-        assert_eq!(lines.lines.len(), 1);
-        let xs: Vec<f32> = lines.lines[0].points.iter().map(|point| point.0).collect();
-        assert_eq!(xs, [10.0, 110.0, 210.0]);
-        assert_eq!(
-            lines.lines[0].points[2].1, 0.0,
-            "the highest value meets the top of the rounded scale"
-        );
-        assert_eq!(lines.lines[0].floor, None, "a line has no floor");
-    }
-
-    #[test]
-    fn bubbles_grow_by_area_and_keep_their_keys_past_a_hidden_cloud() {
-        let first = Points::new("Towns", [(1.0, 1.0)]);
-        let cloud = Points::new("Cities", [(0.0, 0.0), (10.0, 10.0)]).sizes([1.0, 4.0]);
-        let hidden: HashSet<SharedString> = ["Towns".into()].into_iter().collect();
-        let frame = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 100.0,
-            h: 100.0,
-        };
-        let geometry = scatter(&[first, cloud], &hidden, frame, (20.0, 4.0), &|value| {
-            value.to_string()
-        });
-        assert_eq!(geometry.dots[1].radius, 20.0);
-        assert_eq!(
-            geometry.dots[0].radius, 10.0,
-            "a quarter of the area, half the radius"
-        );
-        assert_eq!((geometry.dots[0].key, geometry.dots[1].key), (1, 2));
-        assert_eq!(
-            geometry.labels.first().map(|label| label.1.clone()),
-            Some("0".into())
-        );
-    }
-
-    #[test]
-    fn no_categories_lay_out_nothing() {
-        let hidden = HashSet::new();
-        let empty = Categories {
-            labels: &[],
-            names: &[],
-            values: &[],
-            mark: Mark::Line,
-            stacked: false,
-            horizontal: false,
-            gap: 0.28,
-            hidden: &hidden,
-            span: (0, 0),
-        };
-        assert_eq!(
-            categories(
-                &empty,
-                Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    w: 100.0,
-                    h: 100.0
+    let rect_poly = vec![
+        (frame.x, frame.y),
+        (frame.x + frame.w, frame.y),
+        (frame.x + frame.w, frame.y + frame.h),
+        (frame.x, frame.y + frame.h),
+    ];
+    sites
+        .iter()
+        .enumerate()
+        .map(|(i, &(ax, ay))| {
+            let mut poly = rect_poly.clone();
+            for (j, &(bx, by)) in sites.iter().enumerate() {
+                if i == j {
+                    continue;
                 }
-            ),
-            Geometry::default()
-        );
-    }
-
-    #[test]
-    fn a_frame_leaves_its_gutters() {
-        let rect = frame((400.0, 200.0), 48.0, 24.0, 8.0);
-        assert_eq!(
-            rect,
-            Rect {
-                x: 48.0,
-                y: 8.0,
-                w: 344.0,
-                h: 168.0
+                let (dx, dy) = (bx - ax, by - ay);
+                if dx * dx + dy * dy < 1e-6 {
+                    continue;
+                }
+                let (mx, my) = ((ax + bx) * 0.5, (ay + by) * 0.5);
+                poly = clip_half_plane(&poly, mx, my, dx, dy);
+                if poly.is_empty() {
+                    break;
+                }
             }
-        );
-        assert!(rect.contains((48.0, 8.0)) && !rect.contains((40.0, 50.0)));
-        assert_eq!(
-            frame((10.0, 10.0), 48.0, 24.0, 8.0).w,
-            0.0,
-            "a small box leaves no room"
-        );
-    }
+            poly
+        })
+        .collect()
 }
+
+fn clip_half_plane(poly: &[(f32, f32)], mx: f32, my: f32, dx: f32, dy: f32) -> Vec<(f32, f32)> {
+    if poly.is_empty() {
+        return Vec::new();
+    }
+    let side = |p: (f32, f32)| (p.0 - mx) * dx + (p.1 - my) * dy;
+    let mut out = Vec::with_capacity(poly.len() + 1);
+    let mut prev = *poly.last().expect("non-empty poly");
+    let mut prev_d = side(prev);
+    for &curr in poly {
+        let curr_d = side(curr);
+        let prev_in = prev_d <= 1e-5;
+        let curr_in = curr_d <= 1e-5;
+        if curr_in != prev_in {
+            let denom = prev_d - curr_d;
+            let t = if denom.abs() > 1e-9 {
+                (prev_d / denom).clamp(0.0, 1.0)
+            } else {
+                0.5
+            };
+            out.push((
+                prev.0 + (curr.0 - prev.0) * t,
+                prev.1 + (curr.1 - prev.1) * t,
+            ));
+        }
+        if curr_in {
+            out.push(curr);
+        }
+        prev = curr;
+        prev_d = curr_d;
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests;

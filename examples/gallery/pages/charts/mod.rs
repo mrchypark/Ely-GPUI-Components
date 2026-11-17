@@ -5,6 +5,10 @@ mod wholes;
 
 use gpui::{AnyElement, App, IntoElement, ParentElement, Window, div};
 
+fn probe(key: &'static str, element: impl IntoElement) -> gpui::Div {
+    crate::probe::probe_sized(key, element, true)
+}
+
 use super::Page;
 use crate::step::Step;
 
@@ -57,13 +61,20 @@ const SCRIPT: &[Step] = &[
     Step::HoverAt("gantt", 400.0, 98.0),
     Step::Wait(300),
     Step::Shot("task"),
+    Step::HoverAt("burndown", 384.0, 110.0),
+    Step::Wait(300),
+    Step::Shot("burn"),
     Step::HoverAt("chord", 246.0, 58.0),
     Step::Wait(300),
     Step::Shot("chord"),
     Step::Rest,
 ];
 
-fn render(window: &mut Window, cx: &mut App) -> AnyElement {
+fn render(
+    window: &mut Window,
+    cx: &mut App,
+    _bounds: Option<gpui::Bounds<gpui::Pixels>>,
+) -> AnyElement {
     div()
         .child(cartesian::lines(window, cx))
         .child(cartesian::areas_and_bars(cx))
@@ -76,8 +87,10 @@ fn render(window: &mut Window, cx: &mut App) -> AnyElement {
         .child(spread::waterfall(cx))
         .child(spread::distributions(cx))
         .child(flows::schedule(cx))
+        .child(flows::burndown(cx))
         .child(flows::relations(cx))
         .child(flows::targets(cx))
         .child(cartesian::realtime(window, cx))
+        .child(cartesian::advanced(window, cx))
         .into_any_element()
 }

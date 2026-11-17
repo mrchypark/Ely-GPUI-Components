@@ -70,6 +70,14 @@ pub(crate) struct Marks {
     pub notes: Vec<f32>,
 }
 
+fn value_position(geometry: &Geometry, value: f64) -> Option<f32> {
+    if let Some(scale) = geometry.value_scale {
+        return Some(scale.at(value));
+    }
+    let (first, last) = (geometry.ticks.first()?, geometry.ticks.last()?);
+    Some(Linear::new((first.1, last.1), (first.0, last.0)).at(value))
+}
+
 /// Value ticks; category names, thinned to fit, or a scatter's x ticks; and the labels of rules and notes.
 pub(crate) fn marks(
     plot: &Plot,
@@ -132,14 +140,10 @@ pub(crate) fn marks(
                 }
             }),
     );
-    let place_value = |value: f64| {
-        let (first, last) = (geometry.ticks.first()?, geometry.ticks.last()?);
-        Some(Linear::new((first.1, last.1), (first.0, last.0)).at(value))
-    };
     let rules: Vec<(f32, SharedString)> = plot
         .rules
         .iter()
-        .filter_map(|(value, label)| Some((place_value(*value)?, label.clone())))
+        .filter_map(|(value, label)| Some((value_position(geometry, *value)?, label.clone())))
         .collect();
     labels.extend(rules.iter().map(|(at, label)| {
         if plot.horizontal {
@@ -205,5 +209,48 @@ pub(crate) fn marks(
         labels,
         rules: rules.iter().map(|(at, _)| *at).collect(),
         notes: notes.iter().map(|(at, _)| *at).collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::charts::{
+        geometry::{Categories, Mark, categories},
+        scale::ScaleMode,
+    };
+    use std::collections::HashSet;
+
+    #[test]
+    fn reference_rule_uses_the_same_log_scale_as_the_line() {
+        let labels = ["a".into(), "b".into(), "c".into()];
+        let names = ["data".into()];
+        let values = vec![vec![1.0, 10.0, 100.0]];
+        let hidden = HashSet::new();
+        let chart = Categories {
+            labels: &labels,
+            names: &names,
+            values: &values,
+            mark: Mark::Line,
+            stacked: false,
+            stream: false,
+            horizontal: false,
+            gap: 0.0,
+            y_scale: ScaleMode::Log(10.0),
+            hidden: &hidden,
+            span: (0, 2),
+        };
+        let geometry = categories(
+            &chart,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+        );
+        let rule = value_position(&geometry, 10.0).unwrap();
+        assert!((rule - geometry.lines[0].points[1].1).abs() < 0.001);
+        assert!((rule - 50.0).abs() < 0.001);
     }
 }

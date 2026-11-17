@@ -6,9 +6,9 @@ use std::{
 
 use gpui::{
     App, Bounds, Div, ElementId, Entity, HoverListenerMode, InteractiveElement, IntoElement,
-    MouseMoveEvent, ParentElement, PathBuilder, Pixels, Point, Refineable, RenderOnce,
-    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div, point,
-    prelude::*,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, PathBuilder, Pixels, Point,
+    Refineable, RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
+    Window, canvas, div, point, prelude::*,
 };
 
 use super::{
@@ -39,6 +39,22 @@ struct Radar {
 fn spoke_at(count: usize, center: (f32, f32), at: (f32, f32)) -> usize {
     let angle = ((at.1 - center.1).atan2(at.0 - center.0) + FRAC_PI_2).rem_euclid(TAU);
     ((angle / (TAU / count as f32)).round() as usize) % count
+}
+
+/// The spoke under a pointer at `position` in a chart box `bounds`, if the point lands on one.
+fn spoke_under(
+    count: usize,
+    bounds: Bounds<Pixels>,
+    position: Point<Pixels>,
+    reach: f32,
+) -> Option<usize> {
+    let center = bounds.center();
+    let (from, at) = (
+        (f32::from(center.x), f32::from(center.y)),
+        (f32::from(position.x), f32::from(position.y)),
+    );
+    let near = (at.0 - from.0).hypot(at.1 - from.1) <= reach;
+    near.then(|| spoke_at(count, from, at))
 }
 
 /// Values on spokes around a center, a shape per series: rings mark the scale, spokes the axes. Hover a spoke to read every series on it; a press on a legend name hides it.
@@ -188,6 +204,7 @@ impl RenderOnce for RadarChart {
                         )
                     });
             let reach = radius + gap;
+            let card = div().debug_selector(|| "radar-tooltip".into()).child(card);
             anchored(
                 (
                     width / 2.0 + reach * angle(ix).cos(),
@@ -246,23 +263,34 @@ impl RenderOnce for RadarChart {
         let (stroke, hairline) = (sizes.stroke.to_pixels(rem), sizes.hairline);
         let palette = colors.clone();
         let (moved, left, measured) = (radar.clone(), radar.clone(), radar.clone());
+        let pressed = radar.clone();
         let mut frame = div().debug_selector(|| "chart-root".into()).h(sizes.height);
         frame.style().refine(self.base.style());
         frame.flex().flex_col().gap_2().children(legend).child(
             div()
                 .id((self.id.clone(), "radar"))
+                .debug_selector(|| "radar-plot".into())
                 .relative()
                 .flex_1()
                 .min_h_0()
                 .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
-                    let center = moved.read(cx).bounds.center();
-                    let (from, at) = (
-                        (f32::from(center.x), f32::from(center.y)),
-                        (f32::from(event.position.x), f32::from(event.position.y)),
-                    );
-                    let near = (at.0 - from.0).hypot(at.1 - from.1) <= radius + room;
-                    let next = near.then(|| spoke_at(count, from, at));
+                    let next =
+                        spoke_under(count, moved.read(cx).bounds, event.position, radius + room);
                     moved.update(cx, |radar, cx| {
+                        if radar.hover != next {
+                            radar.hover = next;
+                            cx.notify();
+                        }
+                    })
+                })
+                .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
+                    let next = spoke_under(
+                        count,
+                        pressed.read(cx).bounds,
+                        event.position,
+                        radius + room,
+                    );
+                    pressed.update(cx, |radar, cx| {
                         if radar.hover != next {
                             radar.hover = next;
                             cx.notify();
@@ -350,7 +378,9 @@ impl RenderOnce for RadarChart {
 
 #[cfg(test)]
 mod tests {
-    use super::spoke_at;
+    use gpui::{px, size};
+
+    use super::*;
 
     #[test]
     fn the_pointer_picks_the_nearest_spoke() {
@@ -360,6 +390,26 @@ mod tests {
             spoke_at(4, (0.0, 0.0), (-1.0, -10.0)),
             0,
             "just left of twelve wraps to the first"
+        );
+    }
+
+    #[test]
+    fn a_point_lands_on_the_spoke_under_it() {
+        let bounds = Bounds::new(point(px(0.0), px(0.0)), size(px(100.0), px(100.0)));
+        assert_eq!(
+            spoke_under(4, bounds, point(px(50.0), px(30.0)), 50.0),
+            Some(0),
+            "straight up is the first spoke"
+        );
+        assert_eq!(
+            spoke_under(4, bounds, point(px(80.0), px(50.0)), 50.0),
+            Some(1),
+            "to the right is the second spoke"
+        );
+        assert_eq!(
+            spoke_under(4, bounds, point(px(500.0), px(500.0)), 50.0),
+            None,
+            "out of reach lands on nothing"
         );
     }
 }
