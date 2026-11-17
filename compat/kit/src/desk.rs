@@ -104,7 +104,7 @@ pub fn focused(cx: &mut VisualTestContext, handle: &FocusHandle) -> bool {
 }
 
 /// Key down and up; gpui presses on the release.
-pub fn press(cx: &mut VisualTestContext, key: &str) {
+pub fn press(cx: &mut VisualTestContext, key: &'static str) {
     cx.simulate_keystrokes(key);
     cx.simulate_event(KeyUpEvent {
         keystroke: Keystroke::parse(key).expect("a key"),
