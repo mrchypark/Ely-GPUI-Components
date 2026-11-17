@@ -28,6 +28,14 @@ impl TextInput {
 }
 
 impl EntityInputHandler for TextInput {
+    fn text_input_configuration(
+        &mut self,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> gpui::TextInputConfiguration {
+        self.input_configuration.clone()
+    }
+
     fn accepts_text_input(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.report_input_owner(window, cx);
         true

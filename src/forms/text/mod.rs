@@ -10,7 +10,7 @@ use std::{ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
     App, Bounds, Context, EventEmitter, FocusHandle, Focusable, Pixels, Point, SharedString,
-    Subscription, Task, Window, WrappedLine,
+    Subscription, Task, TextInputConfiguration, Window, WrappedLine,
 };
 
 pub(crate) use actions::{
@@ -64,6 +64,7 @@ pub struct TextInput {
     composing: Option<Snapshot>,
     rows: Option<(usize, usize)>,
     masked: bool,
+    input_configuration: TextInputConfiguration,
     filter: Option<Filter>,
     fit: Option<Fit>,
     max_len: Option<usize>,
@@ -126,6 +127,7 @@ impl TextInput {
             composing: None,
             rows: None,
             masked: false,
+            input_configuration: TextInputConfiguration::default(),
             filter: None,
             fit: None,
             max_len: None,
@@ -167,6 +169,25 @@ impl TextInput {
     pub fn masked(mut self) -> Self {
         self.masked = true;
         self
+    }
+
+    /// Configure supported software keyboard hints. This does not set keyboard type
+    /// or secure-entry semantics, which GPUI's configuration does not expose.
+    pub fn input_configuration(mut self, configuration: TextInputConfiguration) -> Self {
+        self.input_configuration = configuration;
+        self
+    }
+
+    /// Update software keyboard hints for this field.
+    pub fn set_input_configuration(
+        &mut self,
+        configuration: TextInputConfiguration,
+        cx: &mut Context<Self>,
+    ) {
+        if self.input_configuration != configuration {
+            self.input_configuration = configuration;
+            cx.notify();
+        }
     }
 
     /// Drops typed or pasted characters `allow` rejects.
