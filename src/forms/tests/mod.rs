@@ -161,8 +161,7 @@ fn disabled_input_pointer_does_not_take_focus(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let enabled = cx.debug_bounds("pointer-field-0").unwrap();
     let disabled = cx.debug_bounds("pointer-field-1").unwrap();
-    // Hit the frame inset as well as the text area: the frame previously focused
-    // a disabled input even though the text element itself ignored the press.
+    // Hit the frame inset too: previously the frame focused a disabled input.
     cx.simulate_click(
         gpui::point(disabled.left() + px(2.), disabled.center().y),
         gpui::Modifiers::none(),

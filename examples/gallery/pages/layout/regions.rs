@@ -315,7 +315,7 @@ mod tests {
             "the split specimen must fill the phone content width"
         );
 
-        cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = false));
+        cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = false));
         cx.simulate_resize(size(px(900.0), px(844.0)));
         for _ in 0..3 {
             cx.update(|window, cx| {

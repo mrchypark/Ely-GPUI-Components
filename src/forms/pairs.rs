@@ -295,8 +295,7 @@ impl KeyValueInput {
         }
     }
 
-    /// Disable rows by their original seed indices, even after earlier rows are removed.
-    /// Newly added rows are enabled. Calling this again replaces the disabled set.
+    /// Disable rows by original seed index; new rows are enabled and repeated calls replace the set.
     pub fn disabled_rows(mut self, indices: impl IntoIterator<Item = usize>) -> Self {
         self.disabled_rows = indices.into_iter().collect();
         self

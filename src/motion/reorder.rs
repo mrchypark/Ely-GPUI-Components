@@ -224,14 +224,12 @@ impl RenderOnce for Reorder {
                                         cx.notify();
                                         Some(result)
                                     });
-                                    if event.phase == TouchPhase::Ended {
-                                        if let (Some((from, to)), Some(callback)) =
+                                    if event.phase == TouchPhase::Ended
+                                        && let (Some((from, to)), Some(callback)) =
                                             (result, &callback)
-                                        {
-                                            if from != to {
-                                                callback(from, to, window, cx);
-                                            }
-                                        }
+                                        && from != to
+                                    {
+                                        callback(from, to, window, cx);
                                     }
                                 },
                             );

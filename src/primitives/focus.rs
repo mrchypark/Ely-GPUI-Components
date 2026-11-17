@@ -142,8 +142,7 @@ struct Holder {
 
 impl Global for Holders {}
 
-/// Whether a live Ely overlay in this window owns the focused control.
-/// Ownership follows the most recently painted focus tree.
+/// Whether a live Ely overlay in this window owns the focused control by latest focus tree.
 pub fn focused_in_takeover(window: &Window, cx: &App) -> bool {
     let here = window.window_handle();
     cx.try_global::<Holders>().is_some_and(|holders| {

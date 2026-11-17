@@ -75,8 +75,7 @@ pub struct Theme {
     custom: [Option<Palette>; 2],
     pub colors: Palette,
     pub density: Density,
-    /// Use touch interactions and touch targets on supported controls.
-    /// Defaults to true on iOS and Android; `Theme::update` can override it.
+    /// Use touch interactions and touch targets on supported controls (defaults true on mobile).
     pub touch_mode: bool,
     pub radius_scale: f32,
     pub font_scale: f32,

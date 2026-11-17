@@ -7,7 +7,7 @@ use ely_gpui_component::{
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, App, Div, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window,
+    App, Div, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
 };
 
 use crate::{

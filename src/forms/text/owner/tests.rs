@@ -101,12 +101,17 @@ fn input_configuration_is_per_field_and_updates_handler(cx: &mut TestAppContext)
         input_action: gpui::TextInputAction::Next,
         ..Default::default()
     };
-    fields[0].update(cx, |input, cx| input.set_input_configuration(initial.clone(), cx));
+    fields[0].update(cx, |input, cx| {
+        input.set_input_configuration(initial.clone(), cx)
+    });
     let mut first = handler(&fields[0], cx);
     let mut second = handler(&fields[1], cx);
     cx.update(|window, cx| {
         assert_eq!(first.text_input_configuration(window, cx), initial);
-        assert_eq!(second.text_input_configuration(window, cx), gpui::TextInputConfiguration::default());
+        assert_eq!(
+            second.text_input_configuration(window, cx),
+            gpui::TextInputConfiguration::default()
+        );
     });
     let updated = gpui::TextInputConfiguration {
         autocorrect: false,
@@ -115,13 +120,20 @@ fn input_configuration_is_per_field_and_updates_handler(cx: &mut TestAppContext)
         input_action: gpui::TextInputAction::Done,
         ..Default::default()
     };
-    fields[0].update(cx, |input, cx| input.set_input_configuration(updated.clone(), cx));
+    fields[0].update(cx, |input, cx| {
+        input.set_input_configuration(updated.clone(), cx)
+    });
     cx.update(|window, cx| assert_eq!(first.text_input_configuration(window, cx), updated));
     let configured = cx.update(|window, cx| {
         cx.new(|cx| TextInput::new(window, cx).input_configuration(initial.clone()))
     });
     let mut configured_handler = handler(&configured, cx);
-    cx.update(|window, cx| assert_eq!(configured_handler.text_input_configuration(window, cx), initial));
+    cx.update(|window, cx| {
+        assert_eq!(
+            configured_handler.text_input_configuration(window, cx),
+            initial
+        )
+    });
 }
 
 #[gpui::test]

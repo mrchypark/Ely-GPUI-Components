@@ -12,7 +12,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     layout::seeded::{Seeded, use_seeded},
     primitives::{IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, Mix, Radius},
+    theme::{ActiveTheme, ControlSize, Radius},
 };
 
 /// A color at a place along a gradient, from 0 to 1.
@@ -23,53 +23,12 @@ pub struct GradientStop {
 }
 
 /// The color at `t` along stops sorted by place.
-pub(crate) fn color_at(stops: &[GradientStop], t: f32) -> Hsla {
-    let first = stops.first().expect("a gradient has stops");
-    if t <= first.at {
-        return first.color;
-    }
-    for pair in stops.windows(2) {
-        let (from, to) = (pair[0], pair[1]);
-        if t <= to.at {
-            let span = (to.at - from.at).max(f32::EPSILON);
-            return from.color.mix(&to.color, (t - from.at) / span);
-        }
-    }
-    stops.last().expect("a gradient has stops").color
-}
+#[path = "gradient_stops.rs"]
+mod stops;
 
-/// `stops` with `ix` moved to `t`, still sorted, and where `ix` landed.
-pub(crate) fn moved(stops: &[GradientStop], ix: usize, t: f32) -> (Vec<GradientStop>, usize) {
-    let at = t.clamp(0.0, 1.0);
-    if at == stops[ix].at {
-        return (stops.to_vec(), ix);
-    }
-    let mut next = stops.to_vec();
-    let mut stop = next.remove(ix);
-    stop.at = at;
-    let landed = next.partition_point(|other| other.at <= stop.at);
-    next.insert(landed, stop);
-    (next, landed)
-}
-
-/// `stops` with a new stop at `t`, colored as the gradient is there.
-pub(crate) fn added(stops: &[GradientStop], t: f32) -> (Vec<GradientStop>, usize) {
-    let stop = GradientStop {
-        at: t.clamp(0.0, 1.0),
-        color: color_at(stops, t),
-    };
-    let mut next = stops.to_vec();
-    let landed = next.partition_point(|other| other.at <= stop.at);
-    next.insert(landed, stop);
-    (next, landed)
-}
-
-/// `stops` without `ix`, with the nearest remaining stop chosen.
-pub(crate) fn removed(stops: &[GradientStop], ix: usize) -> (Vec<GradientStop>, usize) {
-    let mut next = stops.to_vec();
-    next.remove(ix);
-    (next, ix.saturating_sub(1))
-}
+#[cfg(test)]
+pub(crate) use stops::color_at;
+pub(crate) use stops::{added, moved, removed};
 
 /// A stop handle being dragged; the grabbed stop is the chosen one.
 struct Handle {
@@ -112,10 +71,8 @@ fn grabbed(
     for (index, stop) in stops.iter().enumerate() {
         let center = bounds.left() + bounds.size.width * stop.at;
         let distance = (x - center).abs();
-        if distance <= hit * 0.5 {
-            if nearest.is_none_or(|(best, _)| distance <= best) {
-                nearest = Some((distance, index));
-            }
+        if distance <= hit * 0.5 && nearest.is_none_or(|(best, _)| distance <= best) {
+            nearest = Some((distance, index));
         }
     }
     let (distance, topmost) = nearest?;
@@ -522,52 +479,5 @@ impl RenderOnce for GradientEditor {
 mod touch_tests;
 
 #[cfg(test)]
-mod tests {
-    use gpui::{Hsla, black, white};
-
-    use super::{GradientStop, added, color_at, moved};
-
-    fn stops() -> Vec<GradientStop> {
-        vec![
-            GradientStop {
-                at: 0.0,
-                color: black(),
-            },
-            GradientStop {
-                at: 1.0,
-                color: white(),
-            },
-        ]
-    }
-
-    #[test]
-    fn colors_blend_between_stops() {
-        let middle: Hsla = color_at(&stops(), 0.5);
-        assert!((middle.l - 0.5).abs() < 0.05);
-        assert_eq!(color_at(&stops(), -1.0), black());
-    }
-
-    #[test]
-    fn adding_and_moving_keep_stops_sorted() {
-        let (three, ix) = added(&stops(), 0.25);
-        assert_eq!((three.len(), ix, three[1].at), (3, 1, 0.25));
-        let (swapped, landed) = moved(&three, 0, 0.5);
-        assert_eq!(landed, 1);
-        assert_eq!(
-            swapped.iter().map(|stop| stop.at).collect::<Vec<_>>(),
-            [0.25, 0.5, 1.0]
-        );
-    }
-
-    #[test]
-    fn zero_distance_movement_keeps_equal_stops_in_order() {
-        let equal = stops().into_iter().map(|mut stop| {
-            stop.at = 0.5;
-            stop
-        });
-        let original = vec![equal.clone().next().unwrap(), equal.clone().nth(1).unwrap()];
-        let (same, landed) = moved(&original, 0, 0.5);
-        assert_eq!(landed, 0);
-        assert_eq!(same, original);
-    }
-}
+#[path = "gradient_tests.rs"]
+mod tests;

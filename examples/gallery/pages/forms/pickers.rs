@@ -3,7 +3,9 @@ use ely_gpui_component::{
     primitives::IconName,
     theme::ActiveTheme,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::FluentBuilder, px};
+use gpui::{
+    App, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::FluentBuilder, px,
+};
 
 use super::text::field;
 use crate::{

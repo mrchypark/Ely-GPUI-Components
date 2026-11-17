@@ -153,7 +153,7 @@ mod tests {
                 window.refresh();
                 window.draw(cx).clear(cx);
             });
-            let bounds = |key| {
+            let mut bounds = |key| {
                 cx.update(|_, cx| {
                     crate::probe::Probes::get(key, cx).unwrap_or_else(|| panic!("{key} probe"))
                 })

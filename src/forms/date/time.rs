@@ -191,7 +191,7 @@ fn time_columns(
         });
         cell(
             "minute",
-            minute as usize,
+            minute,
             format!("{minute:02}"),
             minute == time.minute() as usize,
             enabled,

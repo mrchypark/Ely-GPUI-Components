@@ -85,7 +85,7 @@ impl RenderOnce for SortableList {
             self.rows.into_iter().enumerate().fold(
                 Reorder::new((self.id.clone(), "rows"))
                     .when(theme.touch_mode && can_reorder, |list| {
-                        list.touch_grip(theme.touch_minimum(gpui::px(0.)))
+                        list.touch_grip(theme.touch_minimum(gpui::Pixels::ZERO))
                     })
                     .on_reorder(move |from, to, window, cx| dragged(from, to, window, cx)),
                 |list, (ix, (key, item))| {

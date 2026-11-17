@@ -1,10 +1,9 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Context, CursorStyle, DispatchPhase, DragMoveEvent, ElementId, EmptyView,
-    Entity, EntityId, HitboxBehavior, InteractiveElement, IntoElement, KeyboardType, MouseButton,
-    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, TouchDragEvent, TouchPhase, Window, canvas, div, prelude::*,
+    AnyElement, App, Context, ElementId, Entity, EntityId, InteractiveElement, IntoElement,
+    KeyboardType, MouseButton, ParentElement, Pixels, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*,
 };
 
 use super::{
@@ -35,7 +34,7 @@ pub(crate) fn parse(text: &str) -> Option<f64> {
 }
 
 /// Rounds to `precision` places, then clamps to the rounded numbers in `min..=max`.
-fn settle(value: f64, min: f64, max: f64, precision: usize) -> f64 {
+pub(super) fn settle(value: f64, min: f64, max: f64, precision: usize) -> f64 {
     let scale = 10f64.powi(precision as i32);
     let (low, high) = (
         on_grid(min, scale, f64::ceil),
@@ -69,12 +68,12 @@ fn on_grid(bound: f64, scale: f64, inward: fn(f64) -> f64) -> f64 {
 }
 
 /// A number's live settings, read by its input's event handler.
-struct Numeric {
+pub(super) struct Numeric {
     input: Entity<TextInput>,
     on_change: Option<OnChange>,
     on_commit: Option<OnChange>,
-    value: f64,
-    limits: (f64, f64, f64, usize),
+    pub(super) value: f64,
+    pub(super) limits: (f64, f64, f64, usize),
     /// Shows no number; an empty field commits nothing.
     blank: bool,
     /// The owner's value as shown; a new one replaces a draft once focus leaves.
@@ -111,7 +110,7 @@ fn show(
 }
 
 /// Settles `next` into the limits and shows it.
-fn commit(state: &Entity<Numeric>, next: f64, window: &mut Window, cx: &mut App) {
+pub(super) fn commit(state: &Entity<Numeric>, next: f64, window: &mut Window, cx: &mut App) {
     let (input, on_change, on_commit, (min, max, _, precision)) = {
         let numeric = state.read(cx);
         (
@@ -182,105 +181,15 @@ fn numeric(id: &ElementId, window: &mut Window, cx: &mut App) -> Entity<Numeric>
     })
 }
 
-struct Scrub {
-    owner: EntityId,
-    start: Rc<Cell<Option<(Pixels, f64)>>>,
+pub(super) struct Scrub {
+    pub(super) owner: EntityId,
+    pub(super) start: Rc<Cell<Option<(Pixels, f64)>>>,
 }
 
-/// Wraps `face` so dragging it sideways moves the number, one step per notch.
-fn scrub_handle(
-    id: ElementId,
-    face: AnyElement,
-    state: Entity<Numeric>,
-    window: &mut Window,
-    cx: &mut App,
-) -> impl IntoElement + use<> {
-    let owner = window
-        .use_keyed_state(id.clone(), cx, |_, _| ())
-        .entity_id();
-    let notch = cx.theme().handle_hit().to_pixels(window.rem_size());
-    let touch = window.use_keyed_state((id.clone(), "touch"), cx, |_, _| None);
-    let touch_state = state.clone();
-    div()
-        .id(id)
-        .relative()
-        .cursor(CursorStyle::ResizeLeftRight)
-        .when(cx.theme().touch_mode, |handle| {
-            handle.child(
-                canvas(
-                    |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
-                    move |_, hitbox, window, _| {
-                        window.on_mouse_event(move |event: &TouchDragEvent, phase, window, cx| {
-                            if phase != DispatchPhase::Bubble {
-                                return;
-                            }
-                            if event.phase == TouchPhase::Started {
-                                if window.default_prevented()
-                                    || !hitbox.is_hovered_at(event.start_position, window)
-                                {
-                                    return;
-                                }
-                                let from = touch_state.read(cx).current(cx);
-                                touch.update(cx, |touch, _| {
-                                    *touch = Some((event.start_position, from));
-                                });
-                                window.prevent_default();
-                            }
-                            let Some((start, from)) = *touch.read(cx) else {
-                                return;
-                            };
-                            if start != event.start_position {
-                                return;
-                            }
-                            cx.stop_propagation();
-                            if event.phase == TouchPhase::Cancelled {
-                                touch.update(cx, |touch, _| *touch = None);
-                                return;
-                            }
-                            let notches = f64::from(((event.position.x - start.x) / notch).trunc());
-                            let numeric = touch_state.read(cx);
-                            let (min, max, step, precision) = numeric.limits;
-                            let next = settle(from + notches * step, min, max, precision);
-                            if next != numeric.current(cx) {
-                                commit(&touch_state, next, window, cx);
-                            }
-                            if event.phase == TouchPhase::Ended {
-                                touch.update(cx, |touch, _| *touch = None);
-                            }
-                        });
-                    },
-                )
-                .absolute()
-                .inset_0(),
-            )
-        })
-        .on_drag(
-            Scrub {
-                owner,
-                start: Rc::new(Cell::new(None)),
-            },
-            |scrub, _, _, cx| {
-                scrub.start.set(None);
-                cx.new(|_| EmptyView)
-            },
-        )
-        .on_drag_move(move |event: &DragMoveEvent<Scrub>, window, cx| {
-            let scrub = event.drag(cx);
-            if scrub.owner != owner {
-                return;
-            }
-            let (start, x) = (scrub.start.clone(), event.event.position.x);
-            let (anchor, from) = start.get().unwrap_or_else(|| {
-                let fresh = (x, state.read(cx).current(cx));
-                start.set(Some(fresh));
-                fresh
-            });
-            let notches = f64::from(((x - anchor) / notch).trunc());
-            let step = state.read(cx).limits.2;
-            commit(&state, from + notches * step, window, cx);
-        })
-        .child(face)
-}
+#[path = "number/scrub_handle.rs"]
+mod scrub_handle;
+
+use scrub_handle::scrub_handle;
 
 /// A number field: arrows or the stepper move it, dragging the grip scrubs it.
 #[derive(IntoElement)]

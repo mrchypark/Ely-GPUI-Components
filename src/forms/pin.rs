@@ -174,7 +174,7 @@ impl RenderOnce for PinInput {
         });
         let focus = input.read(cx).focus().clone();
         div()
-            .debug_selector(move || format!("pin-root-{:?}", &self.id))
+            .debug_selector(move || format!("pin-root-{:?}", self.id))
             .relative()
             .flex()
             .gap_2()

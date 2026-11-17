@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{
     App, Bounds, ElementId, Entity, FontWeight, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
-    canvas, div, prelude::*, px,
+    canvas, div, prelude::*,
 };
 
 use crate::{
@@ -144,7 +144,11 @@ impl RenderOnce for NavigationMenu {
                 usual
             }
         };
-        let columns: usize = if panel_width < px(420.0) { 1 } else { 2 };
+        let columns: usize = if panel_width < gpui::rems(26.25).to_pixels(window.rem_size()) {
+            1
+        } else {
+            2
+        };
         let triggers = entries.iter().enumerate().map(|(ix, (label, _))| {
             let on = open == Some(ix);
             let (press, hover, measure, into) =

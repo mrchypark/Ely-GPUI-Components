@@ -15,38 +15,10 @@ use crate::{
 };
 
 /// `value` as a fraction of `min..=max`.
-pub(crate) fn fraction(value: f64, min: f64, max: f64) -> f32 {
-    ((value - min) / (max - min)).clamp(0.0, 1.0) as f32
-}
+#[path = "slider_math.rs"]
+mod math;
 
-/// The value at `fraction` of `min..=max`, on the `step` grid.
-pub(crate) fn value_at(fraction: f32, min: f64, max: f64, step: f64) -> f64 {
-    let raw = min + f64::from(fraction.clamp(0.0, 1.0)) * (max - min);
-    (min + ((raw - min) / step).round() * step).clamp(min, max)
-}
-
-/// Where a key moves `value`: arrows step, Page keys jump ten, Home and End go to the ends.
-pub(crate) fn keyed(key: &str, value: f64, min: f64, max: f64, step: f64) -> Option<f64> {
-    let next = match key {
-        "left" | "down" => value - step,
-        "right" | "up" => value + step,
-        "pagedown" => value - step * 10.0,
-        "pageup" => value + step * 10.0,
-        "home" => min,
-        "end" => max,
-        _ => return None,
-    };
-    Some(next.clamp(min, max))
-}
-
-/// How far along a track `at` is, from its start: left, or bottom when vertical.
-fn along(bounds: Bounds<Pixels>, at: Point<Pixels>, vertical: bool) -> f32 {
-    if vertical {
-        (bounds.bottom() - at.y) / bounds.size.height
-    } else {
-        (at.x - bounds.left()) / bounds.size.width
-    }
-}
+pub(crate) use math::{along, fraction, keyed, value_at};
 
 /// A drag owned by this track; the press selects its thumb.
 struct Thumb {
@@ -61,11 +33,11 @@ struct TouchDrag {
     value: f64,
 }
 
-type Commit = Rc<dyn Fn(usize, f64, bool, &mut Window, &mut App)>;
-type OnSpan = Rc<dyn Fn((f64, f64), &mut Window, &mut App)>;
+pub(super) type Commit = Rc<dyn Fn(usize, f64, bool, &mut Window, &mut App)>;
+pub(super) type OnSpan = Rc<dyn Fn((f64, f64), &mut Window, &mut App)>;
 
 /// A track with one or two thumbs. `commit` gets the thumb and its new value.
-struct Track {
+pub(super) struct Track {
     id: ElementId,
     values: Vec<f64>,
     range: (f64, f64, f64),
@@ -499,109 +471,11 @@ impl RenderOnce for Slider {
     }
 }
 
-/// Two thumbs that bound a span. Neither passes the other.
-#[derive(IntoElement)]
-pub struct RangeSlider {
-    id: ElementId,
-    value: (f64, f64),
-    range: (f64, f64, f64),
-    vertical: bool,
-    disabled: bool,
-    on_change: Option<OnSpan>,
-}
+#[path = "slider_range.rs"]
+mod range;
 
-impl RangeSlider {
-    pub fn new(id: impl Into<ElementId>, low: f64, high: f64) -> Self {
-        assert!(low <= high, "range {low}..{high} runs backwards");
-        Self {
-            id: id.into(),
-            value: (low, high),
-            range: (0.0, 100.0, 1.0),
-            vertical: false,
-            disabled: false,
-            on_change: None,
-        }
-    }
-
-    pub fn range(mut self, min: f64, max: f64) -> Self {
-        assert!(min < max, "slider range {min}..{max} is empty");
-        self.range.0 = min;
-        self.range.1 = max;
-        self
-    }
-
-    pub fn step(mut self, step: f64) -> Self {
-        assert!(step > 0.0, "slider step {step} must be positive");
-        self.range.2 = step;
-        self
-    }
-
-    /// Runs bottom to top; the parent gives it a height.
-    pub fn vertical(mut self) -> Self {
-        self.vertical = true;
-        self
-    }
-
-    pub fn disabled(mut self, disabled: bool) -> Self {
-        self.disabled = disabled;
-        self
-    }
-
-    pub fn on_change(
-        mut self,
-        handler: impl Fn((f64, f64), &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_change = Some(Rc::new(handler));
-        self
-    }
-}
-
-impl RenderOnce for RangeSlider {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (id, (low, high), on_change) = (self.id.clone(), self.value, self.on_change);
-        let commit: Commit = Rc::new(move |index, next, force, window, cx| {
-            let span = if index == 0 {
-                (next.min(high), high)
-            } else {
-                (low, next.max(low))
-            };
-            if !force && span == (low, high) {
-                return;
-            }
-            log::debug!("range slider {id:?}: {span:?}");
-            if let Some(on_change) = &on_change {
-                on_change(span, window, cx);
-            }
-        });
-        Track {
-            id: self.id,
-            values: vec![low, high],
-            range: self.range,
-            vertical: self.vertical,
-            disabled: self.disabled,
-            commit,
-        }
-        .render(window, cx)
-    }
-}
+pub use range::RangeSlider;
 
 #[cfg(test)]
-mod tests {
-    use super::{fraction, keyed, value_at};
-
-    #[test]
-    fn values_snap_to_the_step_and_stay_in_range() {
-        assert_eq!(fraction(25.0, 0.0, 100.0), 0.25);
-        assert_eq!(value_at(0.26, 0.0, 100.0, 5.0), 25.0);
-        assert_eq!(value_at(1.4, 0.0, 100.0, 5.0), 100.0);
-        assert_eq!(value_at(0.5, -1.0, 1.0, 0.5), 0.0);
-    }
-
-    #[test]
-    fn keys_step_jump_and_reach_the_ends() {
-        assert_eq!(keyed("right", 10.0, 0.0, 100.0, 1.0), Some(11.0));
-        assert_eq!(keyed("pagedown", 5.0, 0.0, 100.0, 1.0), Some(0.0));
-        assert_eq!(keyed("end", 5.0, 0.0, 100.0, 1.0), Some(100.0));
-        assert_eq!(keyed("a", 5.0, 0.0, 100.0, 1.0), None);
-    }
-}
+#[path = "slider_tests.rs"]
+mod tests;

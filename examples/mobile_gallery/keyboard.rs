@@ -95,8 +95,7 @@ impl super::MobileGallery {
                 && self.top_reach > px(0.)
                 && self.scroll.max_offset().y <= px(0.)
             {
-                // No scroll range remains to compensate the orphaned spacer;
-                // removing it may move the visible content.
+                // Drop the orphaned spacer when no scroll range remains to compensate.
                 self.top_reach = px(0.);
                 return true;
             }
@@ -168,11 +167,9 @@ impl super::MobileGallery {
                         return;
                     }
                     // Reclaim compensated space independently of overlay ownership.
-                    if view.floating_keyboard.is_none() {
-                        if view.reclaim_top_reach(keyboard) {
-                            cx.notify();
-                            return;
-                        }
+                    if view.floating_keyboard.is_none() && view.reclaim_top_reach(keyboard) {
+                        cx.notify();
+                        return;
                     }
                     if view.floating_keyboard.is_none() && keyboard <= px(0.) {
                         return;

@@ -352,7 +352,7 @@ fn swipe_up(cx: &mut VisualTestContext, from: Point<gpui::Pixels>) {
 #[gpui::test]
 fn a_touch_swipe_ignores_hover_and_reveals_cascade_bottom_rows(cx: &mut TestAppContext) {
     touch_theme(cx);
-    let (view, mut cx) = cx.add_window_view(|_, _| PhoneTree(Vec::new()));
+    let (view, cx) = cx.add_window_view(|_, _| PhoneTree(Vec::new()));
     cx.simulate_resize(gpui::size(px(320.), px(640.)));
     cx.run_until_parked();
 
@@ -430,7 +430,7 @@ fn a_touch_swipe_ignores_hover_and_reveals_cascade_bottom_rows(cx: &mut TestAppC
 fn pointer_hover_still_opens_cascade_levels_on_desktop(cx: &mut TestAppContext) {
     touch_theme(cx);
     cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = false));
-    let (_, mut cx) = cx.add_window_view(|_, _| PhoneTree(Vec::new()));
+    let (_, cx) = cx.add_window_view(|_, _| PhoneTree(Vec::new()));
     cx.simulate_resize(gpui::size(px(320.), px(640.)));
     cx.run_until_parked();
     let field = cx.debug_bounds("field-root").unwrap();

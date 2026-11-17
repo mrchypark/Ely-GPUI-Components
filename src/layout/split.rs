@@ -196,7 +196,8 @@ impl RenderOnce for SplitPane {
         let measured = window.use_keyed_state((self.id.clone(), "bounds"), cx, |_, _| {
             Bounds::<Pixels>::default()
         });
-        let resize: Rc<dyn Fn(&[f32], usize, Pixels, Pixels, &mut Window, &mut App)> = Rc::new({
+        type Resize = Rc<dyn Fn(&[f32], usize, Pixels, Pixels, &mut Window, &mut App)>;
+        let resize: Resize = Rc::new({
             let fractions = fractions.clone();
             let on_resize = self.on_resize;
             move |start, ix, delta, extent, window, cx| {
