@@ -33,25 +33,17 @@ impl EntityInputHandler for TextInput {
         &mut self,
         _: &mut Window,
         _: &mut Context<Self>,
-    ) -> gpui::TextInputConfiguration {
-        self.input_configuration.clone()
+    ) -> TextInputConfiguration {
+        TextInputConfiguration {
+            keyboard_type: self.keyboard_type,
+            secure: self.secure,
+            ..self.input_configuration.clone()
+        }
     }
 
     fn accepts_text_input(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.report_input_owner(window, cx);
         true
-    }
-
-    fn text_input_configuration(
-        &mut self,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) -> TextInputConfiguration {
-        TextInputConfiguration {
-            keyboard_type: self.keyboard_type,
-            secure: self.secure,
-            ..Default::default()
-        }
     }
 
     fn paste(&mut self, item: ClipboardItem, _: &mut Window, cx: &mut Context<Self>) {

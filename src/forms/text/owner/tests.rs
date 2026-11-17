@@ -99,6 +99,7 @@ fn input_configuration_is_per_field_and_updates_handler(cx: &mut TestAppContext)
         autocapitalize: gpui::Autocapitalize::Words,
         suggestions: true,
         input_action: gpui::TextInputAction::Next,
+        ..Default::default()
     };
     fields[0].update(cx, |input, cx| input.set_input_configuration(initial.clone(), cx));
     let mut first = handler(&fields[0], cx);
@@ -112,6 +113,7 @@ fn input_configuration_is_per_field_and_updates_handler(cx: &mut TestAppContext)
         autocapitalize: gpui::Autocapitalize::None,
         suggestions: false,
         input_action: gpui::TextInputAction::Done,
+        ..Default::default()
     };
     fields[0].update(cx, |input, cx| input.set_input_configuration(updated.clone(), cx));
     cx.update(|window, cx| assert_eq!(first.text_input_configuration(window, cx), updated));
