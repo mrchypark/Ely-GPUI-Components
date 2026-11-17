@@ -107,7 +107,7 @@ pub fn steps(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
                 if done { "finished" } else { "wizard" },
                 probe(
                     "wizard",
-                    div().w(px(560.0)).child(
+                    div().w_full().max_w(px(560.0)).child(
                         Wizard::new(
                             "wizard",
                             setup_steps(),

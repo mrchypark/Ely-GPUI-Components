@@ -1,9 +1,10 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Axis, CursorStyle, DragMoveEvent, ElementId, EmptyView, EntityId, Hsla,
-    InteractiveElement, IntoElement, Length, ParentElement, Pixels, RenderOnce, Stateful,
-    StatefulInteractiveElement, Styled, Window, div, prelude::*,
+    AnyElement, App, Axis, Bounds, CursorStyle, DispatchPhase, DragMoveEvent, ElementId, EmptyView,
+    EntityId, HitboxBehavior, Hsla, InteractiveElement, IntoElement, Length, ParentElement, Pixels,
+    Point, RenderOnce, Stateful, StatefulInteractiveElement, Styled, TouchDragEvent, TouchPhase,
+    Window, canvas, div, prelude::*,
 };
 
 use super::seeded::use_seeded;
@@ -44,6 +45,7 @@ fn handle(
         .group("resize")
         .debug_selector(|| selector.into())
         .flex_none()
+        .relative()
         .flex()
         .justify_center()
         .items_center();
@@ -84,6 +86,12 @@ struct DividerDrag {
     ix: usize,
     start: Vec<f32>,
     anchor: Rc<Cell<Option<Pixels>>>,
+}
+
+#[derive(Clone)]
+struct DividerTouch {
+    start: Point<Pixels>,
+    sizes: Vec<f32>,
 }
 
 /// Moves divider `ix` by `delta` of the whole, keeping each pane at `floor` or more.
@@ -183,39 +191,19 @@ impl RenderOnce for SplitPane {
         let seed = (self.sizes, normalized);
         let fractions = use_seeded(self.id.clone(), seed, window, cx);
         let owner = fractions.entity_id();
-        let on_resize = self.on_resize;
         let shares = fractions.read(cx).value.1.clone();
         let (axis, min) = (self.axis, self.min);
-        let mut root = div().id(self.id).size_full().flex().on_drag_move(
-            move |event: &DragMoveEvent<DividerDrag>, window, cx| {
-                let drag = event.drag(cx);
-                if drag.owner != owner {
+        let measured = window.use_keyed_state((self.id.clone(), "bounds"), cx, |_, _| {
+            Bounds::<Pixels>::default()
+        });
+        let resize: Rc<dyn Fn(&[f32], usize, Pixels, Pixels, &mut Window, &mut App)> = Rc::new({
+            let fractions = fractions.clone();
+            let on_resize = self.on_resize;
+            move |start, ix, delta, extent, window, cx| {
+                let next = shift(start, ix, delta / extent, min / extent);
+                if next.as_slice() == start {
                     return;
                 }
-                if drag.start.len() != count {
-                    log::error!(
-                        "split pane: a drag over {} panes ends at {count}",
-                        drag.start.len()
-                    );
-                    return;
-                }
-                let (along, extent) = match axis {
-                    Axis::Horizontal => (event.event.position.x, event.bounds.size.width),
-                    Axis::Vertical => (event.event.position.y, event.bounds.size.height),
-                };
-                let anchor = match drag.anchor.get() {
-                    Some(anchor) => anchor,
-                    None => {
-                        drag.anchor.set(Some(along));
-                        along
-                    }
-                };
-                let next = shift(
-                    &drag.start,
-                    drag.ix,
-                    (along - anchor) / extent,
-                    min / extent,
-                );
                 if let Some(report) = &on_resize {
                     report(&next, window, cx);
                 }
@@ -223,7 +211,55 @@ impl RenderOnce for SplitPane {
                     shares.value.1 = next;
                     cx.notify();
                 });
-            },
+            }
+        });
+        let split_id = self.id.clone();
+        let drag_resize = resize.clone();
+        let mut root = div()
+            .id(self.id)
+            .relative()
+            .size_full()
+            .flex()
+            .on_drag_move(move |event: &DragMoveEvent<DividerDrag>, window, cx| {
+                let (start, ix, anchor_state) = {
+                    let drag = event.drag(cx);
+                    if drag.owner != owner {
+                        return;
+                    }
+                    if drag.start.len() != count {
+                        log::error!(
+                            "split pane: a drag over {} panes ends at {count}",
+                            drag.start.len()
+                        );
+                        return;
+                    }
+                    (drag.start.clone(), drag.ix, drag.anchor.clone())
+                };
+                let (along, extent) = match axis {
+                    Axis::Horizontal => (event.event.position.x, event.bounds.size.width),
+                    Axis::Vertical => (event.event.position.y, event.bounds.size.height),
+                };
+                let anchor = match anchor_state.get() {
+                    Some(anchor) => anchor,
+                    None => {
+                        anchor_state.set(Some(along));
+                        along
+                    }
+                };
+                drag_resize(&start, ix, along - anchor, extent, window, cx);
+            });
+        let measure = measured.clone();
+        root = root.child(
+            canvas(
+                move |next_bounds, _, cx| {
+                    if *measure.read(cx) != next_bounds {
+                        measure.update(cx, |bounds, _| *bounds = next_bounds);
+                    }
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .inset_0(),
         );
         root = match axis {
             Axis::Horizontal => root.flex_row(),
@@ -238,9 +274,71 @@ impl RenderOnce for SplitPane {
                     start: shares.clone(),
                     anchor: Rc::new(Cell::new(None)),
                 };
+                let touch = window.use_keyed_state(
+                    (split_id.clone(), format!("touch-{ix}")),
+                    cx,
+                    |_, _| None::<DividerTouch>,
+                );
+                let (touch_sizes, touch_measured, touch_resize) =
+                    (shares.clone(), measured.clone(), resize.clone());
+                let touch_layer = canvas(
+                    |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+                    move |_, hitbox, window, _| {
+                        window.on_mouse_event(move |event: &TouchDragEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble {
+                                return;
+                            }
+                            if event.phase == TouchPhase::Started {
+                                touch.update(cx, |state, _| *state = None);
+                                if window.default_prevented()
+                                    || !hitbox.is_hovered_at(event.start_position, window)
+                                {
+                                    return;
+                                }
+                                touch.update(cx, |state, _| {
+                                    *state = Some(DividerTouch {
+                                        start: event.start_position,
+                                        sizes: touch_sizes.clone(),
+                                    });
+                                });
+                                window.prevent_default();
+                                cx.stop_propagation();
+                                return;
+                            }
+                            let Some(drag) = touch.read(cx).clone() else {
+                                return;
+                            };
+                            if drag.start != event.start_position {
+                                return;
+                            }
+                            cx.stop_propagation();
+                            if event.phase == TouchPhase::Cancelled {
+                                touch.update(cx, |state, _| *state = None);
+                                return;
+                            }
+                            let ended = event.phase == TouchPhase::Ended;
+                            if ended {
+                                touch.update(cx, |state, _| *state = None);
+                            }
+                            let bounds = *touch_measured.read(cx);
+                            let (along, start, extent) = match axis {
+                                Axis::Horizontal => {
+                                    (event.position.x, drag.start.x, bounds.size.width)
+                                }
+                                Axis::Vertical => {
+                                    (event.position.y, drag.start.y, bounds.size.height)
+                                }
+                            };
+                            touch_resize(&drag.sizes, ix - 1, along - start, extent, window, cx);
+                        });
+                    },
+                )
+                .absolute()
+                .inset_0();
                 children.push(
                     resize_handle(("divider", ix), axis, cx)
                         .on_drag(drag, |_, _, _, cx| cx.new(|_| EmptyView))
+                        .child(touch_layer)
                         .into_any_element(),
                 );
             }

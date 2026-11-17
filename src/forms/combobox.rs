@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Context, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    SharedString, Styled, Subscription, Window, div, prelude::*,
+    App, Context, ElementId, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    RenderOnce, SharedString, Styled, Subscription, Window, div, prelude::*,
 };
 
 use super::{
@@ -211,6 +211,8 @@ impl RenderOnce for Combobox {
             pick.clone(),
             typing.clone(),
         );
+        let reopen = typing.clone();
+        let dismiss = typing.clone();
         div()
             .id(self.id.clone())
             .relative()
@@ -250,11 +252,23 @@ impl RenderOnce for Combobox {
                 }
             })
             .child(
-                Input::new(&self.state).size(self.size).suffix(
-                    Icon::new(IconName::ChevronsUpDown)
-                        .size(IconSize::Xs)
-                        .color(subtle),
-                ),
+                div()
+                    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                        if reopen.read(cx).dismissed {
+                            reopen.update(cx, |typing, cx| {
+                                typing.dismissed = false;
+                                cx.notify();
+                            });
+                            window.refresh();
+                        }
+                    })
+                    .child(
+                        Input::new(&self.state).size(self.size).suffix(
+                            Icon::new(IconName::ChevronsUpDown)
+                                .size(IconSize::Xs)
+                                .color(subtle),
+                        ),
+                    ),
             )
             .child(measure_anchor(picker))
             .when(open, |field| {
@@ -266,7 +280,13 @@ impl RenderOnce for Combobox {
                         highlighted: Some(highlighted),
                         checked: Some(&chosen),
                         pick,
-                        dismiss: None,
+                        dismiss: Some(Rc::new(move |window, cx| {
+                            dismiss.update(cx, |typing, cx| {
+                                typing.dismissed = true;
+                                cx.notify();
+                            });
+                            window.refresh();
+                        })),
                         scroll: Some(&scroll),
                         reveal,
                     }

@@ -7,7 +7,7 @@ use ely_gpui_component::{
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Div, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
+    div, px, App, Div, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window,
 };
 
 use crate::{
@@ -209,7 +209,7 @@ pub fn editor_tabs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<
         })
         .collect();
     let (closing, pinning, keeping, moving) = (docs.clone(), docs.clone(), docs.clone(), docs);
-    let (picked, select) = (chosen.read(cx).clone(), chosen);
+    let (picked, select, close_selection) = (chosen.read(cx).clone(), chosen.clone(), chosen);
     section(
         "EditorTabs / TabOverflowMenu",
         "Close, pin, drag to reorder. A dot marks unsaved work until you hover; italics mark a preview. The chevron lists every tab.",
@@ -217,15 +217,21 @@ pub fn editor_tabs(window: &mut Window, cx: &mut App) -> impl IntoElement + use<
     )
     .child(probe(
         "editor-tabs",
-        div().w(px(560.0)).child(
+        div().w_full().max_w(px(560.0)).child(
             EditorTabs::new("editor-tabs", tabs)
                 .selected(picked)
                 .on_select(move |id, _, cx| set(&select, id.clone(), cx))
                 .on_close(move |id, _, cx| {
-                    closing.update(cx, |docs, cx| {
+                    let next = closing.update(cx, |docs, cx| {
+                        let index = docs.iter().position(|doc| doc.id == id.as_ref());
                         docs.retain(|doc| doc.id != id.as_ref());
                         cx.notify();
-                    })
+                        index.and_then(|index| docs.get(index.min(docs.len().saturating_sub(1))))
+                            .map(|doc| SharedString::from(doc.id))
+                    });
+                    if close_selection.read(cx) == id {
+                        set(&close_selection, next.unwrap_or_default(), cx);
+                    }
                 })
                 .on_pin(move |id, _, cx| edit(&pinning, id, cx, |doc| doc.pinned = false))
                 .on_keep(move |id, _, cx| edit(&keeping, id, cx, |doc| doc.preview = false))

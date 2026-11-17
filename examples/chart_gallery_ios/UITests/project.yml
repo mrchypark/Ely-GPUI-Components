@@ -9,10 +9,11 @@ targets:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - path: .
+      - path: ChartGalleryUITests.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ely.chartgallery.uitests
+        GENERATE_INFOPLIST_FILE: YES
 
 schemes:
   ChartGalleryUITests:

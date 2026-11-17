@@ -4,6 +4,22 @@ use gpui::{Bounds, Modifiers, Pixels, TestAppContext, VisualTestContext, point, 
 use crate::MobileGallery;
 
 #[gpui::test]
+fn editor_story_repeated_draws_settle(cx: &mut TestAppContext) {
+    let _files = crate::assets::prepare_test_files();
+    init(cx);
+    let (view, cx) = cx.add_window_view(MobileGallery::new);
+    cx.simulate_resize(size(px(390.), px(844.)));
+    view.update(cx, |view, cx| {
+        assert!(view.select_story("editor", "WhitespaceRenderer / CursorRenderer", cx));
+    });
+    for _ in 0..3 {
+        draw(cx);
+        assert!(cx.debug_bounds("gallery-story-error").is_none());
+        assert!(cx.debug_bounds("gallery-story-body").is_some());
+    }
+}
+
+#[gpui::test]
 fn gallery_all_six_wrapper_callers_forward_live_usable_bounds(cx: &mut TestAppContext) {
     use gpui::{ScrollDelta, ScrollEvent, TouchPhase};
     let _files = crate::assets::prepare_test_files();

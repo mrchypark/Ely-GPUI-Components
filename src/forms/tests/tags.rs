@@ -141,6 +141,17 @@ fn words_with_no_suggestion_are_added_as_typed(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn backspace_on_an_empty_field_drops_the_last_tag(cx: &mut TestAppContext) {
+    let (host, cx) = typing("beta", cx);
+    press("enter", cx);
+    press("backspace", cx);
+    assert_eq!(
+        asked(&host, cx),
+        [vec![SharedString::from("beta")], Vec::new()]
+    );
+}
+
+#[gpui::test]
 fn escape_sets_the_suggestions_aside(cx: &mut TestAppContext) {
     let (host, cx) = typing("be", cx);
     press("escape", cx);

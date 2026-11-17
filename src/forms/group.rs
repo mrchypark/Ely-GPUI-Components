@@ -72,6 +72,7 @@ impl RenderOnce for InputGroup {
         let input = self.state.read(cx);
         let focus = input.focus().clone();
         let focused = focus.is_focused(window);
+        let disabled = input.is_disabled();
         let disabled_state = self.state.clone();
         let focus_state = self.state.clone();
         let theme = cx.theme();
@@ -85,7 +86,11 @@ impl RenderOnce for InputGroup {
                 .h_full()
                 .px(pad)
                 .bg(colors.sunken)
-                .text_color(colors.fg_muted)
+                .text_color(if disabled {
+                    colors.fg_disabled
+                } else {
+                    colors.fg_muted
+                })
                 .map(|block| {
                     if before {
                         block.border_r_1()
@@ -101,6 +106,7 @@ impl RenderOnce for InputGroup {
             .flex()
             .items_center()
             .h(theme.control_height(self.size))
+            .map(|group| theme.touch_target(group))
             .overflow_hidden()
             .rounded(theme.radius(Radius::Md))
             .border_1()
@@ -109,9 +115,17 @@ impl RenderOnce for InputGroup {
             } else {
                 colors.border_strong
             })
-            .bg(colors.surface)
+            .bg(if disabled {
+                colors.sunken
+            } else {
+                colors.surface
+            })
             .text_size(theme.text_size(text_size(self.size)))
-            .text_color(colors.fg)
+            .text_color(if disabled {
+                colors.fg_disabled
+            } else {
+                colors.fg
+            })
             .capture_any_mouse_down(move |_, window, cx| {
                 if disabled_state.read(cx).is_disabled() {
                     window.prevent_default();

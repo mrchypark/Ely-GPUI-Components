@@ -331,6 +331,9 @@ impl TextInput {
         if self.disabled {
             return;
         }
+        if self.focus.is_focused(window) {
+            window.request_virtual_keyboard();
+        }
         window.focus(&self.focus, cx);
         let at = self.offset_for_point(event.position);
         match event.click_count {

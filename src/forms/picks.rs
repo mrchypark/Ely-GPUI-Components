@@ -2,8 +2,8 @@ use std::{ops::Range, rc::Rc};
 
 use gpui::{
     AnyElement, App, Context, ElementId, Entity, InteractiveElement, IntoElement, ParentElement,
-    Rems, ScrollStrategy, SharedString, StatefulInteractiveElement, Styled,
-    UniformListScrollHandle, Window, div, prelude::*, uniform_list,
+    Pixels, Rems, ScrollStrategy, SharedString, StatefulInteractiveElement, Styled,
+    UniformListScrollHandle, Window, canvas, div, prelude::*, uniform_list,
 };
 
 use super::{
@@ -37,6 +37,30 @@ pub(crate) fn rows(
             start = stop;
         }
     }
+    out
+}
+
+fn columns_for_width(width: Pixels, cell: Pixels, maximum: usize) -> usize {
+    ((width / cell).floor() as usize).clamp(1, maximum.max(1))
+}
+
+fn groups(rows: &[Row]) -> Vec<(Option<SharedString>, usize)> {
+    let (mut out, mut title, mut count) = (Vec::new(), None, 0);
+    let flush = |out: &mut Vec<_>, title: &mut Option<SharedString>, count: &mut usize| {
+        if *count > 0 {
+            out.push((title.take(), std::mem::take(count)));
+        }
+    };
+    for row in rows {
+        match row {
+            Row::Title(next) => {
+                flush(&mut out, &mut title, &mut count);
+                title = Some(next.clone());
+            }
+            Row::Glyphs(range) => count += range.len(),
+        }
+    }
+    flush(&mut out, &mut title, &mut count);
     out
 }
 
@@ -79,6 +103,7 @@ pub(crate) struct Finder {
     search: Entity<TextInput>,
     pub query: String,
     cursor: usize,
+    columns: usize,
     scroll: UniformListScrollHandle,
 }
 
@@ -95,6 +120,7 @@ pub(crate) fn finder(
             search: cx.new(|cx| TextInput::new(window, cx).placeholder(hint)),
             query: String::new(),
             cursor: 0,
+            columns: 0,
             scroll: UniformListScrollHandle::new(),
         },
     );
@@ -142,9 +168,25 @@ pub(crate) fn grid(
         let cursor = finder.cursor.min(count.saturating_sub(1));
         (finder.search.clone(), cursor, finder.scroll.clone())
     };
+    let maximum = grid.columns.max(1);
+    let cell = {
+        let theme = cx.theme();
+        theme.touch_minimum(grid.cell.to_pixels(window.rem_size()))
+    };
+    let measured = window.use_keyed_state((grid.id.clone(), "width"), cx, |_, _| Pixels::ZERO);
+    let available = (*measured.read(cx)).min(window.viewport_size().width);
+    let columns = columns_for_width(available, cell, maximum);
+    let rows = Rc::new(rows(groups(&grid.rows), columns));
+    if count > 0 && finder.read(cx).columns != columns {
+        let row = row_of(&rows, cursor);
+        finder.update(cx, |finder, cx| {
+            finder.columns = columns;
+            finder.scroll.scroll_to_item(row, ScrollStrategy::Nearest);
+            cx.notify();
+        });
+    }
     let theme = cx.theme();
     let colors = theme.colors.clone();
-    let (cell, columns) = (grid.cell, grid.columns);
     let (into, enter, keys) = (focus.clone(), grid.pick.clone(), grid.pick.clone());
     let field = div()
         .capture_action(move |_: &Down, window, cx| {
@@ -175,9 +217,10 @@ pub(crate) fn grid(
             .child(grid.none)
             .into_any_element()
     } else {
-        let (rows, names, draw, pick) = (grid.rows.clone(), grid.names, grid.draw, grid.pick);
+        let (rows, names, draw, pick) = (rows, grid.names, grid.draw, grid.pick);
         let selected = grid.selected;
-        let (moved, key_rows, place) = (finder.clone(), grid.rows, scroll.clone());
+        let key_rows = rows.clone();
+        let (moved, place) = (finder.clone(), scroll.clone());
         let clicked = finder.clone();
         let list = uniform_list((grid.id, "rows"), rows.len(), move |range, _, cx| {
             let theme = cx.theme();
@@ -208,6 +251,7 @@ pub(crate) fn grid(
                             div()
                                 .id(("glyph", ix))
                                 .debug_selector(move || format!("glyph-cell-{ix}"))
+                                .relative()
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -230,6 +274,14 @@ pub(crate) fn grid(
                                     pick(ix, window, cx);
                                 })
                                 .child(draw(ix, cx))
+                                .when(ix == cursor, |cell| {
+                                    cell.child(
+                                        div()
+                                            .debug_selector(|| "glyph-cursor".into())
+                                            .absolute()
+                                            .size_full(),
+                                    )
+                                })
                         }))
                         .into_any_element(),
                 })
@@ -264,11 +316,35 @@ pub(crate) fn grid(
             .child(list)
             .into_any_element()
     };
+    let measure = measured.clone();
     div()
+        .debug_selector(|| "glyph-grid".into())
+        .relative()
         .flex()
         .flex_col()
         .gap_2()
-        .w(cell * columns as f32)
+        .w_full()
+        .min_w_0()
+        .overflow_hidden()
+        .max_w(cell * maximum as f32)
+        .child(
+            canvas(
+                move |bounds, window, cx| {
+                    if *measure.read(cx) != bounds.size.width {
+                        measure.update(cx, |width, cx| {
+                            *width = bounds.size.width;
+                            cx.notify();
+                        });
+                        window.request_animation_frame();
+                    }
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full(),
+        )
         .child(field)
         .child(body)
         .into_any_element()
@@ -276,7 +352,9 @@ pub(crate) fn grid(
 
 #[cfg(test)]
 mod tests {
-    use super::{Row, rows, stepped};
+    use gpui::px;
+
+    use super::{Row, columns_for_width, groups, rows, stepped};
 
     #[test]
     fn groups_break_into_titled_rows_of_eight() {
@@ -306,5 +384,53 @@ mod tests {
         assert_eq!(stepped(&laid, 12, "right"), None);
         assert_eq!(stepped(&laid, 0, "left"), None);
         assert_eq!(stepped(&laid, 8, "left"), Some(7));
+    }
+
+    #[test]
+    fn five_columns_keep_group_ranges_and_navigation_aligned() {
+        let laid = rows([(Some("A".into()), 10), (Some("B".into()), 3)], 5);
+        assert_eq!(
+            laid,
+            [
+                Row::Title("A".into()),
+                Row::Glyphs(0..5),
+                Row::Glyphs(5..10),
+                Row::Title("B".into()),
+                Row::Glyphs(10..13),
+            ]
+        );
+        assert_eq!(stepped(&laid, 6, "down"), Some(11));
+        assert_eq!(stepped(&laid, 11, "up"), Some(6));
+        assert_eq!(stepped(&laid, 4, "down"), Some(9));
+        assert_eq!(stepped(&laid, 9, "down"), Some(12));
+    }
+
+    #[test]
+    fn reflow_preserves_group_counts() {
+        let original = rows([(Some("A".into()), 10), (Some("B".into()), 3)], 8);
+        assert_eq!(
+            groups(&original),
+            [(Some("A".into()), 10), (Some("B".into()), 3)]
+        );
+        let reflowed = rows(groups(&original), 5);
+        assert_eq!(
+            reflowed,
+            [
+                Row::Title("A".into()),
+                Row::Glyphs(0..5),
+                Row::Glyphs(5..10),
+                Row::Title("B".into()),
+                Row::Glyphs(10..13),
+            ]
+        );
+    }
+
+    #[test]
+    fn responsive_columns_preserve_48px_cells() {
+        assert_eq!(columns_for_width(px(240.), px(48.), 8), 5);
+        assert_eq!(columns_for_width(px(384.), px(48.), 8), 8);
+        assert_eq!(columns_for_width(px(239.), px(48.), 8), 4);
+        assert_eq!(columns_for_width(px(40.), px(48.), 8), 1);
+        assert_eq!(columns_for_width(px(0.), px(48.), 8), 1);
     }
 }

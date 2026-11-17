@@ -3,6 +3,7 @@ mod choices;
 mod colors;
 mod dates;
 mod hover_touch;
+mod number;
 mod other;
 mod popup;
 mod stale;
@@ -12,8 +13,9 @@ mod touch;
 mod upload;
 
 use gpui::{
-    AppContext as _, ClipboardItem, Context, Entity, EntityInputHandler, InteractiveElement, IntoElement, KeyUpEvent,
-    Keystroke, ParentElement, Render, TestAppContext, VisualTestContext, Window, div, px,
+    AppContext as _, ClipboardItem, Context, Entity, EntityInputHandler, InteractiveElement,
+    IntoElement, KeyUpEvent, Keystroke, ParentElement, Render, TestAppContext, TouchEvent, TouchId,
+    TouchPhase, VisualTestContext, Window, div, px,
 };
 
 use super::{Input, MaskedInput, NumberInput, PinInput, TextInput, bind_keys};
@@ -111,7 +113,10 @@ fn disabled_input_group_pointer_does_not_focus(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let enabled = cx.debug_bounds("pointer-group-0").unwrap();
     let disabled = cx.debug_bounds("pointer-group-1").unwrap();
-    for position in [gpui::point(disabled.left() + px(10.), disabled.center().y), disabled.center()] {
+    for position in [
+        gpui::point(disabled.left() + px(10.), disabled.center().y),
+        disabled.center(),
+    ] {
         cx.simulate_click(position, gpui::Modifiers::none());
         assert!(!cx.update(|window, cx| fields[1].read(cx).focus().is_focused(window)));
     }
@@ -158,7 +163,10 @@ fn disabled_input_pointer_does_not_take_focus(cx: &mut TestAppContext) {
     let disabled = cx.debug_bounds("pointer-field-1").unwrap();
     // Hit the frame inset as well as the text area: the frame previously focused
     // a disabled input even though the text element itself ignored the press.
-    cx.simulate_click(gpui::point(disabled.left() + px(2.), disabled.center().y), gpui::Modifiers::none());
+    cx.simulate_click(
+        gpui::point(disabled.left() + px(2.), disabled.center().y),
+        gpui::Modifiers::none(),
+    );
     assert!(!cx.update(|window, cx| fields[1].read(cx).focus().is_focused(window)));
     cx.simulate_click(enabled.center(), gpui::Modifiers::none());
     assert!(cx.update(|window, cx| fields[0].read(cx).focus().is_focused(window)));
@@ -169,6 +177,32 @@ fn disabled_input_pointer_does_not_take_focus(cx: &mut TestAppContext) {
     cx.simulate_input("typing");
     assert_eq!(text(&fields[0], cx), "typing");
     assert_eq!(text(&fields[1], cx), "");
+}
+
+#[gpui::test]
+fn touch_taps_on_input_focus_and_keep_accepting_text(cx: &mut TestAppContext) {
+    let (fields, cx) = open(1, false, cx);
+    cx.update(|window, _| {
+        window.resize(gpui::size(px(390.), px(844.)));
+        window.activate_window();
+    });
+    cx.run_until_parked();
+    let center = cx.debug_bounds("input-text").unwrap().center();
+    for _ in 0..2 {
+        for phase in [TouchPhase::Started, TouchPhase::Ended] {
+            cx.simulate_event(TouchEvent {
+                id: TouchId(1),
+                phase,
+                position: center,
+                predicted_position: None,
+                force: None,
+            });
+            cx.run_until_parked();
+        }
+        assert!(cx.update(|window, cx| fields[0].read(cx).focus().is_focused(window)));
+    }
+    cx.simulate_input("hello");
+    assert_eq!(text(&fields[0], cx), "hello");
 }
 
 #[gpui::test]
@@ -270,129 +304,6 @@ fn undo_leaves_a_disabled_field_alone(cx: &mut TestAppContext) {
     field.update(cx, |input, cx| input.set_disabled(true, cx));
     cx.simulate_keystrokes("secondary-z");
     assert_eq!(text(field, cx), "a");
-}
-
-struct Stepped {
-    value: f64,
-}
-
-impl Render for Stepped {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity();
-        NumberInput::new("stepped", self.value).on_change(move |value, _, cx| {
-            view.update(cx, |view, cx| {
-                view.value = value;
-                cx.notify();
-            })
-        })
-    }
-}
-
-#[gpui::test]
-fn stepping_starts_from_the_typed_number(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|_, _| Stepped { value: 4.0 });
-    cx.update(|window, cx| window.focus_next(cx));
-    cx.simulate_keystrokes("secondary-a");
-    cx.simulate_input("20");
-    cx.simulate_keystrokes("up");
-    assert_eq!(view.read_with(cx, |view, _| view.value), 21.0);
-}
-
-#[gpui::test]
-fn a_typed_number_reaches_the_owner_before_any_blur(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|_, _| Stepped { value: 100.0 });
-    cx.update(|window, cx| window.focus_next(cx));
-    cx.simulate_keystrokes("secondary-a");
-    cx.simulate_input("250");
-    assert_eq!(
-        view.read_with(cx, |view, _| view.value),
-        250.0,
-        "a press elsewhere reads the typed number"
-    );
-    cx.simulate_input(".");
-    assert_eq!(
-        view.read_with(cx, |view, _| view.value),
-        250.0,
-        "a half-typed number waits"
-    );
-}
-
-struct Committed {
-    values: Vec<f64>,
-}
-
-impl Render for Committed {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity();
-        NumberInput::new("committed", 4.0)
-            .on_commit(move |value, _, cx| view.update(cx, |view, _| view.values.push(value)))
-    }
-}
-
-#[gpui::test]
-fn typing_commits_only_on_enter_and_steps(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|_, _| Committed { values: Vec::new() });
-    cx.update(|window, cx| window.focus_next(cx));
-    cx.simulate_keystrokes("secondary-a");
-    cx.simulate_input("12");
-    assert!(
-        view.read_with(cx, |view, _| view.values.is_empty()),
-        "typing waits"
-    );
-    cx.simulate_keystrokes("enter");
-    cx.simulate_keystrokes("up");
-    assert_eq!(
-        view.read_with(cx, |view, _| view.values.clone()),
-        [12.0, 13.0]
-    );
-}
-
-struct Blank {
-    values: Vec<f64>,
-}
-
-impl Render for Blank {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity();
-        NumberInput::new("blank", 0.0)
-            .blank("Mixed")
-            .on_commit(move |value, _, cx| view.update(cx, |view, _| view.values.push(value)))
-    }
-}
-
-#[gpui::test]
-fn a_blank_field_commits_only_what_is_typed(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|_, _| Blank { values: Vec::new() });
-    cx.update(|window, cx| window.focus_next(cx));
-    cx.simulate_keystrokes("enter");
-    cx.update(|window, cx| window.focus_next(cx));
-    assert!(
-        view.read_with(cx, |view, _| view.values.is_empty()),
-        "Enter and blur on an empty field commit nothing"
-    );
-    cx.update(|window, cx| window.focus_prev(cx));
-    cx.simulate_input("0");
-    cx.simulate_keystrokes("enter");
-    assert_eq!(view.read_with(cx, |view, _| view.values.clone()), [0.0]);
-}
-
-#[gpui::test]
-fn a_blur_commits_the_typed_number(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|_, _| Committed { values: Vec::new() });
-    cx.update(|window, cx| {
-        window.activate_window();
-        window.focus_next(cx);
-    });
-    cx.simulate_keystrokes("secondary-a");
-    cx.simulate_input("12");
-    cx.update(|window, cx| window.blur(cx));
-    cx.run_until_parked();
-    assert_eq!(view.read_with(cx, |view, _| view.values.clone()), [12.0]);
 }
 
 struct Pin {

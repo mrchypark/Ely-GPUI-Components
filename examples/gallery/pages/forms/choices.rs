@@ -4,7 +4,7 @@ use ely_gpui_component::{
     },
     primitives::IconName,
 };
-use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::*, px};
 
 use crate::{
     probe::probe,
@@ -125,6 +125,10 @@ pub fn cards(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     let space = keep("card-space", || SharedString::from("personal"), window, cx);
     let backup = keep("card-backup", || true, window, cx);
     let (space_now, backup_now) = (space.read(cx).clone(), *backup.read(cx));
+    let narrow = window.viewport_size().width < px(600.);
+    let width = (window.viewport_size().width - px(16.))
+        .max(px(0.))
+        .min(px(640.));
     let (personal, team) = (space.clone(), space);
     section(
         "CheckboxCard / RadioCard",
@@ -136,31 +140,41 @@ pub fn cards(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         div()
             .flex()
             .gap_3()
-            .w(px(640.0))
+            .w(width)
+            .when(narrow, |cards| cards.flex_col())
             .child(
-                div().flex_1().child(
-                    RadioCard::new("card-personal", space_now == "personal", "Personal")
-                        .description("Just you. Notes stay on this Mac.")
-                        .icon(IconName::User)
-                        .on_select(move |_, cx| set(&personal, "personal".into(), cx)),
-                ),
+                div()
+                    .flex_1()
+                    .debug_selector(|| "gallery-card-personal".into())
+                    .child(
+                        RadioCard::new("card-personal", space_now == "personal", "Personal")
+                            .description("Just you. Notes stay on this Mac.")
+                            .icon(IconName::User)
+                            .on_select(move |_, cx| set(&personal, "personal".into(), cx)),
+                    ),
             )
             .child(
-                div().flex_1().child(
-                    RadioCard::new("card-team", space_now == "team", "Team")
-                        .description("Shared with everyone you invite.")
-                        .icon(IconName::Users)
-                        .on_select(move |_, cx| set(&team, "team".into(), cx)),
-                ),
+                div()
+                    .flex_1()
+                    .debug_selector(|| "gallery-card-team".into())
+                    .child(
+                        RadioCard::new("card-team", space_now == "team", "Team")
+                            .description("Shared with everyone you invite.")
+                            .icon(IconName::Users)
+                            .on_select(move |_, cx| set(&team, "team".into(), cx)),
+                    ),
             ),
     ))
     .child(
-        div().w(px(640.0)).child(
-            CheckboxCard::new("card-backup", backup_now, "Back up nightly")
-                .description("Copies change sets to the cloud at 2 AM.")
-                .icon(IconName::Cloud)
-                .on_change(move |on, _, cx| set(&backup, on, cx)),
-        ),
+        div()
+            .w(width)
+            .debug_selector(|| "gallery-card-backup".into())
+            .child(
+                CheckboxCard::new("card-backup", backup_now, "Back up nightly")
+                    .description("Copies change sets to the cloud at 2 AM.")
+                    .icon(IconName::Cloud)
+                    .on_change(move |on, _, cx| set(&backup, on, cx)),
+            ),
     )
 }
 

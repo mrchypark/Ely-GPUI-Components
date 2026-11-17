@@ -1,3 +1,4 @@
+use gpui::prelude::FluentBuilder;
 use std::rc::Rc;
 
 use gpui::{
@@ -83,6 +84,9 @@ impl RenderOnce for SortableList {
         let list =
             self.rows.into_iter().enumerate().fold(
                 Reorder::new((self.id.clone(), "rows"))
+                    .when(theme.touch_mode && can_reorder, |list| {
+                        list.touch_grip(theme.touch_minimum(gpui::px(0.)))
+                    })
                     .on_reorder(move |from, to, window, cx| dragged(from, to, window, cx)),
                 |list, (ix, (key, item))| {
                     let pointed = cursor.clone();
@@ -99,9 +103,19 @@ impl RenderOnce for SortableList {
                                 })
                             })
                             .child(
-                                Icon::new(IconName::GripVertical)
-                                    .size(IconSize::Sm)
-                                    .color(grip),
+                                div()
+                                    .when(theme.touch_mode, |grip| {
+                                        theme
+                                            .touch_target(grip)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                    })
+                                    .child(
+                                        Icon::new(IconName::GripVertical)
+                                            .size(IconSize::Sm)
+                                            .color(grip),
+                                    ),
                             )
                             .child(
                                 div()

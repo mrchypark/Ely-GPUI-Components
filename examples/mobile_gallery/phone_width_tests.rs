@@ -111,6 +111,47 @@ fn phone_flex_grid_and_multiline_input_fit_the_content_width(cx: &mut TestAppCon
     }
 }
 
+#[gpui::test]
+fn phone_path_regex_and_expression_inputs_fit_with_browse_visible(cx: &mut TestAppContext) {
+    use crate::probe::Probes;
+
+    let _files = crate::assets::prepare_test_files();
+    init(cx);
+    let (view, cx) = cx.add_window_view(MobileGallery::new);
+    for width in [320., 390.] {
+        cx.simulate_resize(size(px(width), px(844.)));
+        for (story, probe) in [
+            ("PathInput", "path"),
+            ("RegexInput", "regex"),
+            ("ExpressionInput", "expression"),
+        ] {
+            view.update(cx, |view, cx| {
+                assert!(view.select_story("forms", story, cx), "{story}")
+            });
+            draw(cx);
+            let content = cx.debug_bounds("gallery-content").unwrap();
+            let bounds = cx
+                .update(|_, cx| Probes::get(probe, cx))
+                .unwrap_or_else(|| panic!("{probe} missing at {width}"));
+            assert!(
+                bounds.left() >= content.left() && bounds.right() <= content.right(),
+                "{probe}: {bounds:?} outside {content:?} at {width}"
+            );
+            assert!(
+                bounds.size.width >= content.size.width - px(1.),
+                "{probe} did not use the available width at {width}"
+            );
+            if probe == "path" {
+                let browse = fits("path-input-browse", content, cx);
+                assert!(
+                    browse.left() >= bounds.left() && browse.right() <= bounds.right(),
+                    "Browse outside PathInput at {width}: {browse:?} in {bounds:?}"
+                );
+            }
+        }
+    }
+}
+
 fn visible(
     selector: &'static str,
     area: Bounds<Pixels>,

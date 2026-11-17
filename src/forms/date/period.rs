@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{
     App, Div, ElementId, FocusHandle, FontWeight, InteractiveElement, IntoElement, ParentElement,
     RenderOnce, SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div,
-    prelude::*,
+    prelude::*, px,
 };
 use jiff::civil::Date;
 
@@ -76,10 +76,12 @@ fn period_grid(id: &ElementId, page: Page, grid: Grid, window: &mut Window, cx: 
             let chosen = page.chosen == Some(ix);
             div()
                 .id(("period", ix))
+                .debug_selector(move || format!("period-cell-{ix}"))
                 .flex()
                 .items_center()
                 .justify_center()
                 .h(theme.control_height(ControlSize::Md))
+                .map(|cell| theme.touch_target(cell))
                 .rounded(theme.radius(Radius::Md))
                 .border_1()
                 .border_color(if focused && ix == at {
@@ -110,6 +112,7 @@ fn period_grid(id: &ElementId, page: Page, grid: Grid, window: &mut Window, cx: 
         .flex_col()
         .gap_2()
         .w(theme.control_height(ControlSize::Md) * 8.0)
+        .when(theme.touch_mode, |grid| grid.min_w(px(224.)))
         .p_2()
         .text_size(theme.text_size(TextSize::Sm))
         .on_key_down(move |event, window, cx| {
@@ -162,6 +165,10 @@ fn period_grid(id: &ElementId, page: Page, grid: Grid, window: &mut Window, cx: 
         )
         .child(div().grid().grid_cols(columns).gap_1().children(cells))
 }
+
+#[cfg(all(test, feature = "test-support"))]
+#[path = "period/touch_tests.rs"]
+mod touch_tests;
 
 /// A period picker's words, first page, page size, and what its cells mean.
 struct Periods {
@@ -232,6 +239,8 @@ fn period_picker(
                 anchor,
                 6,
                 surface((key.clone(), "popup"), cx)
+                    .debug_selector(|| "period-popup".into())
+                    .occlude()
                     .on_mouse_down_out(move |_, window, cx| out(window, cx))
                     .child(grid),
                 window,

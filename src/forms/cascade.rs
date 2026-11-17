@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, ClickEvent, ElementId, Entity, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
-    canvas, div, prelude::*,
+    ParentElement, Pixels, RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement,
+    Styled, Window, canvas, div, prelude::*,
 };
 
 use super::{
@@ -101,10 +101,14 @@ struct Trail {
     open: bool,
     trail: Vec<usize>,
     anchor: Bounds<Pixels>,
+    scroll: ScrollHandle,
 }
 
 fn show(state: &Entity<Trail>, open: bool, trail: Vec<usize>, cx: &mut App) {
     state.update(cx, |state, cx| {
+        if state.trail != trail || (open && !state.open) {
+            state.scroll.set_offset(Default::default());
+        }
         state.open = open;
         state.trail = trail;
         cx.notify();
@@ -184,9 +188,14 @@ impl RenderOnce for Cascader {
         if fitted != kept {
             state.update(cx, |state, _| state.trail = fitted);
         }
-        let (open, trail, anchor) = {
+        let (open, trail, anchor, scroll) = {
             let state = state.read(cx);
-            (state.open, state.trail.clone(), state.anchor)
+            (
+                state.open,
+                state.trail.clone(),
+                state.anchor,
+                state.scroll.clone(),
+            )
         };
         let pick: PickTrail = {
             let (id, roots, state, on_change) = (
@@ -231,14 +240,6 @@ impl RenderOnce for Cascader {
                     let press = state.clone();
                     let at: Vec<usize> = trail[..level].iter().copied().chain([ix]).collect();
                     let leaf = node.children.is_empty();
-                    // A tap never hovers, so the press opens the next level the way the pointer does.
-                    let open_next = (!leaf).then(|| {
-                        let at = at.clone();
-                        let press = press.clone();
-                        move |_: &gpui::MouseDownEvent, _: &mut Window, cx: &mut App| {
-                            show(&press, true, at.clone(), cx)
-                        }
-                    });
                     let choice = Choice::new(node.value.clone(), node.label.clone());
                     option_row(
                         ("row", ix),
@@ -254,19 +255,24 @@ impl RenderOnce for Cascader {
                                 .color(colors.fg_subtle),
                         )
                     })
-                    .on_hover({
-                        let at = at.clone();
-                        move |hovered, _, cx| {
-                            if *hovered && hover.read(cx).trail != at {
-                                show(&hover, true, at.clone(), cx);
+                    // Android reports finger movement as pressed pointer movement.
+                    .when(!theme.touch_mode, |row| {
+                        row.on_hover({
+                            let at = at.clone();
+                            move |hovered, _, cx| {
+                                if *hovered && hover.read(cx).trail != at {
+                                    show(&hover, true, at.clone(), cx);
+                                }
                             }
-                        }
+                        })
                     })
                     .debug_selector(move || format!("cascade-row-{level}-{ix}"))
-                    .when_some(open_next, |row, open| {
-                        row.on_mouse_down(MouseButton::Left, open)
+                    .when(!leaf, |row| {
+                        let (at, press) = (at.clone(), press.clone());
+                        row.on_click(move |_, _, cx| show(&press, true, at.clone(), cx))
                     })
                     .when(leaf, |row| {
+                        let at = at.clone();
                         row.on_click(move |_, window, cx| pick(at.clone(), window, cx))
                     })
                 });
@@ -294,20 +300,34 @@ impl RenderOnce for Cascader {
             let close = state.clone();
             let panel = surface((self.id.clone(), "columns"), cx)
                 .occlude()
+                .debug_selector(|| "cascade-panel".into())
                 .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-                .flex()
-                .when(stacked, |panel| {
-                    panel
-                        .flex_col()
-                        .w(width.min(visible.size.width))
-                        .max_h(height)
-                        .overflow_y_scroll()
-                })
+                .on_scroll(|_, _, cx| cx.stop_propagation())
                 .on_mouse_down_out(move |_, _, cx| {
                     let trail = close.read(cx).trail.clone();
                     show(&close, false, trail, cx)
-                })
-                .children(lists);
+                });
+            let panel = if stacked {
+                panel
+                    .flex_col()
+                    .w(width.min(visible.size.width))
+                    .h(height)
+                    .child(
+                        div()
+                            .id((self.id.clone(), "scroll"))
+                            .debug_selector(|| "cascade-scroll".into())
+                            .size_full()
+                            .min_h_0()
+                            .restrict_scroll_to_axis()
+                            .overflow_y_scroll()
+                            .track_scroll(&scroll)
+                            .flex()
+                            .flex_col()
+                            .children(lists),
+                    )
+            } else {
+                panel.flex().children(lists)
+            };
             if stacked {
                 float_height(self.id.clone(), anchor, height, panel, window, cx)
             } else {

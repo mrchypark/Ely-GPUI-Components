@@ -54,7 +54,12 @@ pub(crate) fn measure_anchor(state: Entity<Picker>) -> impl IntoElement {
     canvas(
         move |bounds, _, cx| {
             if state.read(cx).anchor != bounds {
-                state.update(cx, |picker, _| picker.anchor = bounds);
+                state.update(cx, |picker, cx| {
+                    picker.anchor = bounds;
+                    if picker.open {
+                        cx.notify();
+                    }
+                });
             }
         },
         |_, _, _, _| {},

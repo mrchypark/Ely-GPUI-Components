@@ -155,27 +155,31 @@ impl RenderOnce for FieldArray {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let id = self.id.clone();
         let control_disabled = self.disabled;
-        let lines = self.rows.into_iter().enumerate().map(|(ix, (row, disabled))| {
-            let (id, remove) = (id.clone(), self.on_remove.clone());
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(div().flex_1().min_w_0().child(row))
-                .child(
-                    IconButton::new(("remove-row", ix), IconName::Minus)
-                        .debug_selector(move || format!("pairs-remove-{ix}"))
-                        .disabled(disabled || control_disabled)
-                        .size(ControlSize::Sm)
-                        .tooltip("Remove")
-                        .on_click(move |_, window, cx| {
-                            log::info!("field array {id:?}: removed row {ix}");
-                            if let Some(remove) = &remove {
-                                remove(ix, window, cx);
-                            }
-                        }),
-                )
-        });
+        let lines = self
+            .rows
+            .into_iter()
+            .enumerate()
+            .map(|(ix, (row, disabled))| {
+                let (id, remove) = (id.clone(), self.on_remove.clone());
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(div().flex_1().min_w_0().child(row))
+                    .child(
+                        IconButton::new(("remove-row", ix), IconName::Minus)
+                            .debug_selector(move || format!("pairs-remove-{ix}"))
+                            .disabled(disabled || control_disabled)
+                            .size(ControlSize::Sm)
+                            .tooltip("Remove")
+                            .on_click(move |_, window, cx| {
+                                log::info!("field array {id:?}: removed row {ix}");
+                                if let Some(remove) = &remove {
+                                    remove(ix, window, cx);
+                                }
+                            }),
+                    )
+            });
         let add = self.on_add;
         div()
             .id(self.id)
@@ -208,11 +212,25 @@ fn render_rows(id: &ElementId, state: Entity<Rows>, add: &'static str, cx: &App)
         .disabled(state.read(cx).control_disabled)
         .add_label(add)
         .on_add(move |window, cx| {
+            let pending = grow.clone();
             grow.update(cx, |rows, cx| {
-                if rows.control_disabled { return; }
+                if rows.control_disabled {
+                    return;
+                }
                 rows.push(&[], window, cx);
                 let last = rows.rows.last().expect("just pushed");
-                window.focus(&last[0].0.read(cx).focus().clone(), cx);
+                let field = last[0].0.clone();
+                window.after_next_paint(move |window, cx| {
+                    pending.update(cx, |rows, cx| {
+                        let Some(index) = rows.rows.iter().position(|row| row[0].0 == field) else {
+                            return;
+                        };
+                        if rows.control_disabled || rows.disabled[index] {
+                            return;
+                        }
+                        window.focus(&field.read(cx).focus().clone(), cx);
+                    });
+                });
                 rows.report(window, cx);
                 cx.notify();
             })
@@ -229,22 +247,27 @@ fn render_rows(id: &ElementId, state: Entity<Rows>, add: &'static str, cx: &App)
                 cx.notify();
             })
         });
-    state.read(cx).rows.iter().enumerate().fold(array, |array, (ix, row)| {
-        array.row_disabled(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .children(row.iter().enumerate().map(|(column, (field, _))| {
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .debug_selector(move || format!("pairs-field-{ix}-{column}"))
-                        .child(Input::new(field).size(ControlSize::Sm))
-                })),
-            state.read(cx).disabled[ix],
-        )
-    })
+    state
+        .read(cx)
+        .rows
+        .iter()
+        .enumerate()
+        .fold(array, |array, (ix, row)| {
+            array.row_disabled(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .children(row.iter().enumerate().map(|(column, (field, _))| {
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .debug_selector(move || format!("pairs-field-{ix}-{column}"))
+                            .child(Input::new(field).size(ControlSize::Sm))
+                    })),
+                state.read(cx).disabled[ix],
+            )
+        })
 }
 
 /// Rows of key and value fields; add and remove rows.
@@ -315,8 +338,9 @@ impl RenderOnce for KeyValueInput {
             rows.on_change = self.on_change.clone();
             rows.control_disabled = self.disabled;
             for (ix, row) in rows.rows.iter().enumerate() {
-                let disabled = self.disabled || rows.seed_indices[ix]
-                    .is_some_and(|index| self.disabled_rows.contains(&index));
+                let disabled = self.disabled
+                    || rows.seed_indices[ix]
+                        .is_some_and(|index| self.disabled_rows.contains(&index));
                 rows.disabled[ix] = disabled;
                 for (field, _) in row {
                     if field.read(cx).is_disabled() != disabled {
@@ -378,5 +402,66 @@ impl RenderOnce for ListInput {
         let state = rows_state(&self.id, &self.seed, &placeholders, window, cx);
         state.update(cx, |rows, _| rows.on_change = self.on_change.clone());
         render_rows(&self.id, state, "Add item", cx)
+    }
+}
+
+#[cfg(all(test, feature = "test-support"))]
+mod tests {
+    use gpui::{
+        Context, IntoElement, Modifiers, ParentElement, Render, TestAppContext, VisualTestContext,
+        Window, div, px,
+    };
+
+    use super::KeyValueInput;
+
+    struct Pairs;
+
+    impl Render for Pairs {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().child(KeyValueInput::new(
+                "pairs-timing",
+                [("FIRST".to_string(), "1".to_string())],
+            ))
+        }
+    }
+
+    fn draw(cx: &mut VisualTestContext) {
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn added_pair_focus_waits_for_its_layout(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            crate::theme::Theme::init(cx);
+            crate::forms::bind_keys(cx);
+        });
+        let (_, cx) = cx.add_window_view(|_, _| Pairs);
+        cx.run_until_parked();
+        let add = cx.debug_bounds("pairs-add").expect("Add pair");
+        cx.simulate_click(add.center(), Modifiers::none());
+        cx.run_until_parked();
+
+        assert_eq!(
+            cx.update(|window, cx| window.focused(cx)),
+            None,
+            "the new pair must render before focus opens the keyboard"
+        );
+        draw(cx);
+        let field = cx
+            .debug_bounds("pairs-field-1-0")
+            .expect("the new pair painted");
+        assert!(field.size.height > px(0.));
+        cx.update(|window, cx| {
+            window.simulate_next_frame(cx);
+        });
+        draw(cx);
+        assert!(
+            cx.update(|window, cx| window.focused(cx)).is_some(),
+            "the rendered new pair keeps autofocus"
+        );
     }
 }

@@ -3,14 +3,14 @@
 set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-ely=$(CDPATH= cd -- "$here/../.." && pwd)
-mobile=$(CDPATH= cd -- "$ely/../gpui-mobile" && pwd)
 export PATH="$HOME/.cargo/bin:$PATH"
 export RUSTUP_TOOLCHAIN=${RUSTUP_TOOLCHAIN:-1.97.1}
 export IPHONEOS_DEPLOYMENT_TARGET=16.0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_INCREMENTAL=0
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"$mobile/example/target"}
+export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"$here/target"}
+mobile=$(rustup run "$RUSTUP_TOOLCHAIN" cargo metadata --manifest-path "$here/Cargo.toml" --locked --format-version 1 | \
+  python3 -c 'import json, pathlib, sys; packages = [p for p in json.load(sys.stdin)["packages"] if p["name"] == "gpui-mobile"]; assert len(packages) == 1; print(pathlib.Path(packages[0]["manifest_path"]).parent)')
 
 rustup run "$RUSTUP_TOOLCHAIN" cargo rustc --manifest-path "$here/Cargo.toml" --locked --lib --target aarch64-apple-ios-sim -j 1
 sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)

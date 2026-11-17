@@ -126,6 +126,7 @@ pub(crate) fn marked_row(
         .gap_2()
         .px_2()
         .py_1()
+        .map(|row| theme.touch_target(row))
         .rounded(theme.radius(Radius::Md))
         .text_color(fg)
         .when(highlighted && !choice.disabled, |row| row.bg(colors.hover))
@@ -134,7 +135,6 @@ pub(crate) fn marked_row(
                 .hover(|style| style.bg(colors.hover))
                 // A phone never hovers, so the press itself shows the row pressed.
                 .active(|style| style.bg(colors.hover))
-                .map(|row| theme.touch_target(row))
         })
         .when_some(checked, |row, on| {
             row.child(
@@ -194,11 +194,24 @@ pub(crate) fn float(
     window: &Window,
     cx: &App,
 ) -> AnyElement {
+    let height = list_height(rows, window, cx);
+    float_height(id, anchor, height, content, window, cx)
+}
+
+fn list_height(rows: usize, window: &Window, cx: &App) -> Pixels {
     let theme = cx.theme();
     let rem = window.rem_size();
-    let row = theme.control_height(ControlSize::Md).to_pixels(rem);
-    let height = (row * (rows + 1) as f32).min(theme.list_max_height().to_pixels(rem));
-    float_height(id, anchor, height, content, window, cx)
+    let row = theme.touch_minimum(theme.control_height(ControlSize::Md).to_pixels(rem));
+    (row * (rows + 1) as f32).min(theme.list_max_height().to_pixels(rem))
+}
+
+fn side_room(anchor: Bounds<Pixels>, visible: Bounds<Pixels>, up: bool, margin: Pixels) -> Pixels {
+    let (edge, anchor) = if up {
+        (visible.top(), anchor.top())
+    } else {
+        (anchor.bottom(), visible.bottom())
+    };
+    (anchor - edge - margin).max(Pixels::ZERO)
 }
 
 /// Whether `height` goes over `anchor`: it does not fit below, and above has more room.
@@ -311,6 +324,18 @@ impl Popup<'_> {
         let theme = cx.theme();
         let visible = window.fully_visible_bounds();
         let (anchor, pick) = (self.anchor, self.pick);
+        let height = list_height(self.rows.len(), window, cx);
+        let margin = theme.window_margin();
+        let row = theme.touch_minimum(
+            theme
+                .control_height(ControlSize::Md)
+                .to_pixels(window.rem_size()),
+        );
+        // One row plus the list's top and bottom padding remains usable in short layouts.
+        let minimum = (row + window.rem_size() * 0.5)
+            .min((visible.size.height - margin * 2.0).max(Pixels::ZERO));
+        let room =
+            side_room(anchor, visible, opens_up(anchor, height, visible), margin).max(minimum);
         let rows = self.rows.iter().enumerate().map(|(ix, choice)| {
             let pick = pick.clone();
             let checked = self.checked.map(|values| values.contains(&choice.value));
@@ -341,7 +366,7 @@ impl Popup<'_> {
                 theme
                     .list_max_height()
                     .to_pixels(window.rem_size())
-                    .min((visible.size.height - theme.window_margin() * 2.0).max(Pixels::ZERO)),
+                    .min(room),
             )
             .occlude()
             .overflow_y_scroll()
