@@ -279,64 +279,58 @@ impl RenderOnce for VersionHistory {
             )
             .into_any_element(),
         };
-        div()
+        let side = div()
+            .id((self.id.clone(), "versions"))
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
             .flex()
+            .flex_col()
+            .gap_0p5()
+            .p_2()
+            .child(
+                div()
+                    .px_2()
+                    .pb_1()
+                    .text_size(theme.text_size(TextSize::Xs))
+                    .text_color(colors.fg_subtle)
+                    .font_weight(FontWeight::MEDIUM)
+                    .child("Versions"),
+            )
+            .children(list)
+            .into_any_element();
+        let main = div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .px_4()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(colors.border)
+                    .child(view)
+                    .children(restore),
+            )
+            .child(
+                div()
+                    .id((self.id.clone(), "body"))
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .p_4()
+                    .child(body),
+            );
+        super::sidebar_split(Some(side), main, true, window, cx)
             .size_full()
             .rounded(theme.radius(Radius::Lg))
             .border_1()
             .border_color(colors.border)
             .overflow_hidden()
-            .child(
-                div()
-                    .id((self.id.clone(), "versions"))
-                    .flex_none()
-                    .w(theme.sidebar_width(false))
-                    .overflow_y_scroll()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .p_2()
-                    .border_r_1()
-                    .border_color(colors.border)
-                    .child(
-                        div()
-                            .px_2()
-                            .pb_1()
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(colors.fg_subtle)
-                            .font_weight(FontWeight::MEDIUM)
-                            .child("Versions"),
-                    )
-                    .children(list),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap_2()
-                            .px_4()
-                            .py_2()
-                            .border_b_1()
-                            .border_color(colors.border)
-                            .child(view)
-                            .children(restore),
-                    )
-                    .child(
-                        div()
-                            .id((self.id.clone(), "body"))
-                            .flex_1()
-                            .overflow_y_scroll()
-                            .p_4()
-                            .child(body),
-                    ),
-            )
     }
 }
 

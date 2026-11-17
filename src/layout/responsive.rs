@@ -1,4 +1,4 @@
-use gpui::{Bounds, Pixels, Point, ScrollHandle, point, size};
+use gpui::{Bounds, Pixels, Point, ScrollHandle, Size, point, size};
 
 /// Insets in logical window coordinates, before keyboard avoidance.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -97,6 +97,39 @@ pub fn keyboard_reveal_region(
 /// The caller chooses its breakpoint in logical pixels, independently of the operating system.
 pub fn is_compact(available: Bounds<Pixels>, breakpoint: Pixels) -> bool {
     available.size.width < breakpoint
+}
+
+/// Returns `supplied` clamped to `viewport`, or `viewport` inset by `margin`.
+pub fn overlay_bounds(
+    supplied: Option<Bounds<Pixels>>,
+    viewport: Size<Pixels>,
+    margin: Pixels,
+) -> Bounds<Pixels> {
+    match supplied {
+        Some(bounds) => {
+            let left = bounds.left().max(Pixels::ZERO).min(viewport.width);
+            let top = bounds.top().max(Pixels::ZERO).min(viewport.height);
+            Bounds::from_corners(
+                point(left, top),
+                point(
+                    bounds.right().max(left).min(viewport.width),
+                    bounds.bottom().max(top).min(viewport.height),
+                ),
+            )
+        }
+        None => {
+            let inset = margin.max(Pixels::ZERO);
+            let left = inset.min(viewport.width / 2.0);
+            let top = inset.min(viewport.height / 2.0);
+            Bounds::new(
+                point(left, top),
+                size(
+                    (viewport.width - left * 2.0).max(Pixels::ZERO),
+                    (viewport.height - top * 2.0).max(Pixels::ZERO),
+                ),
+            )
+        }
+    }
 }
 
 /// Translation for a painted field to fit; an oversized field reveals its leading edge.

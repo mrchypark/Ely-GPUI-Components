@@ -328,6 +328,8 @@ impl RenderOnce for Dialog {
                             .children(body_actions),
                     )
             });
+            let area =
+                crate::layout::overlay_bounds(self.usable_bounds, window.viewport_size(), margin);
             div()
                 .id(self.id.clone())
                 .role(Role::Dialog)
@@ -336,16 +338,12 @@ impl RenderOnce for Dialog {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .w(theme.dialog_width())
-                .max_h(window.viewport_size().height - margin * 2.0)
-                .when_some(self.usable_bounds, |card, bounds| {
-                    card.w(bounds
-                        .size
-                        .width
-                        .min(theme.dialog_width().to_pixels(window.rem_size())))
-                        .max_h(bounds.size.height)
-                        .overflow_hidden()
-                })
+                .w(area
+                    .size
+                    .width
+                    .min(theme.dialog_width().to_pixels(window.rem_size())))
+                .max_h(area.size.height)
+                .overflow_hidden()
                 .p_6()
                 .when(compact, |card| card.p_1().gap_1())
                 .rounded(theme.radius(Radius::Xl))

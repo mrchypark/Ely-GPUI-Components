@@ -445,3 +445,66 @@ fn two_markers_with_one_key_fail() {
     let _ = MapView::new("map", start())
         .markers([MapMarker::new("twin", at), MapMarker::new("twin", at)]);
 }
+
+#[test]
+fn to_view_to_geo_round_trip_and_antimeridian() {
+    use super::MAX_LAT;
+    let vp = MapViewport::new(LatLon::new(37.5665, 126.9780), 14.0);
+    for at in [
+        LatLon::new(37.5665, 126.9780),
+        LatLon::new(MAX_LAT, 180.0),
+        LatLon::new(-MAX_LAT, -180.0),
+    ] {
+        let pt = vp.to_view(at, SIZE, TILE);
+        let back = vp.to_geo(pt, SIZE, TILE);
+        assert!(
+            (back.lat - at.lat).abs() < 1e-4,
+            "lat mismatch: {back:?} vs {at:?}"
+        );
+        let dlon = (back.lon - at.lon).rem_euclid(360.0);
+        assert!(
+            dlon < 1e-4 || (360.0 - dlon) < 1e-4,
+            "lon mismatch: {back:?} vs {at:?}"
+        );
+    }
+}
+
+#[test]
+fn set_center_zoom_clamps_bounds() {
+    use super::MAX_LAT;
+    let mut vp = start();
+    vp.set_center_zoom(
+        LatLon {
+            lat: 90.0,
+            lon: 545.0,
+        },
+        99.0,
+    );
+    assert!((vp.center.lat - MAX_LAT).abs() < 1e-6);
+    assert!((vp.center.lon - (-175.0)).abs() < 1e-6);
+    assert_eq!(vp.zoom, MapViewport::ZOOMS.1);
+}
+
+#[gpui::test]
+fn laid_tile_unsupported_image_source_does_not_panic(cx: &mut TestAppContext) {
+    let laid = super::geo::Laid {
+        tile: Tile { z: 1, x: 0, y: 0 },
+        column: 0,
+        x: 0.0,
+        y: 0.0,
+        w: 256.0,
+        h: 256.0,
+    };
+    let (_, cx) = stage(|_, _| div().into_any_element(), cx);
+    let _ = cx.update(|window, cx| {
+        super::tile::laid_tile(
+            &laid,
+            ImageSource::Image(Arc::new(gpui::Image::from_bytes(
+                gpui::ImageFormat::Png,
+                Vec::new(),
+            ))),
+            window,
+            cx,
+        )
+    });
+}

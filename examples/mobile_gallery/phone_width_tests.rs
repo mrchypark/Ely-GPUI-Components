@@ -291,3 +291,29 @@ fn phone_tabs_real_strips_and_last_enabled_targets_fit_and_select(cx: &mut TestA
         }
     }
 }
+
+#[gpui::test]
+fn document_split_views_fit_mobile_and_tablet_widths(cx: &mut TestAppContext) {
+    let _files = crate::assets::prepare_test_files();
+    init(cx);
+    let (view, cx) = cx.add_window_view(MobileGallery::new);
+    for (width, height) in [(320., 844.), (390., 844.), (768., 1024.), (1024., 768.)] {
+        cx.simulate_resize(size(px(width), px(height)));
+        for story in [
+            "TemplatePicker",
+            "PrintPreview / PrintSettings",
+            "EpubReader / ReadingProgress / ZenMode",
+            "VersionHistory / PageHistoryDiff",
+        ] {
+            view.update(cx, |view, cx| {
+                assert!(view.select_story("documents", story, cx), "missing {story}");
+            });
+            draw(cx);
+            let content = cx.debug_bounds("gallery-content").expect("gallery-content");
+            assert!(
+                content.size.width <= px(width),
+                "{story} overflowed {width}px: {content:?}"
+            );
+        }
+    }
+}

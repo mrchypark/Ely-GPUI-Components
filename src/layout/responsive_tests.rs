@@ -296,3 +296,54 @@ fn bounded_sheet_scrolls_tall_nonshrinking_content(cx: &mut TestAppContext) {
         "the content's end is reachable"
     );
 }
+
+#[gpui::test]
+fn narrow_phone_clamps_toast_and_palette_without_usable_bounds(cx: &mut TestAppContext) {
+    use gpui::AppContext as _;
+
+    cx.update(|cx| {
+        crate::init_for_tests(cx);
+        crate::theme::Theme::update(cx, |theme| {
+            theme.touch_mode = true;
+            theme.reduced_motion = true;
+        });
+    });
+    struct Overlays {
+        toaster: gpui::Entity<crate::feedback::Toaster>,
+    }
+    impl Render for Overlays {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .child(crate::feedback::ToastViewport::new("toasts", &self.toaster))
+                .child(
+                    crate::navigation::CommandPalette::new("palette", |_, _| {})
+                        .group("Actions", [crate::navigation::Command::new("a", "Alpha")]),
+                )
+        }
+    }
+    let (view, cx) = cx.add_window_view(|_, cx| {
+        let toaster = cx.new(|_| crate::feedback::Toaster::default());
+        toaster.update(cx, |t, cx| {
+            t.push(crate::feedback::Toast::new("Saved"), cx);
+        });
+        Overlays { toaster }
+    });
+    cx.simulate_resize(gpui::size(px(320.), px(640.)));
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    let toast = cx.debug_bounds("toast-stack").expect("toast-stack");
+    assert!(
+        toast.left() >= px(0.) && toast.right() <= px(320.),
+        "toast overflowed 320px viewport: {toast:?}"
+    );
+    let palette = cx.debug_bounds("palette-card").expect("palette-card");
+    assert!(
+        palette.left() >= px(0.) && palette.right() <= px(320.),
+        "palette overflowed 320px viewport: {palette:?}"
+    );
+    drop(view);
+}

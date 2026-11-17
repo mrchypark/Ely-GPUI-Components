@@ -115,7 +115,7 @@ fn row(label: &'static str, control: impl IntoElement, cx: &App) -> impl IntoEle
 }
 
 impl RenderOnce for PrintPreview {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = theme.colors.clone();
         let settings = self.settings;
@@ -213,99 +213,93 @@ impl RenderOnce for PrintPreview {
         };
         let (print, cancel) = (self.on_print.clone(), self.on_cancel.clone());
         let thumb = theme.label_width();
-        div()
+        let desk = div()
+            .id((self.id.clone(), "desk"))
+            .flex_1()
+            .min_w_0()
+            .overflow_y_scroll()
+            .bg(colors.sunken)
+            .p_6()
             .flex()
+            .flex_wrap()
+            .content_start()
+            .gap_4()
+            .children(self.pages.iter().enumerate().map(|(ix, page)| {
+                let (width, height) = sheet(settings);
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        div()
+                            .w(thumb)
+                            .h(thumb * (height / width))
+                            .bg(colors.paper)
+                            .shadow(theme.elevation(Elevation::Raised))
+                            .p(thumb * margin(settings.margins))
+                            .child(
+                                Image::new(
+                                    (self.id.clone(), format!("sheet-{ix}")),
+                                    source(&page.source),
+                                )
+                                .fit(ObjectFit::Contain)
+                                .size_full(),
+                            ),
+                    )
+                    .child(
+                        tabular(
+                            div()
+                                .text_size(theme.text_size(TextSize::Xs))
+                                .text_color(colors.fg_subtle),
+                        )
+                        .child(format!("{}", ix + 1)),
+                    )
+            }));
+        let panel = div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .gap_4()
+            .p_4()
+            .bg(colors.surface)
+            .child(div().text_color(colors.fg_muted).child(format!(
+                "{} · {}",
+                plural(self.pages.len() as u64, "page", "pages"),
+                plural(settings.copies as u64, "copy", "copies")
+            )))
+            .child(row("Paper", paper, cx))
+            .child(row("Turn", turn, cx))
+            .child(row("Margins", margins, cx))
+            .child(row("Copies", copies, cx))
+            .child(div().flex_1())
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        Button::new((self.id.clone(), "cancel"), "Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .on_click(move |_, window, cx| cancel(window, cx)),
+                    )
+                    .child(
+                        Button::new((self.id.clone(), "print"), "Print")
+                            .variant(ButtonVariant::Primary)
+                            .on_click(move |_, window, cx| {
+                                log::info!("print preview: print {settings:?}");
+                                print(settings, window, cx)
+                            }),
+                    ),
+            )
+            .into_any_element();
+        super::sidebar_split(Some(panel), desk, false, window, cx)
             .size_full()
             .rounded(theme.radius(Radius::Lg))
             .border_1()
             .border_color(colors.border)
             .overflow_hidden()
-            .child(
-                div()
-                    .id((self.id.clone(), "desk"))
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_y_scroll()
-                    .bg(colors.sunken)
-                    .p_6()
-                    .flex()
-                    .flex_wrap()
-                    .content_start()
-                    .gap_4()
-                    .children(self.pages.iter().enumerate().map(|(ix, page)| {
-                        let (width, height) = sheet(settings);
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .w(thumb)
-                                    .h(thumb * (height / width))
-                                    .bg(colors.paper)
-                                    .shadow(theme.elevation(Elevation::Raised))
-                                    .p(thumb * margin(settings.margins))
-                                    .child(
-                                        Image::new(
-                                            (self.id.clone(), format!("sheet-{ix}")),
-                                            source(&page.source),
-                                        )
-                                        .fit(ObjectFit::Contain)
-                                        .size_full(),
-                                    ),
-                            )
-                            .child(
-                                tabular(
-                                    div()
-                                        .text_size(theme.text_size(TextSize::Xs))
-                                        .text_color(colors.fg_subtle),
-                                )
-                                .child(format!("{}", ix + 1)),
-                            )
-                    })),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .w(theme.sidebar_width(false))
-                    .flex()
-                    .flex_col()
-                    .gap_4()
-                    .p_4()
-                    .border_l_1()
-                    .border_color(colors.border)
-                    .bg(colors.surface)
-                    .child(div().text_color(colors.fg_muted).child(format!(
-                        "{} · {}",
-                        plural(self.pages.len() as u64, "page", "pages"),
-                        plural(settings.copies as u64, "copy", "copies")
-                    )))
-                    .child(row("Paper", paper, cx))
-                    .child(row("Turn", turn, cx))
-                    .child(row("Margins", margins, cx))
-                    .child(row("Copies", copies, cx))
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .flex()
-                            .justify_end()
-                            .gap_2()
-                            .child(
-                                Button::new((self.id.clone(), "cancel"), "Cancel")
-                                    .variant(ButtonVariant::Ghost)
-                                    .on_click(move |_, window, cx| cancel(window, cx)),
-                            )
-                            .child(
-                                Button::new((self.id.clone(), "print"), "Print")
-                                    .variant(ButtonVariant::Primary)
-                                    .on_click(move |_, window, cx| {
-                                        log::info!("print preview: print {settings:?}");
-                                        print(settings, window, cx)
-                                    }),
-                            ),
-                    ),
-            )
     }
 }
 

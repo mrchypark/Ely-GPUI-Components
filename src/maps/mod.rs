@@ -15,7 +15,7 @@ mod world;
 
 pub use choropleth::{ChoroplethKey, ChoroplethLayer, ChoroplethMap};
 pub use coords::{CoordFormat, CoordinateDisplay};
-pub use geo::{LatLon, MAX_LAT, MapViewport, Tile};
+pub use geo::{LatLon, MAX_LAT, MapViewport, Tile, project, unproject};
 pub use geojson::{Feature, Geometry, read_geojson};
 pub use layer::{GeoHeatmap, GeoJsonLayer, MapLayer, RouteLine};
 pub use marker::{MapMarker, MapPopup};

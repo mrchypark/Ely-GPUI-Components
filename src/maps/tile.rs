@@ -78,10 +78,7 @@ pub(crate) fn laid_tile(
     let decoded = match source {
         ImageSource::Render(image) => Some(Ok(image)),
         ImageSource::Resource(resource) => window.use_asset::<ImgResourceLoader>(&resource, cx),
-        _ => panic!(
-            "map tile {:?}: a web address, a file or a picture drawn in code",
-            laid.tile
-        ),
+        _ => return slot.into_any_element(),
     };
     let image = match decoded {
         None => return slot.into_any_element(),

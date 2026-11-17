@@ -22,14 +22,14 @@ impl LatLon {
 pub const MAX_LAT: f64 = 85.051_128_78;
 
 /// A place on Web Mercator's unit square: x east from 180° west, y south from the top.
-pub(crate) fn project(at: LatLon) -> (f64, f64) {
+pub fn project(at: LatLon) -> (f64, f64) {
     let phi = at.lat.clamp(-MAX_LAT, MAX_LAT).to_radians();
     let y = (1.0 - (phi.tan() + 1.0 / phi.cos()).ln() / PI) / 2.0;
     ((at.lon + 180.0) / 360.0, y)
 }
 
 /// The place at a point of the unit square; x wraps around the globe.
-pub(crate) fn unproject((x, y): (f64, f64)) -> LatLon {
+pub fn unproject((x, y): (f64, f64)) -> LatLon {
     let lat = (PI * (1.0 - 2.0 * y.clamp(0.0, 1.0))).sinh().atan();
     LatLon::new(lat.to_degrees(), x.rem_euclid(1.0) * 360.0 - 180.0)
 }
@@ -85,8 +85,30 @@ impl MapViewport {
         (x * side, y * side)
     }
 
+    /// Updates center (clamped to `±MAX_LAT`, wrapped to `[-180, 180]`) and zoom (clamped to `ZOOMS`).
+    pub fn set_center_zoom(&mut self, center: LatLon, zoom: f64) {
+        let (least, most) = Self::ZOOMS;
+        let lat = if center.lat.is_finite() {
+            center.lat.clamp(-MAX_LAT, MAX_LAT)
+        } else {
+            self.center.lat
+        };
+        let lon = if center.lon.is_finite() {
+            ((center.lon + 180.0).rem_euclid(360.0)) - 180.0
+        } else {
+            self.center.lon
+        };
+        let z = if zoom.is_finite() {
+            zoom.clamp(least, most)
+        } else {
+            self.zoom
+        };
+        self.center = LatLon::new(lat, lon);
+        self.zoom = z;
+    }
+
     /// A place in view pixels from the view's top left: of the globe's copies, the one nearest the center.
-    pub(crate) fn to_view(self, at: LatLon, (w, h): (f32, f32), tile: f32) -> (f32, f32) {
+    pub fn to_view(self, at: LatLon, (w, h): (f32, f32), tile: f32) -> (f32, f32) {
         let side = self.world(tile);
         let (cx, cy) = self.middle(tile);
         let (x, y) = project(at);
@@ -98,7 +120,7 @@ impl MapViewport {
     }
 
     /// The place at a view point.
-    pub(crate) fn to_geo(self, (x, y): (f32, f32), (w, h): (f32, f32), tile: f32) -> LatLon {
+    pub fn to_geo(self, (x, y): (f32, f32), (w, h): (f32, f32), tile: f32) -> LatLon {
         let side = self.world(tile);
         let (cx, cy) = self.middle(tile);
         unproject((
@@ -108,19 +130,13 @@ impl MapViewport {
     }
 
     /// Moved so the map slides by a view distance.
-    pub(crate) fn panned(self, (dx, dy): (f32, f32), size: (f32, f32), tile: f32) -> Self {
+    pub fn panned(self, (dx, dy): (f32, f32), size: (f32, f32), tile: f32) -> Self {
         let (cx, cy) = self.middle(tile);
         self.centered((cx - f64::from(dx), cy - f64::from(dy)), size, tile)
     }
 
     /// Zoomed by `levels` about a view point, whose place stays under it; held inside the zooms.
-    pub(crate) fn zoomed(
-        self,
-        levels: f64,
-        about: (f32, f32),
-        size: (f32, f32),
-        tile: f32,
-    ) -> Self {
+    pub fn zoomed(self, levels: f64, about: (f32, f32), size: (f32, f32), tile: f32) -> Self {
         let (least, most) = Self::ZOOMS;
         let (x, y) = project(self.to_geo(about, size, tile));
         let next = Self {

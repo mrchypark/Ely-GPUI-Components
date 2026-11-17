@@ -32,8 +32,8 @@ pub(crate) use narrow::{measure_width, text_width};
 pub use page::{AppShell, MasterDetail, Page};
 pub use panes::{PaneGroup, PaneId, PaneLayout};
 pub use responsive::{
-    ViewportInsets, is_compact, keyboard_clear_bounds, keyboard_reveal_region, reveal_in_bounds,
-    reveal_offset, usable_bounds,
+    ViewportInsets, is_compact, keyboard_clear_bounds, keyboard_reveal_region, overlay_bounds,
+    reveal_in_bounds, reveal_offset, usable_bounds,
 };
 pub use scroll::{ScrollArea, Scrollbar, on_axis, reveal_when_focused_in_bounds};
 pub(crate) use scroll::{bring_into_view, reveal_when_focused};

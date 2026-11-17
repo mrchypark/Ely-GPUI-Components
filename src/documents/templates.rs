@@ -270,48 +270,43 @@ impl RenderOnce for TemplatePicker {
                 .child(i18n::text(cx, "templates.none", &[]))
                 .into_any_element(),
         };
-        div()
+        let side = div()
+            .flex_1()
+            .min_h_0()
             .flex()
+            .flex_col()
+            .gap_2()
+            .p_2()
+            .child(
+                Input::new(&search).size(ControlSize::Sm).prefix(
+                    Icon::new(IconName::Search)
+                        .size(IconSize::Sm)
+                        .color(colors.fg_subtle),
+                ),
+            )
+            .child(chips)
+            .child(
+                div()
+                    .id((self.id.clone(), "list"))
+                    .role(Role::List)
+                    .aria_label(i18n::text(cx, "templates.list", &[]))
+                    .track_focus(&focus)
+                    .focus_ring(cx)
+                    .on_key_down(keys)
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .children(rows),
+            )
+            .into_any_element();
+        super::sidebar_split(Some(side), preview, true, window, cx)
             .size_full()
             .rounded(theme.radius(Radius::Lg))
             .border_1()
             .border_color(colors.border)
             .overflow_hidden()
-            .child(
-                div()
-                    .flex_none()
-                    .w(theme.sidebar_width(false))
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .p_2()
-                    .border_r_1()
-                    .border_color(colors.border)
-                    .child(
-                        Input::new(&search).size(ControlSize::Sm).prefix(
-                            Icon::new(IconName::Search)
-                                .size(IconSize::Sm)
-                                .color(colors.fg_subtle),
-                        ),
-                    )
-                    .child(chips)
-                    .child(
-                        div()
-                            .id((self.id.clone(), "list"))
-                            .role(Role::List)
-                            .aria_label(i18n::text(cx, "templates.list", &[]))
-                            .track_focus(&focus)
-                            .focus_ring(cx)
-                            .on_key_down(keys)
-                            .flex_1()
-                            .overflow_y_scroll()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .children(rows),
-                    ),
-            )
-            .child(preview)
     }
 }
 

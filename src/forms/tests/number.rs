@@ -122,3 +122,32 @@ fn a_blur_commits_the_typed_number(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(view.read_with(cx, |view, _| view.values.clone()), [12.0]);
 }
+
+#[gpui::test]
+fn disabled_number_input_ignores_steps_and_focus(cx: &mut TestAppContext) {
+    setup(cx);
+    cx.update(|cx| crate::theme::Theme::update(cx, |theme| theme.touch_mode = true));
+    struct DisabledNumber {
+        changes: Vec<f64>,
+    }
+    impl Render for DisabledNumber {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let view = cx.entity();
+            NumberInput::new("disabled-num", 5.0)
+                .range(0.0, 10.0)
+                .disabled(true)
+                .on_change(move |v, _, cx| view.update(cx, |view, _| view.changes.push(v)))
+        }
+    }
+    let (view, cx) = cx.add_window_view(|_, _| DisabledNumber {
+        changes: Vec::new(),
+    });
+    cx.run_until_parked();
+    let root = cx.debug_bounds("number-root").expect("number-root");
+    cx.simulate_click(root.center(), gpui::Modifiers::none());
+    cx.simulate_keystrokes("9 up");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |view, _| view.changes.is_empty()));
+    let settled = crate::forms::number::settle(0.15, 0.1, 0.2, 0);
+    assert!((0.1..=0.2).contains(&settled));
+}

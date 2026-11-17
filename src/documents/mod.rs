@@ -23,7 +23,10 @@ mod toolbar;
 mod tree;
 mod viewer;
 
-use gpui::App;
+use crate::theme::ActiveTheme;
+use gpui::{
+    AnyElement, App, Div, IntoElement, ParentElement, Styled, Window, div, prelude::FluentBuilder,
+};
 
 pub(crate) use blocks::source;
 pub use blocks::{Align, BlockData, BlockEditor, BlockEvent, BlockKind, Media};
@@ -51,4 +54,47 @@ pub use viewer::{DocPage, DocumentViewer, PageHit, PageNote};
 /// Binds the documents keys. `init` calls it.
 pub(crate) fn bind_keys(cx: &mut App) {
     rich::bind_keys(cx);
+}
+
+/// Side-by-side on wide screens, stacked vertically on compact touch phones.
+pub(super) fn sidebar_split(
+    side: Option<AnyElement>,
+    main: impl IntoElement,
+    side_first: bool,
+    window: &Window,
+    cx: &App,
+) -> Div {
+    let theme = cx.theme();
+    let compact = theme.touch_mode && window.viewport_size().width < theme.touch_compact_width();
+    let border = theme.colors.border;
+    let side_width = theme.sidebar_width(false);
+    let side = side.map(|inner| {
+        let panel = div().flex().flex_col().overflow_hidden();
+        let panel = if compact {
+            panel.w_full().flex_none().max_h(side_width)
+        } else {
+            panel.flex_none().w(side_width).h_full()
+        };
+        let panel = match (compact, side_first) {
+            (true, true) => panel.border_b_1(),
+            (true, false) => panel.border_t_1(),
+            (false, true) => panel.border_r_1(),
+            (false, false) => panel.border_l_1(),
+        };
+        panel.border_color(border).child(inner)
+    });
+    let main = div()
+        .flex_1()
+        .min_w_0()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .when(compact, |el| el.w_full())
+        .child(main);
+    let root = div().flex().when(compact, |el| el.flex_col());
+    if side_first {
+        root.children(side).child(main)
+    } else {
+        root.child(main).children(side)
+    }
 }

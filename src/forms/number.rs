@@ -40,10 +40,10 @@ pub(super) fn settle(value: f64, min: f64, max: f64, precision: usize) -> f64 {
         on_grid(min, scale, f64::ceil),
         on_grid(max, scale, f64::floor),
     );
-    assert!(
-        low <= high,
-        "no {precision}-place number lies in {min}..={max}"
-    );
+    if low > high {
+        log::error!("number settle: no {precision}-place number lies in {min}..={max}");
+        return value.clamp(min.min(max), min.max(max));
+    }
     ((value * scale).round() / scale).clamp(low, high)
 }
 
@@ -208,6 +208,7 @@ pub struct NumberInput {
     scrub_label: Option<SharedString>,
     label: SharedString,
     blank: Option<SharedString>,
+    disabled: bool,
 }
 
 impl NumberInput {
@@ -227,7 +228,13 @@ impl NumberInput {
             scrub_label: None,
             label: SharedString::default(),
             blank: None,
+            disabled: false,
         }
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
     }
 
     /// The name assistive technology reads, drawn nowhere.
@@ -312,8 +319,12 @@ impl RenderOnce for NumberInput {
             Some(_) => String::new(),
             None => format::number(value, self.precision, Separators::EN),
         };
+        let disabled = self.disabled;
         let input = state.read(cx).input.clone();
-        input.update(cx, |input, cx| input.set_keyboard_type(keyboard_type, cx));
+        input.update(cx, |input, cx| {
+            input.set_keyboard_type(keyboard_type, cx);
+            input.set_disabled(disabled, cx);
+        });
         #[cfg(all(test, feature = "test-support"))]
         keyboard_hint_tests::record(self.id.clone(), input.clone());
         let editing = input.read(cx).focus().is_focused(window);
@@ -361,27 +372,38 @@ impl RenderOnce for NumberInput {
                 .whitespace_nowrap()
                 .text_size(theme.text_size(TextSize::Sm))
                 .text_color(theme.colors.fg_muted)
+                .when(disabled, |el| el.opacity(0.4))
                 .child(label)
                 .into_any_element();
+            if disabled {
+                face
+            } else {
+                scrub_handle(
+                    (self.id.clone(), "label").into(),
+                    face,
+                    state.clone(),
+                    window,
+                    cx,
+                )
+                .into_any_element()
+            }
+        });
+        let subtle = cx.theme().colors.fg_subtle;
+        let grip_icon = Icon::new(IconName::ChevronsUpDown)
+            .size(IconSize::Xs)
+            .color(subtle);
+        let grip = if disabled {
+            div().opacity(0.4).child(grip_icon).into_any_element()
+        } else {
             scrub_handle(
-                (self.id.clone(), "label").into(),
-                face,
-                state.clone(),
+                (self.id.clone(), "grip").into(),
+                grip_icon.into_any_element(),
+                state,
                 window,
                 cx,
             )
-        });
-        let subtle = cx.theme().colors.fg_subtle;
-        let grip = scrub_handle(
-            (self.id.clone(), "grip").into(),
-            Icon::new(IconName::ChevronsUpDown)
-                .size(IconSize::Xs)
-                .color(subtle)
-                .into_any_element(),
-            state,
-            window,
-            cx,
-        );
+            .into_any_element()
+        };
         let theme = cx.theme();
         let colors = &theme.colors;
         let half = |id: &'static str, icon: IconName, enabled: bool, act: Nudge| {
@@ -412,11 +434,16 @@ impl RenderOnce for NumberInput {
             .h_full()
             .border_l_1()
             .border_color(colors.border)
-            .child(half("up", IconName::ChevronUp, now < max, Box::new(up)))
+            .child(half(
+                "up",
+                IconName::ChevronUp,
+                !disabled && now < max,
+                Box::new(up),
+            ))
             .child(half(
                 "down",
                 IconName::ChevronDown,
-                now > min,
+                !disabled && now > min,
                 Box::new(down),
             ));
         let ends = [min, max].map(|end| format::number(end, self.precision, Separators::EN));
@@ -456,11 +483,15 @@ impl RenderOnce for NumberInput {
                     .min_w_0()
                     .capture_action(move |_: &Up, window, cx| {
                         cx.stop_propagation();
-                        key_up(window, cx);
+                        if !disabled {
+                            key_up(window, cx);
+                        }
                     })
                     .capture_action(move |_: &Down, window, cx| {
                         cx.stop_propagation();
-                        key_down(window, cx);
+                        if !disabled {
+                            key_down(window, cx);
+                        }
                     })
                     .child(field),
             )

@@ -1,10 +1,10 @@
 use std::{rc::Rc, time::Duration};
 
 use gpui::{
-    Anchor, Animation, AnimationExt, AnyElement, App, ClickEvent, Context, ElementId, Entity,
-    FontWeight, HoverListenerMode, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Task, Window,
-    anchored, canvas, div, point, prelude::*, relative,
+    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, ClickEvent, Context, ElementId,
+    Entity, FontWeight, HoverListenerMode, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled,
+    Task, Window, anchored, canvas, div, point, prelude::*, relative,
 };
 use web_time::Instant;
 
@@ -247,6 +247,7 @@ fn run(live: &mut Live, cx: &mut Context<Toaster>) {
 pub struct ToastViewport {
     id: ElementId,
     toaster: Entity<Toaster>,
+    usable_bounds: Option<Bounds<Pixels>>,
 }
 
 impl ToastViewport {
@@ -254,7 +255,14 @@ impl ToastViewport {
         Self {
             id: id.into(),
             toaster: toaster.clone(),
+            usable_bounds: None,
         }
+    }
+
+    /// Constrains the toast stack to logical window bounds supplied by the host.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 }
 
@@ -264,8 +272,10 @@ impl RenderOnce for ToastViewport {
             return div().id(self.id).into_any_element();
         }
         let theme = cx.theme();
-        let (width, margin) = (theme.toast_width(), theme.window_margin());
-        let viewport = window.viewport_size();
+        let rem = window.rem_size();
+        let (width, margin) = (theme.toast_width().to_pixels(rem), theme.window_margin());
+        let area =
+            crate::layout::overlay_bounds(self.usable_bounds, window.viewport_size(), margin);
         let hold = self.toaster.clone();
         let tapped = self.toaster.clone();
         let mut cards = Vec::new();
@@ -278,7 +288,7 @@ impl RenderOnce for ToastViewport {
             .occlude()
             .flex()
             .flex_col()
-            .w(width)
+            .w(area.size.width.min(width))
             // A finger has no hover to leave, so the pointer never holds the clock on touch.
             .when(!cx.theme().touch_mode, |stack| {
                 stack
@@ -295,7 +305,7 @@ impl RenderOnce for ToastViewport {
         raise(
             (self.id, "raised"),
             anchored()
-                .position(point(viewport.width - margin, viewport.height - margin))
+                .position(point(area.right(), area.bottom()))
                 .anchor(Anchor::BottomRight)
                 .child(stack),
         )

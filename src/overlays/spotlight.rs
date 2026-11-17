@@ -233,6 +233,7 @@ pub struct Spotlight {
     id: ElementId,
     step: TourStep,
     label: SharedString,
+    usable_bounds: Option<Bounds<Pixels>>,
     on_close: Run,
 }
 
@@ -246,8 +247,15 @@ impl Spotlight {
             id: id.into(),
             step,
             label: "Got it".into(),
+            usable_bounds: None,
             on_close: Rc::new(on_close),
         }
+    }
+
+    /// Constrains the card width to logical window bounds supplied by the host.
+    pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
+        self.usable_bounds = Some(bounds);
+        self
     }
 
     /// The button's label, Got it unless set.
@@ -270,13 +278,20 @@ impl RenderOnce for Spotlight {
             })
         };
         let button = close.clone();
+        let rem = window.rem_size();
+        let theme = cx.theme();
+        let area = crate::layout::overlay_bounds(
+            self.usable_bounds,
+            window.viewport_size(),
+            theme.window_margin(),
+        );
         let card = FocusScope::new(&focus).trap().child(
             surface((self.id.clone(), "surface"), cx)
                 .p_4()
                 .flex()
                 .flex_col()
                 .gap_3()
-                .max_w(cx.theme().dialog_width())
+                .max_w(area.size.width.min(theme.dialog_width().to_pixels(rem)))
                 .child(words(self.step.title, self.step.body, cx))
                 .child(
                     div().flex().justify_end().child(

@@ -381,24 +381,26 @@ impl Palette {
         let dismiss = self.on_close.clone();
         let (up, down, escape) = (go.clone(), go, self.on_close);
         let (enter, chosen) = (pick, cursor.clone());
+        let rem = window.rem_size();
+        let area = crate::layout::overlay_bounds(
+            self.usable_bounds,
+            window.viewport_size(),
+            theme.window_margin(),
+        );
         let card = div()
             .id(self.id.clone())
             .debug_selector(|| "palette-card".into())
             .flex()
             .flex_col()
-            .w(theme.palette_size().width)
-            .h(theme.palette_size().height)
-            .when_some(self.usable_bounds, |card, area| {
-                card.w(area
-                    .size
-                    .width
-                    .min(theme.palette_size().width.to_pixels(window.rem_size())))
-                    .h(area
-                        .size
-                        .height
-                        .min(theme.palette_size().height.to_pixels(window.rem_size())))
-                    .overflow_hidden()
-            })
+            .w(area
+                .size
+                .width
+                .min(theme.palette_size().width.to_pixels(rem)))
+            .h(area
+                .size
+                .height
+                .min(theme.palette_size().height.to_pixels(rem)))
+            .overflow_hidden()
             .rounded(theme.radius(Radius::Xl))
             .bg(colors.overlay)
             .border_1()

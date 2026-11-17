@@ -105,15 +105,13 @@ impl RenderOnce for EpubReader {
         let listed = contents.then(|| {
             div()
                 .id((self.id.clone(), "chapters"))
-                .flex_none()
-                .w(theme.sidebar_width(false))
+                .flex_1()
+                .min_h_0()
                 .overflow_y_scroll()
                 .flex()
                 .flex_col()
                 .gap_0p5()
                 .p_2()
-                .border_r_1()
-                .border_color(colors.border)
                 .children(self.chapters.iter().enumerate().map(|(ix, entry)| {
                     div()
                         .id((self.id.clone(), format!("chapter-{ix}")))
@@ -190,7 +188,8 @@ impl RenderOnce for EpubReader {
             )
             .child(ReadingProgress::new(&scroll))
             .child(
-                div().flex().flex_1().min_h_0().children(listed).child(
+                super::sidebar_split(
+                    listed.map(IntoElement::into_any_element),
                     div()
                         .id((self.id.clone(), "page"))
                         .flex_1()
@@ -240,7 +239,12 @@ impl RenderOnce for EpubReader {
                                         }))),
                                 ),
                         ),
-                ),
+                    true,
+                    window,
+                    cx,
+                )
+                .flex_1()
+                .min_h_0(),
             )
     }
 }

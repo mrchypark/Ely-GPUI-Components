@@ -21,6 +21,7 @@ use crate::{
 };
 
 type TileSource = Rc<dyn Fn(Tile) -> ImageSource>;
+type OverlayBuilder = Rc<dyn Fn(&MapViewport, Bounds<Pixels>) -> AnyElement>;
 pub(crate) type OnMapViewport = Rc<dyn Fn(MapViewport, &mut Window, &mut App)>;
 /// The viewport and the view's size as they stand now.
 type Now = Rc<dyn Fn(&App) -> (MapViewport, (f32, f32))>;
@@ -53,6 +54,8 @@ pub struct MapView {
     on_marker: Option<OnMarker>,
     popup: Option<MapPopup>,
     pub(crate) on_viewport: Option<OnMapViewport>,
+    overlay: Option<OverlayBuilder>,
+    interactive: bool,
 }
 
 impl MapView {
@@ -69,6 +72,8 @@ impl MapView {
             on_marker: None,
             popup: None,
             on_viewport: None,
+            overlay: None,
+            interactive: true,
         }
     }
 
@@ -144,6 +149,21 @@ impl MapView {
         self.on_viewport = Some(Rc::new(handler));
         self
     }
+
+    /// Renders a custom GPUI overlay clipped to map bounds above tiles/layers and below markers.
+    pub fn overlay(
+        mut self,
+        builder: impl Fn(&MapViewport, Bounds<Pixels>) -> AnyElement + 'static,
+    ) -> Self {
+        self.overlay = Some(Rc::new(builder));
+        self
+    }
+
+    /// Enables or disables built-in pointer/key pan and zoom on the map view.
+    pub fn interactive(mut self, enabled: bool) -> Self {
+        self.interactive = enabled;
+        self
+    }
 }
 
 fn sized(bounds: Bounds<Pixels>) -> (f32, f32) {
@@ -169,12 +189,6 @@ impl RenderOnce for MapView {
             let (local, on_viewport) = (local.clone(), self.on_viewport.clone());
             let (regrouped, map) = (stage.clone(), focus.clone());
             Rc::new(move |next, window, cx| {
-                log::debug!(
-                    "map: {:.4}, {:.4} at zoom {:.2}",
-                    next.center.lat,
-                    next.center.lon,
-                    next.zoom
-                );
                 let zoomed = next.zoom != local.read(cx).value.zoom;
                 let held = regrouped
                     .read(cx)
@@ -202,6 +216,17 @@ impl RenderOnce for MapView {
                 .collect(),
             None => Vec::new(),
         };
+        let interactive = self.interactive;
+        let bounds = stage.read(cx).bounds;
+        let overlay_el = self.overlay.as_ref().map(|builder| {
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .overflow_hidden()
+                .child(builder(&view, bounds))
+        });
         let layers = painted(self.layers, view, size, tile, window, cx);
         let pins = Laying {
             markers: self.markers,
@@ -320,6 +345,9 @@ impl RenderOnce for MapView {
             .focus_ring(cx)
             .cursor_grab()
             .on_key_down(move |event, window, cx| {
+                if !interactive {
+                    return;
+                }
                 let held = &event.keystroke.modifiers;
                 if held.platform || held.control || held.alt {
                     return;
@@ -347,6 +375,9 @@ impl RenderOnce for MapView {
                 by_key(next, window, cx);
             })
             .on_scroll(move |event, window, cx| {
+                if !interactive {
+                    return;
+                }
                 let delta = event.delta.pixel_delta(window.line_height());
                 let (dx, dy) = (f32::from(delta.x), f32::from(delta.y));
                 if (dx, dy) == (0.0, 0.0) {
@@ -365,6 +396,9 @@ impl RenderOnce for MapView {
             })
             // Consume recognized pinch deltas here; convert cumulative streams and never synthesize a second pinch.
             .on_pinch(move |event, window, cx| {
+                if !interactive {
+                    return;
+                }
                 cx.stop_propagation();
                 if event.phase == TouchPhase::Cancelled {
                     pinched.update(cx, |stage, _| stage.grip = None);
@@ -393,12 +427,15 @@ impl RenderOnce for MapView {
                 by_pinch(next, window, cx);
             })
             .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                if !interactive {
+                    return;
+                }
                 let (view, _) = held(cx);
                 pressed.update(cx, |stage, _| stage.grip = Some((event.position, view)))
             })
             .on_drag(Pan { owner }, |_, _, _, cx| cx.new(|_| EmptyView))
             .on_drag_move::<Pan>(move |event, window, cx| {
-                if event.drag(cx).owner != owner {
+                if !interactive || event.drag(cx).owner != owner {
                     return;
                 }
                 let stage = dragged.read(cx);
@@ -416,6 +453,7 @@ impl RenderOnce for MapView {
             .on_drop(move |_: &Pan, _, cx| dropped.update(cx, |stage, _| stage.grip = None))
             .children(tiles)
             .children(layers)
+            .children(overlay_el)
             .children(pins.elements)
             .child(controls)
             .children(attribution)
