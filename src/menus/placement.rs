@@ -20,13 +20,6 @@ pub(super) struct Bounded {
     child: gpui::AnyElement,
 }
 
-impl gpui::IntoElement for Bounded {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
 impl gpui::Element for Bounded {
     type RequestLayoutState = gpui::LayoutId;
     type PrepaintState = ();

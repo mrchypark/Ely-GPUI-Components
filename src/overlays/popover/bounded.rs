@@ -81,13 +81,6 @@ struct Bounded {
     child: AnyElement,
 }
 
-impl IntoElement for Bounded {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
 impl Element for Bounded {
     type RequestLayoutState = LayoutId;
     type PrepaintState = ();
