@@ -214,3 +214,52 @@ fn a_press_on_a_suggestion_left_out_decides_nothing(cx: &mut TestAppContext) {
         [Decision::Accept(0)]
     );
 }
+
+#[gpui::test]
+fn empty_comment_thread_renders_empty_state_and_reply(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        forms::bind_keys(cx);
+    });
+    struct EmptyThread {
+        field: Entity<TextInput>,
+        sent: usize,
+    }
+    impl Render for EmptyThread {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let owner = cx.entity();
+            let thread = super::Thread {
+                key: "empty".into(),
+                quote: None,
+                comments: Vec::new(),
+                resolved: false,
+            };
+            div()
+                .size_full()
+                .child(super::CommentThread::new("empty-thread", thread).reply(
+                    &self.field,
+                    move |_, cx| {
+                        owner.update(cx, |view, _| view.sent += 1);
+                    },
+                ))
+        }
+    }
+    let (view, cx) = cx.add_window_view(|window, cx| EmptyThread {
+        field: cx.new(|cx| TextInput::new(window, cx)),
+        sent: 0,
+    });
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("comment-thread-empty").is_some(),
+        "empty state renders when thread has no comments"
+    );
+    cx.update(|window, cx| {
+        window.activate_window();
+        let field = view.read(cx).field.focus_handle(cx);
+        window.focus(&field, cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_input("first comment");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(view.read_with(cx, |view, _| view.sent), 1);
+}

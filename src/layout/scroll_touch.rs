@@ -159,3 +159,52 @@ fn a_touch_scrollbar_stays_out_when_nothing_is_hovered(cx: &mut TestAppContext) 
         cx.debug_bounds("scrollbar-bar")
     );
 }
+
+#[gpui::test]
+fn scroll_area_pull_to_refresh_fires_and_shows_indicator(cx: &mut TestAppContext) {
+    cx.update(Theme::init);
+    struct RefreshHost {
+        refreshes: usize,
+        refreshing: bool,
+    }
+    impl Render for RefreshHost {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let entity = cx.entity();
+            div().w(px(240.)).h(px(240.)).child(
+                ScrollArea::new("pull-scroll")
+                    .vertical()
+                    .size_full()
+                    .refreshing(self.refreshing)
+                    .on_refresh(move |_, cx| {
+                        entity.update(cx, |host, cx| {
+                            host.refreshes += 1;
+                            host.refreshing = true;
+                            cx.notify();
+                        });
+                    })
+                    .child(div().h(px(600.))),
+            )
+        }
+    }
+    let (host, cx) = cx.add_window_view(|_, _| RefreshHost {
+        refreshes: 0,
+        refreshing: false,
+    });
+    settle(cx);
+    assert!(cx.debug_bounds("scroll-refresh-indicator").is_none());
+
+    cx.simulate_mouse_down(
+        point(px(120.), px(40.)),
+        gpui::MouseButton::Left,
+        Modifiers::none(),
+    );
+    cx.simulate_mouse_move(point(px(120.), px(140.)), None, Modifiers::none());
+    cx.simulate_mouse_up(
+        point(px(120.), px(140.)),
+        gpui::MouseButton::Left,
+        Modifiers::none(),
+    );
+    settle(cx);
+    assert_eq!(host.read_with(cx, |host, _| host.refreshes), 1);
+    assert!(cx.debug_bounds("scroll-refresh-indicator").is_some());
+}

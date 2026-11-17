@@ -301,8 +301,8 @@ fn document_split_views_fit_mobile_and_tablet_widths(cx: &mut TestAppContext) {
         cx.simulate_resize(size(px(width), px(height)));
         for story in [
             "TemplatePicker",
-            "PrintPreview / PrintSettings",
-            "EpubReader / ReadingProgress / ZenMode",
+            "PrintPreview",
+            "EpubReader",
             "VersionHistory / PageHistoryDiff",
         ] {
             view.update(cx, |view, cx| {

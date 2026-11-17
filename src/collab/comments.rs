@@ -119,11 +119,6 @@ impl CommentThread {
     }
 
     pub fn new(id: impl Into<ElementId>, thread: Thread) -> Self {
-        assert!(
-            !thread.comments.is_empty(),
-            "thread {} has no comment",
-            thread.key
-        );
         Self {
             usable_bounds: None,
             id: id.into(),
@@ -298,6 +293,14 @@ impl RenderOnce for CommentThread {
                     .children(resolve),
             )
             .children(comments)
+            .when(self.thread.comments.is_empty(), |thread| {
+                thread.child(
+                    div()
+                        .debug_selector(|| "comment-thread-empty".into())
+                        .text_color(colors.fg_subtle)
+                        .child(i18n::text(cx, "comments.none", &[])),
+                )
+            })
             .when(!resolved, |thread| {
                 thread.children(self.reply.map(|(field, send)| {
                     Reply::new((self.id.clone(), "reply"), &field, move |window, cx| {

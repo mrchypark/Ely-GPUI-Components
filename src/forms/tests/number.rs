@@ -148,6 +148,4 @@ fn disabled_number_input_ignores_steps_and_focus(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("9 up");
     cx.run_until_parked();
     assert!(view.read_with(cx, |view, _| view.changes.is_empty()));
-    let settled = crate::forms::number::settle(0.15, 0.1, 0.2, 0);
-    assert!((0.1..=0.2).contains(&settled));
 }

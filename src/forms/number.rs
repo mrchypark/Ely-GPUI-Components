@@ -40,10 +40,10 @@ pub(super) fn settle(value: f64, min: f64, max: f64, precision: usize) -> f64 {
         on_grid(min, scale, f64::ceil),
         on_grid(max, scale, f64::floor),
     );
-    if low > high {
-        log::error!("number settle: no {precision}-place number lies in {min}..={max}");
-        return value.clamp(min.min(max), min.max(max));
-    }
+    assert!(
+        low <= high,
+        "no {precision}-place number lies in {min}..={max}"
+    );
     ((value * scale).round() / scale).clamp(low, high)
 }
 
@@ -189,7 +189,7 @@ pub(super) struct Scrub {
 #[path = "number/scrub_handle.rs"]
 mod scrub_handle;
 
-use scrub_handle::scrub_handle;
+use scrub_handle::maybe_scrub;
 
 /// A number field: arrows or the stepper move it, dragging the grip scrubs it.
 #[derive(IntoElement)]
@@ -323,7 +323,9 @@ impl RenderOnce for NumberInput {
         let input = state.read(cx).input.clone();
         input.update(cx, |input, cx| {
             input.set_keyboard_type(keyboard_type, cx);
-            input.set_disabled(disabled, cx);
+            if input.is_disabled() != disabled {
+                input.set_disabled(disabled, cx);
+            }
         });
         #[cfg(all(test, feature = "test-support"))]
         keyboard_hint_tests::record(self.id.clone(), input.clone());
@@ -372,38 +374,29 @@ impl RenderOnce for NumberInput {
                 .whitespace_nowrap()
                 .text_size(theme.text_size(TextSize::Sm))
                 .text_color(theme.colors.fg_muted)
-                .when(disabled, |el| el.opacity(0.4))
                 .child(label)
                 .into_any_element();
-            if disabled {
-                face
-            } else {
-                scrub_handle(
-                    (self.id.clone(), "label").into(),
-                    face,
-                    state.clone(),
-                    window,
-                    cx,
-                )
-                .into_any_element()
-            }
-        });
-        let subtle = cx.theme().colors.fg_subtle;
-        let grip_icon = Icon::new(IconName::ChevronsUpDown)
-            .size(IconSize::Xs)
-            .color(subtle);
-        let grip = if disabled {
-            div().opacity(0.4).child(grip_icon).into_any_element()
-        } else {
-            scrub_handle(
-                (self.id.clone(), "grip").into(),
-                grip_icon.into_any_element(),
-                state,
+            maybe_scrub(
+                (self.id.clone(), "label").into(),
+                face,
+                disabled,
+                state.clone(),
                 window,
                 cx,
             )
-            .into_any_element()
-        };
+        });
+        let subtle = cx.theme().colors.fg_subtle;
+        let grip = maybe_scrub(
+            (self.id.clone(), "grip").into(),
+            Icon::new(IconName::ChevronsUpDown)
+                .size(IconSize::Xs)
+                .color(subtle)
+                .into_any_element(),
+            disabled,
+            state,
+            window,
+            cx,
+        );
         let theme = cx.theme();
         let colors = &theme.colors;
         let half = |id: &'static str, icon: IconName, enabled: bool, act: Nudge| {

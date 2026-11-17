@@ -1,3 +1,4 @@
+mod bottom_bar;
 mod breadcrumb;
 mod editor_tabs;
 mod goto;
@@ -14,6 +15,7 @@ mod tabs;
 mod tests;
 mod toc;
 
+pub use bottom_bar::{BottomNavBar, BottomNavItem};
 pub use breadcrumb::{Breadcrumb, Crumb};
 pub use editor_tabs::{EditorTab, EditorTabs};
 pub use goto::GoToLine;

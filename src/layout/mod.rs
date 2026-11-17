@@ -10,6 +10,7 @@ mod responsive;
 mod responsive_tests;
 mod scroll;
 mod scroll_aids;
+mod scroll_refresh;
 #[cfg(all(test, feature = "test-support"))]
 mod scroll_touch;
 pub(crate) mod seeded;
