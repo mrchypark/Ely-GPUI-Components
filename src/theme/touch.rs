@@ -2,6 +2,10 @@ use gpui::{AbsoluteLength, DefiniteLength, Length, Pixels, Styled, px};
 
 use super::Theme;
 
+pub(super) fn touch_mode_for_target(target_os: &str) -> bool {
+    matches!(target_os, "ios" | "android")
+}
+
 impl Theme {
     /// Width below which a touch master-detail view shows one pane.
     pub fn touch_compact_width(&self) -> Pixels {

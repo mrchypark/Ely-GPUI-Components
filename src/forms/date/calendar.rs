@@ -205,6 +205,14 @@ impl RenderOnce for Calendar {
                 .control_height(ControlSize::Md)
                 .to_pixels(window.rem_size()),
         );
+        let width = if theme.touch_mode {
+            (cell * 8.0).min(
+                (window.fully_visible_bounds().size.width - theme.touch_spacing() * 2.0)
+                    .max(gpui::Pixels::ZERO),
+            )
+        } else {
+            cell * 8.0
+        };
         let header = div()
             .flex()
             .items_center()
@@ -381,7 +389,8 @@ impl RenderOnce for Calendar {
             .flex()
             .flex_col()
             .gap_2()
-            .w(cell * 8.0)
+            .w(width)
+            .when(theme.touch_mode, |calendar| calendar.max_w_full())
             .p_2()
             .rounded(theme.radius(Radius::Lg))
             .on_key_down(move |event, window, cx| {
@@ -422,6 +431,10 @@ impl RenderOnce for Calendar {
             .child(grid)
     }
 }
+
+#[cfg(all(test, feature = "test-support"))]
+#[path = "calendar/sizing_tests.rs"]
+mod sizing_tests;
 
 #[cfg(test)]
 mod tests {

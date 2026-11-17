@@ -57,6 +57,13 @@ struct GalleryHost {
     applied: Option<(ViewportInsets, gpui::Pixels, Option<Bounds<gpui::Pixels>>)>,
 }
 
+fn is_docked_keyboard(bounds: Bounds<gpui::Pixels>, viewport: gpui::Size<gpui::Pixels>) -> bool {
+    let tolerance = px(0.5);
+    (bounds.bottom() - viewport.height).abs() <= tolerance
+        && bounds.left() <= tolerance
+        && bounds.right() >= viewport.width - tolerance
+}
+
 impl GalleryHost {
     fn apply_insets(&mut self, window: &Window, cx: &mut Context<Self>) {
         let safe = ViewportInsets {
@@ -69,8 +76,7 @@ impl GalleryHost {
             .insets
             .keyboard
             .filter(|_| self.insets.keyboard_visible != Some(false));
-        let docked = keyboard
-            .filter(|bounds| (bounds.bottom() - window.viewport_size().height).abs() <= px(0.5));
+        let docked = keyboard.filter(|bounds| is_docked_keyboard(*bounds, window.viewport_size()));
         let update = (
             safe,
             docked.map_or(px(0.), |bounds| bounds.size.height),
@@ -84,6 +90,25 @@ impl GalleryHost {
             gallery.set_floating_keyboard(update.2, cx);
         });
         self.applied = Some(update);
+    }
+}
+
+#[cfg(test)]
+mod keyboard_geometry_tests {
+    use super::*;
+    use gpui::{point, size};
+
+    #[test]
+    fn only_a_full_width_bottom_keyboard_is_docked() {
+        let viewport = size(px(800.), px(1000.));
+        let bounds =
+            |x, y, width, height| Bounds::new(point(px(x), px(y)), size(px(width), px(height)));
+        assert!(is_docked_keyboard(bounds(0., 700., 800., 300.), viewport));
+        assert!(!is_docked_keyboard(
+            bounds(500., 700., 300., 300.),
+            viewport
+        ));
+        assert!(!is_docked_keyboard(bounds(0., 600., 800., 300.), viewport));
     }
 }
 
@@ -110,6 +135,20 @@ fn open_window(cx: &mut App) {
         .join("ely-mobile-gallery-assets");
     assets::prepare_files(&root).expect("materialize bundled gallery assets");
     ely_gpui_component::init(cx).expect("initialize Ely");
+    ely_gpui_component::forms::set_input_owner_reporter(
+        |owner| {
+            gpui_mobile::mobile_events::report_text_input_owner(
+                gpui_mobile::mobile_events::TextInputOwner {
+                    window: owner.window.as_u64(),
+                    editor: owner.editor.as_u64(),
+                    activation: owner.activation,
+                },
+                owner.focused,
+                owner.disabled,
+            );
+        },
+        cx,
+    );
     init(cx);
     cx.open_window(WindowOptions::default(), |window, cx| {
         let gallery = cx.new(|cx| {

@@ -10,8 +10,8 @@ mod owner;
 use std::{ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
-    App, Bounds, Context, EventEmitter, FocusHandle, Focusable, Pixels, Point, SharedString,
-    Subscription, Task, Window, WrappedLine,
+    App, Bounds, Context, EventEmitter, FocusHandle, Focusable, KeyboardType, Pixels, Point,
+    SharedString, Subscription, Task, Window, WrappedLine,
 };
 
 pub(crate) use actions::{
@@ -55,9 +55,14 @@ pub struct TextInput {
     composing: Option<Snapshot>,
     rows: Option<(usize, usize)>,
     masked: bool,
+    secure: bool,
+    explicit_secure: bool,
+    secure_owner: bool,
     filter: Option<Filter>,
     fit: Option<Fit>,
     max_len: Option<usize>,
+    keyboard_type: KeyboardType,
+    reveal_bounds: Option<Bounds<Pixels>>,
     highlighter: Option<Highlighter>,
     disabled: bool,
     history: History<Snapshot>,
@@ -117,9 +122,14 @@ impl TextInput {
             composing: None,
             rows: None,
             masked: false,
+            secure: false,
+            explicit_secure: false,
+            secure_owner: false,
             filter: None,
             fit: None,
             max_len: None,
+            keyboard_type: KeyboardType::Default,
+            reveal_bounds: None,
             highlighter: None,
             disabled: false,
             history: History::default(),
@@ -157,6 +167,8 @@ impl TextInput {
     /// Shows bullets instead of the text, and keeps it off the clipboard.
     pub fn masked(mut self) -> Self {
         self.masked = true;
+        self.secure = true;
+        self.explicit_secure = true;
         self
     }
 
@@ -169,6 +181,12 @@ impl TextInput {
     /// Longest text, in characters.
     pub fn max_len(mut self, len: usize) -> Self {
         self.max_len = Some(len);
+        self
+    }
+
+    /// The software keyboard to request when this input gains focus.
+    pub fn keyboard_type(mut self, keyboard_type: KeyboardType) -> Self {
+        self.keyboard_type = keyboard_type;
         self
     }
 
@@ -244,7 +262,68 @@ impl TextInput {
 
     pub fn set_masked(&mut self, masked: bool, cx: &mut Context<Self>) {
         self.masked = masked;
+        if masked {
+            self.secure = true;
+            self.explicit_secure = true;
+        }
         cx.notify();
+    }
+
+    pub(crate) fn enter_secure(&mut self, cx: &mut Context<Self>) {
+        self.secure_owner = true;
+        if !self.secure {
+            self.secure = true;
+            self.masked = true;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn remask_secure(&mut self, cx: &mut Context<Self>) {
+        self.secure_owner = true;
+        if !self.secure || !self.masked {
+            self.secure = true;
+            self.masked = true;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn set_revealed(&mut self, revealed: bool, cx: &mut Context<Self>) {
+        if self.masked == revealed {
+            self.masked = !revealed;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn leave_secure(&mut self, cx: &mut Context<Self>) {
+        if self.secure_owner {
+            self.secure_owner = false;
+            self.secure = self.explicit_secure;
+            self.masked = self.explicit_secure;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn set_keyboard_type(
+        &mut self,
+        keyboard_type: KeyboardType,
+        cx: &mut Context<Self>,
+    ) {
+        if self.keyboard_type != keyboard_type {
+            self.keyboard_type = keyboard_type;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn reveal_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.reveal_bounds
+    }
+
+    pub(crate) fn set_reveal_bounds(&mut self, bounds: Bounds<Pixels>) {
+        self.reveal_bounds = Some(bounds);
+    }
+
+    pub(crate) fn clear_reveal_bounds(&mut self) {
+        self.reveal_bounds = None;
     }
 
     pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
@@ -495,3 +574,6 @@ impl TextInput {
         &self.focus
     }
 }
+
+#[cfg(all(test, feature = "test-support"))]
+mod password_security_tests;

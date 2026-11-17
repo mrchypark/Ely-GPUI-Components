@@ -1,10 +1,11 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Bounds, Context, DragMoveEvent, ElementId, EmptyView, Entity, EntityId, Hsla,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, RenderOnce,
-    StatefulInteractiveElement, Styled, Subscription, Window, black, canvas, div,
-    linear_color_stop, linear_gradient, prelude::*, relative, white,
+    AnyElement, App, Bounds, Context, DispatchPhase, DragMoveEvent, ElementId, EmptyView, Entity,
+    EntityId, HitboxBehavior, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Pixels, Point, RenderOnce, StatefulInteractiveElement, Styled, Subscription, TouchDragEvent,
+    TouchPhase, Window, black, canvas, div, linear_color_stop, linear_gradient, prelude::*,
+    relative, white,
 };
 
 use super::{
@@ -54,10 +55,12 @@ struct Picking {
     color: Hsva,
     committed: Hsla,
     field: Entity<TextInput>,
+    field_baseline: String,
     format: Format,
     opaque: bool,
     on_change: Option<OnColor>,
     areas: [Bounds<Pixels>; 3],
+    touch: Option<(Area, Point<Pixels>)>,
     _events: Subscription,
 }
 
@@ -90,14 +93,19 @@ fn picking(id: &ElementId, value: Hsla, window: &mut Window, cx: &mut App) -> En
                     return;
                 }
                 let text = field.read(cx).text().to_string();
+                if text == picking.field_baseline {
+                    return;
+                }
                 match parse_hex(&text) {
                     Ok(rgba) => {
+                        picking.field_baseline = text;
                         let color = Hsva::from_rgba(rgba, picking.color.h);
                         picking.commit(color, window, cx);
                     }
                     Err(problem) => {
                         log::info!("color picker: {problem}; kept the last color");
                         let shown = hex(picking.color.to_rgba());
+                        picking.field_baseline = shown.clone();
                         field.update(cx, |field, cx| field.set_text(shown, cx));
                     }
                 }
@@ -106,10 +114,12 @@ fn picking(id: &ElementId, value: Hsla, window: &mut Window, cx: &mut App) -> En
                 color: Hsva::from_rgba(value.to_rgb(), 0.0),
                 committed: value,
                 field,
+                field_baseline: String::new(),
                 format: Format::default(),
                 opaque: false,
                 on_change: None,
                 areas: [Bounds::default(); 3],
+                touch: None,
                 _events: events,
             }
         },
@@ -153,10 +163,18 @@ fn area(
     which: Area,
     state: &Entity<Picking>,
     owner: EntityId,
+    touch_mode: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    let (moved, pressed, measured) = (state.clone(), state.clone(), state.clone());
+    let (moved, pressed, measured, touch) =
+        (state.clone(), state.clone(), state.clone(), state.clone());
+    let selector = match which {
+        Area::Plane => "color-picker-plane",
+        Area::Hue => "color-picker-hue",
+        Area::Alpha => "color-picker-alpha",
+    };
     div()
         .id(id)
+        .debug_selector(move || selector.into())
         .relative()
         .w_full()
         .cursor_crosshair()
@@ -180,6 +198,56 @@ fn area(
                 let next = pointed(picking.color, which, picking.areas[which as usize], at);
                 picking.commit(next, window, cx);
             });
+        })
+        .when(touch_mode, |area| {
+            area.child(
+                canvas(
+                    |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+                    move |_, hitbox, window, _| {
+                        window.on_mouse_event(move |event: &TouchDragEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble {
+                                return;
+                            }
+                            if event.phase == TouchPhase::Started {
+                                if window.default_prevented()
+                                    || touch.read(cx).touch.is_some()
+                                    || !hitbox.is_hovered_at(event.start_position, window)
+                                {
+                                    return;
+                                }
+                                touch.update(cx, |picking, _| {
+                                    picking.touch = Some((which, event.start_position))
+                                });
+                                window.prevent_default();
+                            }
+                            if touch.read(cx).touch != Some((which, event.start_position)) {
+                                return;
+                            }
+                            cx.stop_propagation();
+                            if event.phase == TouchPhase::Cancelled {
+                                touch.update(cx, |picking, _| picking.touch = None);
+                                return;
+                            }
+                            touch.update(cx, |picking, cx| {
+                                let next = pointed(
+                                    picking.color,
+                                    which,
+                                    picking.areas[which as usize],
+                                    event.position,
+                                );
+                                if next != picking.color {
+                                    picking.commit(next, window, cx);
+                                }
+                                if event.phase == TouchPhase::Ended {
+                                    picking.touch = None;
+                                }
+                            });
+                        });
+                    },
+                )
+                .absolute()
+                .inset_0(),
+            )
         })
         .child(
             canvas(
@@ -213,12 +281,19 @@ impl RenderOnce for ColorPicker {
                 picking.committed = value;
             }
         });
-        let (color, field, format) = {
+        let (color, field, format, baseline) = {
             let picking = state.read(cx);
-            (picking.color, picking.field.clone(), picking.format)
+            (
+                picking.color,
+                picking.field.clone(),
+                picking.format,
+                picking.field_baseline.clone(),
+            )
         };
         let shown = hex(color.to_rgba());
-        if !field.read(cx).focus().is_focused(window) && field.read(cx).text() != shown {
+        let input = field.read(cx);
+        if !input.focus().is_focused(window) && input.text() == baseline && input.text() != shown {
+            state.update(cx, |picking, _| picking.field_baseline = shown.clone());
             field.update(cx, |field, cx| field.set_text(shown, cx));
         }
         let owner = window
@@ -259,6 +334,7 @@ impl RenderOnce for ColorPicker {
             Area::Plane,
             &state,
             owner,
+            theme.touch_mode,
         )
         .h(theme.color_plane())
         .rounded(radius)
@@ -293,7 +369,7 @@ impl RenderOnce for ColorPicker {
         let bands = (0..6).map(|band| {
             div()
                 .flex_1()
-                .h_full()
+                .h(rail)
                 .bg(linear_gradient(
                     90.0,
                     linear_color_stop(hue_at(band as f32 * 60.0), 0.0),
@@ -302,34 +378,52 @@ impl RenderOnce for ColorPicker {
                 .when(band == 0, |first| first.rounded_l(theme.radius(Radius::Sm)))
                 .when(band == 5, |last| last.rounded_r(theme.radius(Radius::Sm)))
         });
-        let hue = area((self.id.clone(), "hue").into(), Area::Hue, &state, owner)
-            .h(rail)
-            .flex()
-            .children(bands)
-            .child(
-                thumb(hue_at(color.h), color.h / 360.0)
-                    .top(relative(0.5))
-                    .mt(knob * -0.5),
-            );
+        let hit = theme.touch_minimum(rail.to_pixels(window.rem_size()));
+        let hue = area(
+            (self.id.clone(), "hue").into(),
+            Area::Hue,
+            &state,
+            owner,
+            theme.touch_mode,
+        )
+        .h(hit)
+        .flex()
+        .items_center()
+        .children(bands)
+        .child(
+            thumb(hue_at(color.h), color.h / 360.0)
+                .top(relative(0.5))
+                .mt(knob * -0.5),
+        );
         let alpha = self.alpha.then(|| {
             area(
                 (self.id.clone(), "alpha").into(),
                 Area::Alpha,
                 &state,
                 owner,
+                theme.touch_mode,
             )
-            .h(rail)
-            .child(checker(theme.radius(Radius::Sm), cx))
+            .h(hit)
             .child(
                 div()
                     .absolute()
-                    .size_full()
-                    .rounded(theme.radius(Radius::Sm))
-                    .bg(linear_gradient(
-                        90.0,
-                        linear_color_stop(solid.alpha(0.0), 0.0),
-                        linear_color_stop(solid, 1.0),
-                    )),
+                    .left_0()
+                    .right_0()
+                    .top(relative(0.5))
+                    .mt(rail * -0.5)
+                    .h(rail)
+                    .child(checker(theme.radius(Radius::Sm), cx))
+                    .child(
+                        div()
+                            .absolute()
+                            .size_full()
+                            .rounded(theme.radius(Radius::Sm))
+                            .bg(linear_gradient(
+                                90.0,
+                                linear_color_stop(solid.alpha(0.0), 0.0),
+                                linear_color_stop(solid, 1.0),
+                            )),
+                    ),
             )
             .child(thumb(current, color.a).top(relative(0.5)).mt(knob * -0.5))
         });

@@ -1,8 +1,8 @@
 use std::ops::Range;
 
 use gpui::{
-    App, Entity, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
-    prelude::*,
+    App, Entity, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window,
+    canvas, div, prelude::*,
 };
 
 use super::{Highlight, Input, TextInput, syntax::Syntax};
@@ -228,14 +228,17 @@ impl RenderOnce for JsonInput {
             .flatten()
             .map(|error| SharedString::from(error.to_string()));
         let theme = cx.theme();
-        div()
+        let state = self.state.clone();
+        let content = div()
             .flex()
             .flex_col()
             .gap_1()
             .child(
-                div()
-                    .font_family(theme.mono_family.clone())
-                    .child(Input::new(&self.state).invalid(problem.is_some())),
+                div().font_family(theme.mono_family.clone()).child(
+                    Input::new(&self.state)
+                        .invalid(problem.is_some())
+                        .without_reveal(),
+                ),
             )
             .when_some(problem, |field, problem| {
                 field.child(
@@ -244,7 +247,19 @@ impl RenderOnce for JsonInput {
                         .text_color(theme.colors.danger)
                         .child(problem),
                 )
-            })
+            });
+        div().relative().w_full().child(content).child(
+            canvas(
+                move |bounds, _, cx| {
+                    state.update(cx, |input, _| input.set_reveal_bounds(bounds));
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full(),
+        )
     }
 }
 
@@ -291,3 +306,9 @@ mod tests {
         assert_eq!(kinds("\"a\n1"), [("\"a", Kind::Text), ("1", Kind::Number)]);
     }
 }
+
+#[cfg(all(test, feature = "test-support"))]
+mod keyboard_reveal_tests;
+
+#[cfg(all(test, feature = "test-support"))]
+mod reveal_reuse_tests;

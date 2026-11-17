@@ -123,6 +123,9 @@ pub fn gradient(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         cx,
     );
     let now = stops.read(cx).clone();
+    let width = (window.viewport_size().width - px(16.))
+        .max(px(0.))
+        .min(px(360.));
     section(
         "GradientEditor",
         "Click the bar to add a stop, drag stops to move them, Delete removes the chosen one.",
@@ -130,10 +133,45 @@ pub fn gradient(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
     )
     .child(probe(
         "gradient",
-        div().w(px(360.0)).child(
+        div().w(width).child(
             GradientEditor::new("gradient-stops", now)
                 .on_change(move |next, _, cx| set(&stops, next.to_vec(), cx)),
         ),
     ))
     .child(code("GradientStop { at: 0.5, color }", cx))
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use gpui::{Context, Render, TestAppContext, Window, size};
+
+    use super::*;
+
+    struct GradientDemo;
+
+    impl Render for GradientDemo {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            gradient(window, cx)
+        }
+    }
+
+    #[gpui::test]
+    fn gradient_editor_fits_the_viewport(cx: &mut TestAppContext) {
+        cx.update(ely_gpui_component::init_for_tests);
+        let (_, cx) = cx.add_window_view(|_, _| GradientDemo);
+        for (viewport, expected) in [(320., 304.), (390., 360.), (1200., 360.)] {
+            cx.simulate_resize(size(px(viewport), px(844.)));
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            let actual = cx.update(|_, cx| {
+                crate::probe::Probes::get("gradient", cx)
+                    .expect("gradient probe")
+                    .size
+                    .width
+            });
+            assert_eq!(actual, px(expected), "viewport {viewport}");
+        }
+    }
 }

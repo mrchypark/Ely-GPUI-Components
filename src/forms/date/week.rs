@@ -81,6 +81,8 @@ impl RenderOnce for WeekPicker {
                     anchor,
                     CALENDAR_ROWS,
                     surface((id.clone(), "popup"), cx)
+                        .debug_selector(|| "week-popup".into())
+                        .occlude()
                         .on_mouse_down_out(move |_, window, cx| out(window, cx))
                         .child(calendar.on_escape(escape).on_pick(move |date, window, cx| {
                             let week = date.iso_week_date();
@@ -112,3 +114,7 @@ mod tests {
         assert_eq!(monday_of((2027, 1)), date(2027, 1, 4));
     }
 }
+
+#[cfg(all(test, feature = "test-support"))]
+#[path = "week/touch_tests.rs"]
+mod touch_tests;

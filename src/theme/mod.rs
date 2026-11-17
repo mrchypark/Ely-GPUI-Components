@@ -75,7 +75,8 @@ pub struct Theme {
     custom: [Option<Palette>; 2],
     pub colors: Palette,
     pub density: Density,
-    /// Opt in to logical-pixel touch targets on supported controls.
+    /// Use touch interactions and touch targets on supported controls.
+    /// Defaults to true on iOS and Android; `Theme::update` can override it.
     pub touch_mode: bool,
     pub radius_scale: f32,
     pub font_scale: f32,
@@ -107,7 +108,7 @@ impl Theme {
             custom: [None, None],
             colors: Palette::light(false),
             density: Density::Standard,
-            touch_mode: false,
+            touch_mode: touch::touch_mode_for_target(std::env::consts::OS),
             radius_scale: 1.0,
             font_scale: 1.0,
             font_family: "Inter".into(),

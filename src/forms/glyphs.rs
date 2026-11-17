@@ -199,7 +199,37 @@ impl RenderOnce for EmojiPicker {
 
 #[cfg(test)]
 mod tests {
-    use super::emoji_found;
+    use gpui::{
+        Context, InteractiveElement, IntoElement, ParentElement, Render, Styled, TestAppContext,
+        Window, div, px,
+    };
+
+    use super::{EmojiPicker, IconPicker, emoji_found};
+    use crate::theme::Theme;
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Picker {
+        Emoji,
+        Icon,
+    }
+
+    struct PickerProbe {
+        picker: Picker,
+        width: f32,
+    }
+
+    impl Render for PickerProbe {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let picker = match self.picker {
+                Picker::Emoji => EmojiPicker::new("emoji-touch").into_any_element(),
+                Picker::Icon => IconPicker::new("icon-touch").into_any_element(),
+            };
+            div()
+                .debug_selector(|| "picker-host".into())
+                .w(px(self.width))
+                .child(picker)
+        }
+    }
 
     #[test]
     fn emoji_are_found_whatever_the_case_of_their_names() {
@@ -212,5 +242,105 @@ mod tests {
         assert!(glyphs("united states").contains(&"🇺🇸"));
         assert!(glyphs("sparkles").contains(&"✨"));
         assert_eq!(glyphs("").len(), emojis::iter().count());
+    }
+
+    #[gpui::test]
+    fn touch_pickers_fit_and_use_five_48px_columns_in_240px(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            Theme::update(cx, |theme| theme.touch_mode = true);
+        });
+        for picker in [Picker::Emoji, Picker::Icon] {
+            let (_view, cx) = cx.add_window_view(|_, _| PickerProbe {
+                picker,
+                width: 240.,
+            });
+            cx.simulate_resize(gpui::size(px(390.), px(844.)));
+            cx.update(|window, _| window.activate_window());
+            cx.run_until_parked();
+
+            let host = cx.debug_bounds("picker-host").expect("picker host");
+            let grid = cx.debug_bounds("glyph-grid").expect("glyph grid");
+            assert!(grid.size.width <= host.size.width, "{picker:?}: {grid:?}");
+            let cells: Vec<_> = [
+                "glyph-cell-0",
+                "glyph-cell-1",
+                "glyph-cell-2",
+                "glyph-cell-3",
+                "glyph-cell-4",
+                "glyph-cell-5",
+            ]
+            .into_iter()
+            .map(|name| {
+                cx.debug_bounds(name)
+                    .unwrap_or_else(|| panic!("{picker:?}: {name}"))
+            })
+            .collect();
+            assert!(cells.iter().all(|cell| cell.size.width >= px(48.)));
+            assert!(cells.iter().all(|cell| cell.size.height >= px(48.)));
+            assert!(cells[5].top() > cells[4].top(), "{picker:?}: {cells:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn resized_icon_grid_keeps_the_cursor_in_view(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            Theme::update(cx, |theme| theme.touch_mode = true);
+        });
+        let (view, cx) = cx.add_window_view(|_, _| PickerProbe {
+            picker: Picker::Icon,
+            width: 480.,
+        });
+        cx.simulate_resize(gpui::size(px(800.), px(844.)));
+        cx.update(|window, _| window.activate_window());
+        cx.run_until_parked();
+        cx.update(|window, cx| window.focus_next(cx));
+        cx.simulate_keystrokes("down");
+        for _ in 0..12 {
+            cx.simulate_keystrokes("down");
+        }
+        cx.run_until_parked();
+        assert!(super::IconName::ALL.len() > 96);
+        assert!(cx.debug_bounds("glyph-cursor").is_some());
+
+        view.update(cx, |view, cx| {
+            view.width = 240.;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        let grid = cx.debug_bounds("glyph-grid").expect("glyph grid");
+        let cursor = cx
+            .debug_bounds("glyph-cursor")
+            .expect("cursor row stays visible");
+        assert!(cursor.top() >= grid.top() && cursor.bottom() <= grid.bottom());
+    }
+
+    #[gpui::test]
+    fn unmatched_pickers_survive_a_column_resize(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            Theme::update(cx, |theme| theme.touch_mode = true);
+        });
+        for picker in [Picker::Emoji, Picker::Icon] {
+            let (view, cx) = cx.add_window_view(|_, _| PickerProbe {
+                picker,
+                width: 480.,
+            });
+            cx.simulate_resize(gpui::size(px(800.), px(844.)));
+            cx.update(|window, _| window.activate_window());
+            cx.run_until_parked();
+            cx.update(|window, cx| window.focus_next(cx));
+            cx.simulate_input("no-such-glyph-7f3d");
+            cx.run_until_parked();
+
+            view.update(cx, |view, cx| {
+                view.width = 240.;
+                cx.notify();
+            });
+            cx.run_until_parked();
+            assert!(cx.debug_bounds("glyph-grid").is_some(), "{picker:?}");
+            assert!(cx.debug_bounds("glyph-cell-0").is_none(), "{picker:?}");
+        }
     }
 }

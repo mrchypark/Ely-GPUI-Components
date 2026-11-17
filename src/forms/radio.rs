@@ -125,8 +125,10 @@ impl RenderOnce for Radio {
         } else {
             theme.colors.fg
         };
+        let debug_id = format!("radio-choice-{:?}", self.id);
         div()
             .id(self.id)
+            .debug_selector(move || debug_id)
             .role(Role::RadioButton)
             .map(|row| theme.touch_target(row))
             .aria_toggled(on.into())
@@ -252,6 +254,9 @@ impl RenderOnce for RadioGroup {
             .role(Role::RadioGroup)
             .flex()
             .when(self.horizontal, |group| group.flex_row().gap_4())
+            .when(self.horizontal && cx.theme().touch_mode, |group| {
+                group.flex_wrap()
+            })
             .when(!self.horizontal, |group| group.flex_col().gap_2())
             .when(cx.theme().touch_mode, |group| {
                 let gap = window.rem_size() * if self.horizontal { 1.0 } else { 0.5 };
@@ -272,5 +277,172 @@ impl RenderOnce for RadioGroup {
                 pick(&choices[next].value, window, cx);
             })
             .children(radios)
+    }
+}
+
+#[cfg(all(test, feature = "test-support"))]
+mod mobile_tests {
+    use super::{Choice, RadioGroup};
+    use crate::theme::Theme;
+    use gpui::{
+        Context, InteractiveElement, IntoElement, Modifiers, ParentElement, Pixels, Render, Styled,
+        TestAppContext, Window, div, px, size,
+    };
+
+    struct Host {
+        selected: Option<String>,
+        width: Pixels,
+        labels: &'static [&'static str],
+    }
+
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let host = cx.entity();
+            let choices = self
+                .labels
+                .iter()
+                .enumerate()
+                .map(|(ix, label)| Choice::new(format!("{ix}"), *label));
+            let mut group = RadioGroup::new("mobile-radios", choices)
+                .horizontal()
+                .on_change(move |value, _, cx| {
+                    host.update(cx, |host, cx| {
+                        host.selected = Some(value.to_string());
+                        cx.notify();
+                    });
+                });
+            if let Some(value) = &self.selected {
+                group = group.selected(value.clone());
+            }
+            div()
+                .w(self.width)
+                .debug_selector(|| "radio-wrap-host".into())
+                .child(group)
+        }
+    }
+
+    #[gpui::test]
+    fn horizontal_touch_radios_wrap_and_remain_selectable(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            Theme::update(cx, |theme| {
+                theme.touch_mode = true;
+                theme.reduced_motion = true;
+            });
+        });
+        let (view, cx) = cx.add_window_view(|window, _| {
+            window.set_rem_size(px(8.));
+            Host {
+                selected: None,
+                width: px(320.),
+                labels: &["0", "1", "2", "3", "4", "5", "6", "7"],
+            }
+        });
+        cx.simulate_resize(size(px(320.), px(640.)));
+        cx.run_until_parked();
+        let bounds = cx.debug_bounds("radio-wrap-host").unwrap();
+        let mut choices = Vec::new();
+        for ix in 0usize..8 {
+            let selector = format!("radio-choice-{:?}", gpui::ElementId::from(("radio", ix)));
+            let choice = cx
+                .debug_bounds(Box::leak(selector.into_boxed_str()))
+                .expect("radio bounds");
+            assert_eq!(choice.size.width, px(48.), "choice {ix} target width");
+            assert_eq!(choice.size.height, px(48.), "choice {ix} target height");
+            assert!(
+                choice.left() >= bounds.left() && choice.right() <= bounds.right(),
+                "choice {ix} is outside {bounds:?}: {choice:?}"
+            );
+            choices.push(choice);
+        }
+        assert!(
+            choices[7].top() > choices[0].top(),
+            "touch choices must wrap: {choices:?}"
+        );
+        cx.simulate_click(choices[7].center(), Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(
+            view.read_with(cx, |host, _| host.selected.clone()),
+            Some("7".to_string())
+        );
+        cx.update(|_, cx| Theme::update(cx, |theme| theme.touch_mode = false));
+        cx.run_until_parked();
+        let first = format!(
+            "radio-choice-{:?}",
+            gpui::ElementId::from(("radio", 0usize))
+        );
+        let last = format!(
+            "radio-choice-{:?}",
+            gpui::ElementId::from(("radio", 7usize))
+        );
+        let first = cx.debug_bounds(Box::leak(first.into_boxed_str())).unwrap();
+        let last = cx.debug_bounds(Box::leak(last.into_boxed_str())).unwrap();
+        assert_eq!(first.top(), last.top(), "desktop stays on one row");
+    }
+
+    #[gpui::test]
+    fn long_touch_labels_wrap_inside_a_narrow_host(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            Theme::update(cx, |theme| {
+                theme.touch_mode = true;
+                theme.reduced_motion = true;
+            });
+        });
+        let (view, cx) = cx.add_window_view(|window, _| {
+            window.set_rem_size(px(8.));
+            Host {
+                selected: None,
+                width: px(144.),
+                labels: &[
+                    "Send a weekly digest with product updates and account activity",
+                    "Email only for urgent account and billing alerts",
+                ],
+            }
+        });
+        cx.simulate_resize(size(px(144.), px(640.)));
+        cx.run_until_parked();
+
+        let host = cx.debug_bounds("radio-wrap-host").unwrap();
+        let first_selector = format!(
+            "radio-choice-{:?}",
+            gpui::ElementId::from(("radio", 0usize))
+        );
+        let second_selector = format!(
+            "radio-choice-{:?}",
+            gpui::ElementId::from(("radio", 1usize))
+        );
+        let first = cx
+            .debug_bounds(Box::leak(first_selector.into_boxed_str()))
+            .expect("first long radio bounds");
+        let second = cx
+            .debug_bounds(Box::leak(second_selector.into_boxed_str()))
+            .expect("second long radio bounds");
+        let first_label = cx.debug_bounds("radio-label").expect("long label bounds");
+        assert!(
+            first_label.left() >= host.left() && first_label.right() <= host.right(),
+            "the long label is outside {host:?}: {first_label:?}"
+        );
+        for (ix, choice) in [first, second].into_iter().enumerate() {
+            assert!(
+                choice.left() >= host.left() && choice.right() <= host.right(),
+                "long choice {ix} is outside {host:?}: {choice:?}"
+            );
+            assert!(
+                choice.size.width >= px(48.) && choice.size.height >= px(48.),
+                "long choice {ix} lost its touch target: {choice:?}"
+            );
+        }
+        assert!(
+            first.bottom() <= second.top(),
+            "long labels must wrap the horizontal group: {first:?} {second:?}"
+        );
+
+        cx.simulate_click(second.center(), Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(
+            view.read_with(cx, |host, _| host.selected.clone()),
+            Some("1".to_string())
+        );
     }
 }

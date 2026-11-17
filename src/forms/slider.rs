@@ -1,9 +1,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Bounds, DragMoveEvent, ElementId, EmptyView, EntityId, InteractiveElement,
-    IntoElement, MouseButton, Orientation, ParentElement, Pixels, Point, RenderOnce, Role,
-    StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*, relative,
+    AnyElement, App, Bounds, DispatchPhase, DragMoveEvent, ElementId, EmptyView, EntityId,
+    HitboxBehavior, InteractiveElement, IntoElement, MouseButton, Orientation, ParentElement,
+    Pixels, Point, RenderOnce, Role, StatefulInteractiveElement, Styled, TouchDragEvent,
+    TouchPhase, Window, canvas, div, prelude::*, relative,
 };
 
 use super::options::OnNumber;
@@ -52,7 +53,15 @@ struct Thumb {
     owner: EntityId,
 }
 
-type Commit = Rc<dyn Fn(usize, f64, &mut Window, &mut App)>;
+/// The value at the start of a touch drag and the last stepped value it emitted.
+#[derive(Clone)]
+struct TouchDrag {
+    start: Point<Pixels>,
+    origin: f64,
+    value: f64,
+}
+
+type Commit = Rc<dyn Fn(usize, f64, bool, &mut Window, &mut App)>;
 type OnSpan = Rc<dyn Fn((f64, f64), &mut Window, &mut App)>;
 
 /// A track with one or two thumbs. `commit` gets the thumb and its new value.
@@ -74,6 +83,8 @@ impl Track {
             .entity_id();
         let grabbed = window.use_keyed_state((self.id.clone(), "grab"), cx, |_, _| 0usize);
         let tied = window.use_keyed_state((self.id.clone(), "tie"), cx, |_, _| None::<f64>);
+        let touch =
+            window.use_keyed_state((self.id.clone(), "touch"), cx, |_, _| None::<TouchDrag>);
         let measured = window.use_keyed_state((self.id.clone(), "bounds"), cx, |_, _| {
             Bounds::<Pixels>::default()
         });
@@ -205,7 +216,7 @@ impl Track {
                                     keyed(&event.keystroke.key, value, min, max, step)
                                 {
                                     cx.stop_propagation();
-                                    commit(k, next, window, cx);
+                                    commit(k, next, false, window, cx);
                                 }
                             })
                     })
@@ -213,6 +224,113 @@ impl Track {
             .collect();
         let (drag, jump) = (self.commit.clone(), self.commit);
         let (values, focus) = (self.values, handles);
+        let touch_layer = (theme.touch_mode && !self.disabled).then(|| {
+            let (values, focus, commit) = (values.clone(), focus.clone(), jump.clone());
+            let (measured, grabbed, tied) = (measured.clone(), grabbed.clone(), tied.clone());
+            canvas(
+                |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+                move |_, hitbox, window, _| {
+                    window.on_mouse_event(move |event: &TouchDragEvent, phase, window, cx| {
+                        if phase != DispatchPhase::Bubble {
+                            return;
+                        }
+                        if event.phase == TouchPhase::Started {
+                            touch.update(cx, |state, _| *state = None);
+                            if window.default_prevented()
+                                || !hitbox.is_hovered_at(event.start_position, window)
+                            {
+                                return;
+                            }
+                            let start = value_at(
+                                along(*measured.read(cx), event.start_position, vertical),
+                                min,
+                                max,
+                                step,
+                            );
+                            let index = match values.as_slice() {
+                                [low, high] if low == high && start > *high => 1,
+                                [low, high] if (start - high).abs() < (start - low).abs() => 1,
+                                _ => 0,
+                            };
+                            let tie = match values.as_slice() {
+                                [low, high] if low == high && start == *low => Some(*low),
+                                _ => None,
+                            };
+                            grabbed.update(cx, |state, _| *state = index);
+                            tied.update(cx, |state, _| *state = tie);
+                            touch.update(cx, |state, _| {
+                                *state = Some(TouchDrag {
+                                    start: event.start_position,
+                                    origin: values[index],
+                                    value: values[index],
+                                })
+                            });
+                            window.focus(&focus[index], cx);
+                            window.prevent_default();
+                        }
+                        let Some(drag) = touch.read(cx).clone() else {
+                            return;
+                        };
+                        if drag.start != event.start_position {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        if event.phase == TouchPhase::Cancelled {
+                            let index = *grabbed.read(cx);
+                            if drag.value != drag.origin {
+                                commit(index, drag.origin, true, window, cx);
+                            }
+                            touch.update(cx, |state, _| *state = None);
+                            tied.update(cx, |state, _| *state = None);
+                            return;
+                        }
+                        let ended = event.phase == TouchPhase::Ended;
+                        if ended {
+                            touch.update(cx, |state, _| *state = None);
+                        }
+                        let next = value_at(
+                            along(*measured.read(cx), event.position, vertical),
+                            min,
+                            max,
+                            step,
+                        );
+                        if let Some(value) = *tied.read(cx) {
+                            if next == value {
+                                if ended {
+                                    tied.update(cx, |state, _| *state = None);
+                                }
+                                return;
+                            }
+                            let index = usize::from(next > value);
+                            grabbed.update(cx, |state, _| *state = index);
+                            tied.update(cx, |state, _| *state = None);
+                            window.focus(&focus[index], cx);
+                        }
+                        let index = *grabbed.read(cx);
+                        let value = match (values.as_slice(), index) {
+                            ([_, high], 0) => next.min(*high),
+                            ([low, _], 1) => next.max(*low),
+                            _ => next,
+                        };
+                        if value == drag.value {
+                            return;
+                        }
+                        commit(index, value, true, window, cx);
+                        if !ended {
+                            touch.update(cx, |state, _| {
+                                if let Some(drag) = state {
+                                    drag.value = value;
+                                }
+                            });
+                        } else {
+                            tied.update(cx, |state, _| *state = None);
+                        }
+                    });
+                },
+            )
+            .absolute()
+            .inset_0()
+        });
         let bounds_state = measured.clone();
         let grab = grabbed.clone();
         let press_tie = tied.clone();
@@ -263,12 +381,13 @@ impl Track {
                             window.focus(&drag_focus[index], cx);
                         }
                         let index = *grabbed.read(cx);
-                        drag(index, next, window, cx);
+                        drag(index, next, false, window, cx);
                     })
             });
         div()
             .debug_selector(|| "slider-root".into())
             .id(self.id)
+            .relative()
             .flex_none()
             .map(|outer| {
                 if vertical {
@@ -293,10 +412,11 @@ impl Track {
                     press_tie.update(cx, |pending, _| *pending = tie);
                     grab.update(cx, |grab, _| *grab = index);
                     window.focus(&focus[index], cx);
-                    jump(index, next, window, cx);
+                    jump(index, next, false, window, cx);
                 })
             })
             .when(self.disabled, |outer| outer.opacity(0.5))
+            .children(touch_layer)
             .child(inner)
             .into_any_element()
     }
@@ -358,8 +478,8 @@ impl Slider {
 impl RenderOnce for Slider {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (id, value, on_change) = (self.id.clone(), self.value, self.on_change);
-        let commit: Commit = Rc::new(move |_, next, window, cx| {
-            if next == value {
+        let commit: Commit = Rc::new(move |_, next, force, window, cx| {
+            if !force && next == value {
                 return;
             }
             log::debug!("slider {id:?}: {next}");
@@ -439,13 +559,13 @@ impl RangeSlider {
 impl RenderOnce for RangeSlider {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (id, (low, high), on_change) = (self.id.clone(), self.value, self.on_change);
-        let commit: Commit = Rc::new(move |index, next, window, cx| {
+        let commit: Commit = Rc::new(move |index, next, force, window, cx| {
             let span = if index == 0 {
                 (next.min(high), high)
             } else {
                 (low, next.max(low))
             };
-            if span == (low, high) {
+            if !force && span == (low, high) {
                 return;
             }
             log::debug!("range slider {id:?}: {span:?}");

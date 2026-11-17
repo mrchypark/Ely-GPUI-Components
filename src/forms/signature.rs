@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, Corners, Div, DragMoveEvent, ElementId, EmptyView, Entity, EntityId, Hsla,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Path, PathBuilder, Pixels, Point,
-    RenderOnce, Stateful, StatefulInteractiveElement, Styled, Window, canvas, div, fill, point,
-    prelude::*, size,
+    App, Bounds, Corners, DispatchPhase, Div, DragMoveEvent, ElementId, EmptyView, Entity,
+    EntityId, HitboxBehavior, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Path, PathBuilder, Pixels, Point, RenderOnce, Stateful, StatefulInteractiveElement, Styled,
+    TouchDragEvent, TouchPhase, Window, canvas, div, fill, point, prelude::*, size,
 };
 
 use crate::{
@@ -29,6 +29,7 @@ struct Pen {
 pub(crate) struct Drawing {
     pub bounds: Bounds<Pixels>,
     pub stroke: Stroke,
+    touch: Option<Point<Pixels>>,
 }
 
 impl Drawing {
@@ -99,7 +100,54 @@ pub(crate) fn pen(
     let (press, start, moving) = (drawing.clone(), drawing.clone(), drawing.clone());
     let up = Rc::new(finish);
     let leave = up.clone();
-    pad.on_mouse_down(MouseButton::Left, move |event, _, cx| {
+    let (touch_drawing, touch_finish) = (drawing.clone(), up.clone());
+    pad.child(
+        canvas(
+            |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+            move |_, hitbox, window, _| {
+                window.on_mouse_event(move |event: &TouchDragEvent, phase, window, cx| {
+                    if phase != DispatchPhase::Bubble {
+                        return;
+                    }
+                    if event.phase == TouchPhase::Started {
+                        if window.default_prevented()
+                            || !hitbox.is_hovered_at(event.start_position, window)
+                        {
+                            return;
+                        }
+                        touch_drawing.update(cx, |drawing, cx| {
+                            drawing.touch = Some(event.start_position);
+                            drawing.stroke = vec![local(drawing.bounds, event.start_position)];
+                            cx.notify();
+                        });
+                        window.prevent_default();
+                    }
+                    if touch_drawing.read(cx).touch != Some(event.start_position) {
+                        return;
+                    }
+                    cx.stop_propagation();
+                    if event.phase == TouchPhase::Cancelled {
+                        touch_drawing.update(cx, |drawing, cx| {
+                            drawing.touch = None;
+                            drawing.stroke.clear();
+                            cx.notify();
+                        });
+                    } else if event.phase == TouchPhase::Ended {
+                        touch_drawing.update(cx, |drawing, _| drawing.touch = None);
+                        touch_finish(event.position, window, cx);
+                    } else {
+                        touch_drawing.update(cx, |drawing, cx| {
+                            drawing.reach(event.position);
+                            cx.notify();
+                        });
+                    }
+                });
+            },
+        )
+        .absolute()
+        .inset_0(),
+    )
+    .on_mouse_down(MouseButton::Left, move |event, _, cx| {
         press.update(cx, |drawing, cx| {
             drawing.stroke = vec![local(drawing.bounds, event.position)];
             cx.notify();

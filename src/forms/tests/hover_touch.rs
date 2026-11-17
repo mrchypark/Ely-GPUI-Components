@@ -1,11 +1,13 @@
+use std::time::Duration;
+
 use crate::{
     data_display::Avatar,
     forms::{AvatarUpload, Cascade, Cascader, Choice, ChoiceChips, Rating},
     theme::Theme,
 };
 use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, ParentElement, Render, Styled, TestAppContext,
-    Window, div, point, px,
+    Context, IntoElement, Modifiers, MouseButton, ParentElement, Point, Render, Styled,
+    TestAppContext, TouchEvent, TouchId, TouchPhase, VisualTestContext, Window, div, point, px,
 };
 
 /// The theme as a phone has it: no hover, no motion.
@@ -303,4 +305,141 @@ fn a_deep_cascader_stays_tappable_at_phone_width(cx: &mut TestAppContext) {
         view.read_with(cx, |tree, _| tree.0.clone()),
         ["asia", "jp", "tyo"]
     );
+}
+
+struct PhoneTree(Vec<gpui::SharedString>);
+
+impl Render for PhoneTree {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        let selected = self.0.clone();
+        let world = [
+            Cascade::new("am", "Americas")
+                .child(Cascade::new("us", "United States").child(Cascade::new("nyc", "New York"))),
+            Cascade::new("eu", "Europe")
+                .child(Cascade::new("pt", "Portugal").child(Cascade::new("lis", "Lisbon")))
+                .child(Cascade::new("de", "Germany").child(Cascade::new("ber", "Berlin"))),
+            Cascade::new("as", "Asia")
+                .child(Cascade::new("jp", "Japan").child(Cascade::new("tyo", "Tokyo"))),
+        ];
+        div().w(px(320.)).pt(px(300.)).child(
+            Cascader::new("phone-cascade", world)
+                .selected(selected)
+                .on_change(move |path, _, cx| view.update(cx, |tree, _| tree.0 = path.to_vec())),
+        )
+    }
+}
+
+fn touch(cx: &mut VisualTestContext, phase: TouchPhase, at: Point<gpui::Pixels>) {
+    cx.simulate_event(TouchEvent {
+        id: TouchId(1),
+        phase,
+        position: at,
+        predicted_position: None,
+        force: None,
+    });
+    cx.run_until_parked();
+}
+
+fn swipe_up(cx: &mut VisualTestContext, from: Point<gpui::Pixels>) {
+    let end = from - point(px(0.), px(180.));
+    touch(cx, TouchPhase::Started, from);
+    cx.executor().advance_clock(Duration::from_millis(600));
+    touch(cx, TouchPhase::Moved, end);
+    touch(cx, TouchPhase::Ended, end);
+}
+
+#[gpui::test]
+fn a_touch_swipe_ignores_hover_and_reveals_cascade_bottom_rows(cx: &mut TestAppContext) {
+    touch_theme(cx);
+    let (view, mut cx) = cx.add_window_view(|_, _| PhoneTree(Vec::new()));
+    cx.simulate_resize(gpui::size(px(320.), px(640.)));
+    cx.run_until_parked();
+
+    let field = cx.debug_bounds("field-root").unwrap();
+    cx.simulate_click(field.center(), Modifiers::none());
+    let europe = cx.debug_bounds("cascade-row-0-1").unwrap();
+    cx.simulate_click(europe.center(), Modifiers::none());
+    cx.run_until_parked();
+    let scroll = cx.debug_bounds("cascade-scroll").expect("the levels open");
+    let germany = cx.debug_bounds("cascade-row-1-1").expect("Germany draws");
+    let visible = point(germany.center().x, germany.top() + px(12.));
+    cx.simulate_click(visible, Modifiers::none());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("cascade-column-2").is_some());
+
+    let asia = cx.debug_bounds("cascade-row-0-2").unwrap();
+    cx.simulate_mouse_move(asia.center(), None, Modifiers::none());
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("cascade-column-2").is_some(),
+        "a touch-time pointer move keeps the chosen branch"
+    );
+    let berlin = cx.debug_bounds("cascade-row-2-0").expect("Berlin draws");
+    assert!(berlin.bottom() > scroll.bottom(), "Berlin starts clipped");
+    swipe_up(cx, scroll.center());
+    let berlin = cx.debug_bounds("cascade-row-2-0").expect("Berlin draws");
+    assert!(
+        berlin.top() >= scroll.top() && berlin.bottom() <= scroll.bottom(),
+        "the swipe reveals Berlin: {berlin:?} in {scroll:?}"
+    );
+    assert!(view.read_with(cx, |tree, _| tree.0.is_empty()));
+    cx.simulate_click(berlin.center(), Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(
+        view.read_with(cx, |tree, _| tree.0.clone()),
+        ["eu", "de", "ber"]
+    );
+
+    let field = cx.debug_bounds("field-root").unwrap();
+    cx.simulate_click(field.center(), Modifiers::none());
+    let asia = cx.debug_bounds("cascade-row-0-2").unwrap();
+    cx.simulate_click(asia.center(), Modifiers::none());
+    let japan = cx.debug_bounds("cascade-row-1-0").unwrap();
+    cx.simulate_click(japan.center(), Modifiers::none());
+    cx.run_until_parked();
+    let tokyo = cx.debug_bounds("cascade-row-2-0").expect("Tokyo draws");
+    let americas = cx.debug_bounds("cascade-row-0-0").unwrap();
+    cx.simulate_mouse_move(americas.center(), None, Modifiers::none());
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("cascade-row-2-0").is_some(),
+        "touch-time pointer movement does not replace Asia"
+    );
+    if tokyo.bottom() > scroll.bottom() {
+        swipe_up(cx, scroll.center());
+    }
+    let tokyo = cx.debug_bounds("cascade-row-2-0").unwrap();
+    assert!(
+        tokyo.top() >= scroll.top() && tokyo.bottom() <= scroll.bottom(),
+        "the swipe reveals Tokyo: {tokyo:?} in {scroll:?}"
+    );
+    assert_eq!(
+        view.read_with(cx, |tree, _| tree.0.clone()),
+        ["eu", "de", "ber"]
+    );
+    cx.simulate_click(tokyo.center(), Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(
+        view.read_with(cx, |tree, _| tree.0.clone()),
+        ["as", "jp", "tyo"]
+    );
+}
+
+#[gpui::test]
+fn pointer_hover_still_opens_cascade_levels_on_desktop(cx: &mut TestAppContext) {
+    touch_theme(cx);
+    cx.update(|cx| Theme::update(cx, |theme| theme.touch_mode = false));
+    let (_, mut cx) = cx.add_window_view(|_, _| PhoneTree(Vec::new()));
+    cx.simulate_resize(gpui::size(px(320.), px(640.)));
+    cx.run_until_parked();
+    let field = cx.debug_bounds("field-root").unwrap();
+    cx.simulate_click(field.center(), Modifiers::none());
+    let europe = cx.debug_bounds("cascade-row-0-1").unwrap();
+    cx.simulate_mouse_move(europe.center(), None, Modifiers::none());
+    cx.run_until_parked();
+    let germany = cx.debug_bounds("cascade-row-1-1").unwrap();
+    cx.simulate_mouse_move(germany.center(), None, Modifiers::none());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("cascade-row-2-0").is_some());
 }

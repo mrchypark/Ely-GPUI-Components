@@ -59,7 +59,7 @@ fn playing(id: ElementId, moving: bool, cx: &App) -> impl IntoElement {
         }))
 }
 
-/// Songs in order, a row a song: its number, title and artist, and its length. The song under way is lit, its bars moving while it plays. Up and Down move; Enter or a double press plays a song.
+/// Songs in order. Enter, a desktop double press, or a touch-mode press plays a song.
 #[derive(IntoElement)]
 pub struct Playlist {
     id: ElementId,
@@ -117,7 +117,7 @@ impl RenderOnce for Playlist {
         let theme = cx.theme();
         let (muted, lead) = (theme.colors.fg_muted, theme.icon_size(IconSize::Lg));
         let small = theme.text_size(TextSize::Sm);
-        let mut list = SelectableList::new(self.id.clone());
+        let mut list = SelectableList::new(self.id.clone()).touch_activate();
         for (ix, track) in self.tracks.into_iter().enumerate() {
             let now = self.current.as_ref() == Some(&track.key);
             let mark = if now {

@@ -121,3 +121,46 @@ fn the_owner_echo_of_a_commit_keeps_the_next_draft(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(commits(&view, cx), [12.0, 18.0]);
 }
+
+struct Scrubbed(Vec<f64>);
+
+impl Render for Scrubbed {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        super::ScrubInput::new("scrub", "X", 120.0).on_change(move |value, _, cx| {
+            view.update(cx, |view, cx| {
+                view.0.push(value);
+                cx.notify();
+            });
+        })
+    }
+}
+
+#[gpui::test]
+fn touch_drag_on_a_scrub_label_changes_the_value(cx: &mut TestAppContext) {
+    use gpui::{TouchDragEvent, TouchPhase, point, px};
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
+        bind_keys(cx);
+    });
+    let (view, cx) = cx.add_window_view(|_, _| Scrubbed(Vec::new()));
+    cx.run_until_parked();
+    let start = cx.debug_bounds("scrub-label").unwrap().center();
+    let end = point(start.x + px(100.0), start.y);
+    for (phase, position) in [
+        (TouchPhase::Started, start),
+        (TouchPhase::Moved, point(start.x + px(50.0), start.y)),
+        (TouchPhase::Ended, end),
+    ] {
+        cx.simulate_event(TouchDragEvent {
+            phase,
+            start_position: start,
+            position,
+        });
+        cx.run_until_parked();
+    }
+    let values = view.read_with(cx, |view, _| view.0.clone());
+    assert_eq!(values.len(), 2, "only the two changed positions notify");
+    assert!(values[0] > 120.0 && values[1] > values[0], "{values:?}");
+}

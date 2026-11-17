@@ -3,7 +3,7 @@ use std::time::Duration;
 use gpui::{
     AnyElement, App, AppContext, Axis, Bounds, Context, InteractiveElement, IntoElement, Modifiers,
     MouseButton, ParentElement, Pixels, Point, Render, StatefulInteractiveElement, Styled,
-    TestAppContext, VisualTestContext, Window, div, point, px,
+    TestAppContext, TouchDragEvent, TouchPhase, VisualTestContext, Window, div, point, px,
 };
 
 use super::{Drawer, MasterDetail, PaneGroup, SplitPane};
@@ -339,6 +339,34 @@ fn a_touch_split_handle_is_a_thumb(cx: &mut TestAppContext) {
     assert!(
         handle.size.width < px(48.),
         "the desktop keeps its thin divider: {handle:?}"
+    );
+}
+
+#[gpui::test]
+fn a_touch_drag_moves_a_split_divider(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| theme.touch_mode = true);
+    });
+    let (_, cx) = cx.add_window_view(|_, _| Split);
+    cx.run_until_parked();
+    let first = cx.debug_bounds("first").expect("first pane");
+    let handle = cx.debug_bounds("split-handle").expect("the divider");
+    let start = handle.center();
+    for (phase, position) in [
+        (TouchPhase::Started, start),
+        (TouchPhase::Moved, start + point(px(40.), px(0.))),
+        (TouchPhase::Ended, start + point(px(40.), px(0.))),
+    ] {
+        cx.simulate_event(TouchDragEvent {
+            phase,
+            start_position: start,
+            position,
+        });
+    }
+    assert!(
+        cx.debug_bounds("first").expect("first pane").size.width > first.size.width,
+        "a phone swipe must move the divider"
     );
 }
 

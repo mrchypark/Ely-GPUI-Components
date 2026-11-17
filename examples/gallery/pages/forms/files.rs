@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use ely_gpui_component::forms::{DropZone, FileInput};
-use gpui::{App, IntoElement, ParentElement, Styled, Window, div, px};
+use ely_gpui_component::{forms::{DropZone, FileInput}, theme::ActiveTheme};
+use gpui::{App, IntoElement, ParentElement, Styled, Window, div, prelude::FluentBuilder, px};
 
 use crate::{
-    probe::probe,
+    probe::{probe, probe_sized},
     ui::{keep, section, set, specimen, specimens},
 };
 
@@ -73,14 +73,15 @@ pub fn files(window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         } else {
             format!("took {}", names(&taken_now))
         },
-        probe(
+        probe_sized(
             "drop-zone",
-            div().w(px(420.0)).child(
+            div().w(px(420.0)).when(cx.theme().touch_mode, |view| view.w_full().min_w_0()).child(
                 DropZone::new("drop-zone")
                     .multiple()
                     .hint("Any kind of file")
                     .on_drop(move |next, _, cx| set(&taken, next, cx)),
             ),
+            cx.theme().touch_mode,
         ),
         cx,
     ))

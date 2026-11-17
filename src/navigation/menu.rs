@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{
     App, Bounds, ElementId, Entity, FontWeight, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
-    canvas, div, prelude::*,
+    canvas, div, prelude::*, px,
 };
 
 use crate::{
@@ -144,6 +144,7 @@ impl RenderOnce for NavigationMenu {
                 usual
             }
         };
+        let columns: usize = if panel_width < px(420.0) { 1 } else { 2 };
         let triggers = entries.iter().enumerate().map(|(ix, (label, _))| {
             let on = open == Some(ix);
             let (press, hover, measure, into) =
@@ -214,6 +215,7 @@ impl RenderOnce for NavigationMenu {
                     .id(("link", ix))
                     .debug_selector(move || format!("navigation-menu-link-{ix}"))
                     .flex()
+                    .min_w_0()
                     .gap_3()
                     .p_2()
                     .rounded(theme.radius(Radius::Md))
@@ -235,6 +237,7 @@ impl RenderOnce for NavigationMenu {
                         div()
                             .flex()
                             .flex_col()
+                            .min_w_0()
                             .gap_0p5()
                             .child(
                                 div()
@@ -259,13 +262,14 @@ impl RenderOnce for NavigationMenu {
                 .occlude()
                 .on_scroll(|_, _, cx| cx.stop_propagation())
                 .w(panel_width)
+                .min_w_0()
                 .p_2()
                 .grid()
-                .grid_cols(2)
+                .grid_cols(columns as u16)
                 .gap_1()
                 .on_mouse_down_out(move |_, _, cx| show(&close, None, cx))
                 .children(links);
-            let rows = entries[entry].1.len().div_ceil(2) * 2;
+            let rows = entries[entry].1.len().div_ceil(columns);
             float(
                 (self.id.clone(), format!("menu-{entry}")),
                 state.read(cx).anchors[entry],

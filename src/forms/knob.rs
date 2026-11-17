@@ -1,9 +1,10 @@
 use std::{cell::Cell, f32::consts::PI, rc::Rc};
 
 use gpui::{
-    App, DragMoveEvent, ElementId, EmptyView, EntityId, InteractiveElement, IntoElement,
-    ParentElement, Path, PathBuilder, Pixels, Point, RenderOnce, StatefulInteractiveElement,
-    Styled, Window, canvas, div, point, prelude::*,
+    App, DispatchPhase, DragMoveEvent, ElementId, EmptyView, EntityId, HitboxBehavior,
+    InteractiveElement, IntoElement, ParentElement, Path, PathBuilder, Pixels, Point, RenderOnce,
+    StatefulInteractiveElement, Styled, TouchDragEvent, TouchPhase, Window, canvas, div, point,
+    prelude::*,
 };
 
 use super::{
@@ -24,6 +25,87 @@ fn at_angle(center: Point<Pixels>, radius: Pixels, angle: f32) -> Point<Pixels> 
         center.x + radius * angle.cos(),
         center.y + radius * angle.sin(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Knob;
+    use crate::theme::Theme;
+    use gpui::{
+        Context, IntoElement, ParentElement, Render, Styled, TestAppContext, TouchDragEvent,
+        TouchPhase, Window, div, point, px,
+    };
+
+    struct Probe {
+        value: f64,
+        disabled: bool,
+    }
+
+    impl Render for Probe {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let view = cx.entity();
+            div().size_full().child(
+                Knob::new("knob", self.value)
+                    .disabled(self.disabled)
+                    .on_change(move |value, _, cx| {
+                        view.update(cx, |view, cx| {
+                            view.value = value;
+                            cx.notify();
+                        });
+                    }),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn touch_drag_turns_knob_and_disabled_knob_does_not_claim(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            Theme::init(cx);
+            Theme::update(cx, |theme| theme.touch_mode = true);
+        });
+        let (view, cx) = cx.add_window_view(|_, _| Probe {
+            value: 65.,
+            disabled: false,
+        });
+        cx.run_until_parked();
+        let start = cx.debug_bounds("knob-root").unwrap().center();
+        let up = start - point(px(0.), px(40.));
+        for (phase, position) in [
+            (TouchPhase::Started, up),
+            (TouchPhase::Moved, up),
+            (TouchPhase::Ended, up),
+        ] {
+            cx.simulate_event(TouchDragEvent {
+                phase,
+                start_position: start,
+                position,
+            });
+            cx.run_until_parked();
+        }
+        let changed = view.read_with(cx, |view, _| view.value);
+        assert!(changed > 65., "drag up left value at {changed}");
+        cx.simulate_event(TouchDragEvent {
+            phase: TouchPhase::Moved,
+            start_position: start,
+            position: start,
+        });
+        cx.run_until_parked();
+        assert_eq!(view.read_with(cx, |view, _| view.value), changed);
+        view.update(cx, |view, cx| {
+            view.disabled = true;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        for phase in [TouchPhase::Started, TouchPhase::Moved, TouchPhase::Ended] {
+            cx.simulate_event(TouchDragEvent {
+                phase,
+                start_position: start,
+                position: up,
+            });
+            cx.run_until_parked();
+        }
+        assert_eq!(view.read_with(cx, |view, _| view.value), changed);
+    }
 }
 
 /// A stroked arc clockwise from `from` to `to`, in radians.
@@ -103,6 +185,9 @@ impl RenderOnce for Knob {
         let owner = window
             .use_keyed_state((self.id.clone(), "drag"), cx, |_, _| ())
             .entity_id();
+        let touch = window.use_keyed_state((self.id.clone(), "touch"), cx, |_, _| {
+            None::<(Point<Pixels>, f64)>
+        });
         let theme = cx.theme();
         let colors = &theme.colors;
         let (diameter, width) = theme.knob();
@@ -124,9 +209,12 @@ impl RenderOnce for Knob {
                 }
             })
         };
-        let (drag, keys) = (commit.clone(), commit);
+        let (drag, keys, touch_commit) = (commit.clone(), commit.clone(), commit);
+        let touch_enabled = theme.touch_mode && !self.disabled;
+        let touch_focus = focus.clone();
         div()
             .id(self.id)
+            .debug_selector(|| "knob-root".into())
             .track_focus(&focus)
             .relative()
             .flex_none()
@@ -139,8 +227,52 @@ impl RenderOnce for Knob {
             .when(self.disabled, |knob| knob.opacity(0.5))
             .child(
                 canvas(
-                    |_, _, _| {},
-                    move |bounds, _, window, _| {
+                    move |bounds, window, _| {
+                        touch_enabled.then(|| window.insert_hitbox(bounds, HitboxBehavior::Normal))
+                    },
+                    move |bounds, hitbox, window, _| {
+                        if let Some(hitbox) = hitbox {
+                            window.on_mouse_event(
+                                move |event: &TouchDragEvent, phase, window, cx| {
+                                    if phase != DispatchPhase::Bubble {
+                                        return;
+                                    }
+                                    if event.phase == TouchPhase::Started {
+                                        touch.update(cx, |state, _| *state = None);
+                                        if window.default_prevented()
+                                            || !hitbox.is_hovered_at(event.start_position, window)
+                                        {
+                                            return;
+                                        }
+                                        touch.update(cx, |state, _| {
+                                            *state = Some((event.start_position, value))
+                                        });
+                                        window.focus(&touch_focus, cx);
+                                        window.prevent_default();
+                                    }
+                                    let Some((start, from)) = *touch.read(cx) else {
+                                        return;
+                                    };
+                                    if start != event.start_position {
+                                        return;
+                                    }
+                                    cx.stop_propagation();
+                                    if matches!(
+                                        event.phase,
+                                        TouchPhase::Ended | TouchPhase::Cancelled
+                                    ) {
+                                        touch.update(cx, |state, _| *state = None);
+                                        return;
+                                    }
+                                    let moved = (start.y - event.position.y) / travel;
+                                    touch_commit(
+                                        value_at(fraction(from, min, max) + moved, min, max, step),
+                                        window,
+                                        cx,
+                                    );
+                                },
+                            );
+                        }
                         let center = bounds.center();
                         let radius = bounds.size.width / 2.0 - stroke * 1.5;
                         window.paint_path(arc(center, radius, START, START + SWEEP, stroke), rail);

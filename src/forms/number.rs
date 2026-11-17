@@ -1,9 +1,10 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Context, CursorStyle, DragMoveEvent, ElementId, EmptyView, Entity, EntityId,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*,
+    AnyElement, App, Context, CursorStyle, DispatchPhase, DragMoveEvent, ElementId, EmptyView,
+    Entity, EntityId, HitboxBehavior, InteractiveElement, IntoElement, KeyboardType, MouseButton,
+    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, TouchDragEvent, TouchPhase, Window, canvas, div, prelude::*,
 };
 
 use super::{
@@ -45,6 +46,15 @@ fn settle(value: f64, min: f64, max: f64, precision: usize) -> f64 {
         "no {precision}-place number lies in {min}..={max}"
     );
     ((value * scale).round() / scale).clamp(low, high)
+}
+
+fn keyboard_hint(min: f64, precision: usize) -> KeyboardType {
+    match (min < 0.0, precision > 0) {
+        (false, false) => KeyboardType::NumberPad,
+        (true, false) => KeyboardType::SignedNumber,
+        (false, true) => KeyboardType::Decimal,
+        (true, true) => KeyboardType::SignedDecimal,
+    }
 }
 
 /// `bound` on the `1 / scale` grid: kept if float error alone put it off, else moved `inward`.
@@ -189,9 +199,61 @@ fn scrub_handle(
         .use_keyed_state(id.clone(), cx, |_, _| ())
         .entity_id();
     let notch = cx.theme().handle_hit().to_pixels(window.rem_size());
+    let touch = window.use_keyed_state((id.clone(), "touch"), cx, |_, _| None);
+    let touch_state = state.clone();
     div()
         .id(id)
+        .relative()
         .cursor(CursorStyle::ResizeLeftRight)
+        .when(cx.theme().touch_mode, |handle| {
+            handle.child(
+                canvas(
+                    |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+                    move |_, hitbox, window, _| {
+                        window.on_mouse_event(move |event: &TouchDragEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble {
+                                return;
+                            }
+                            if event.phase == TouchPhase::Started {
+                                if window.default_prevented()
+                                    || !hitbox.is_hovered_at(event.start_position, window)
+                                {
+                                    return;
+                                }
+                                let from = touch_state.read(cx).current(cx);
+                                touch.update(cx, |touch, _| {
+                                    *touch = Some((event.start_position, from));
+                                });
+                                window.prevent_default();
+                            }
+                            let Some((start, from)) = *touch.read(cx) else {
+                                return;
+                            };
+                            if start != event.start_position {
+                                return;
+                            }
+                            cx.stop_propagation();
+                            if event.phase == TouchPhase::Cancelled {
+                                touch.update(cx, |touch, _| *touch = None);
+                                return;
+                            }
+                            let notches = f64::from(((event.position.x - start.x) / notch).trunc());
+                            let numeric = touch_state.read(cx);
+                            let (min, max, step, precision) = numeric.limits;
+                            let next = settle(from + notches * step, min, max, precision);
+                            if next != numeric.current(cx) {
+                                commit(&touch_state, next, window, cx);
+                            }
+                            if event.phase == TouchPhase::Ended {
+                                touch.update(cx, |touch, _| *touch = None);
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .inset_0(),
+            )
+        })
         .on_drag(
             Scrub {
                 owner,
@@ -336,11 +398,15 @@ impl RenderOnce for NumberInput {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = numeric(&self.id, window, cx);
         let (value, min, max, step) = (self.value, self.min, self.max, self.step);
+        let keyboard_type = keyboard_hint(min, self.precision);
         let shown = match self.blank {
             Some(_) => String::new(),
             None => format::number(value, self.precision, Separators::EN),
         };
         let input = state.read(cx).input.clone();
+        input.update(cx, |input, cx| input.set_keyboard_type(keyboard_type, cx));
+        #[cfg(all(test, feature = "test-support"))]
+        keyboard_hint_tests::record(self.id.clone(), input.clone());
         let editing = input.read(cx).focus().is_focused(window);
         let echo = input.read(cx).text() == shown;
         let reseed = state.update(cx, |numeric, _| {
@@ -380,6 +446,7 @@ impl RenderOnce for NumberInput {
         let label = self.scrub_label.take().map(|label| {
             let theme = cx.theme();
             let face = div()
+                .debug_selector(|| "scrub-label".into())
                 .flex_none()
                 .min_w(theme.control_height(ControlSize::Md))
                 .whitespace_nowrap()
@@ -496,3 +563,6 @@ pub use scrub::ScrubInput;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "test-support"))]
+mod keyboard_hint_tests;

@@ -5,12 +5,22 @@ use ely_gpui_component::{
 };
 use gpui::{
     Bounds, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Pixels, Render,
-    ScrollHandle, StatefulInteractiveElement, Styled, Window, div, point, px,
+    ScrollHandle, StatefulInteractiveElement, Styled, Subscription, Window, div, point, px,
+};
+#[cfg(any(target_os = "ios", target_os = "android"))]
+use gpui_mobile::{
+    StatusBarContentStyle, SystemChromeStyle, set_system_chrome_with_navigation_bar_style,
 };
 
 use gpui::prelude::FluentBuilder;
 
 use crate::{pages, probe::probe};
+
+#[path = "keyboard.rs"]
+mod keyboard;
+use keyboard::keyboard_occlusion;
+#[cfg(test)]
+use keyboard::{keyboard_target, needed_top_reach};
 
 #[derive(serde::Deserialize)]
 struct Stories {
@@ -40,6 +50,23 @@ fn stories(page: &str) -> &'static [Specimen] {
         .map_or(&[], |entry| entry.stories.as_slice())
 }
 
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn bar_content_style(is_dark: bool) -> StatusBarContentStyle {
+    if is_dark {
+        StatusBarContentStyle::Light
+    } else {
+        StatusBarContentStyle::Dark
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn system_chrome(is_dark: bool) -> SystemChromeStyle {
+    SystemChromeStyle {
+        status_bar_style: bar_content_style(is_dark),
+        ..Default::default()
+    }
+}
+
 /// A single mounted catalog page; navigation remains outside its scroll viewport.
 pub struct MobileGallery {
     focus: FocusHandle,
@@ -52,12 +79,24 @@ pub struct MobileGallery {
     insets: ViewportInsets,
     keyboard: Pixels,
     floating_keyboard: Option<Bounds<Pixels>>,
+    top_reach: Pixels,
+    reveal_pending: bool,
+    reveal_retries: u8,
+    reveal_viewport: Option<(Pixels, Pixels)>,
+    _focus_changes: Subscription,
 }
 
 impl MobileGallery {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        let weak = cx.weak_entity();
+        let focus_changes = window.on_focus_changed(cx, move |_, cx| {
+            let _ = weak.update(cx, |view, cx| {
+                view.reveal_retries = 1;
+                cx.notify();
+            });
+        });
         Self {
             focus,
             page: 0,
@@ -69,14 +108,22 @@ impl MobileGallery {
             insets: ViewportInsets::default(),
             keyboard: px(0.),
             floating_keyboard: None,
+            top_reach: px(0.),
+            reveal_pending: false,
+            reveal_retries: 1,
+            reveal_viewport: None,
+            _focus_changes: focus_changes,
         }
     }
 
     /// Feed real platform insets; no simulated keyboard is used in this harness.
     pub fn set_insets(&mut self, insets: ViewportInsets, keyboard: Pixels, cx: &mut Context<Self>) {
-        self.insets = insets;
-        self.keyboard = keyboard;
-        cx.notify();
+        if self.insets != insets || self.keyboard != keyboard {
+            self.insets = insets;
+            self.keyboard = keyboard;
+            self.reveal_retries = 1;
+            cx.notify();
+        }
     }
 
     /// Supply the floating keyboard rectangle in logical window coordinates.
@@ -87,6 +134,10 @@ impl MobileGallery {
     ) {
         if self.floating_keyboard != keyboard {
             self.floating_keyboard = keyboard;
+            if keyboard.is_none() && self.top_reach > px(0.) {
+                self.reclaim_top_reach(self.keyboard);
+            }
+            self.reveal_retries = 1;
             cx.notify();
         }
     }
@@ -102,7 +153,7 @@ impl MobileGallery {
         self.story_error = None;
         self.visits += 1;
         cx.set_global(crate::probe::Probes::default());
-        self.scroll.set_offset(point(px(0.), px(0.)));
+        self.scroll.set_offset(point(px(0.), -self.top_reach));
         cx.notify();
         true
     }
@@ -136,12 +187,26 @@ impl MobileGallery {
 
 impl Render for MobileGallery {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
+            let is_dark = cx.theme().is_dark();
+            set_system_chrome_with_navigation_bar_style(
+                &system_chrome(is_dark),
+                bar_content_style(is_dark),
+            );
+        }
+        let keyboard = keyboard_occlusion(
+            self.keyboard,
+            window.insets().ime.bottom,
+            self.floating_keyboard.is_some(),
+        );
         let available = usable_bounds(
             Bounds::new(point(px(0.), px(0.)), window.viewport_size()),
             self.insets,
-            self.keyboard,
+            keyboard,
         )
         .intersect(&window.fully_visible_bounds());
+        self.schedule_keyboard_reveal(window, cx);
         let colors = cx.theme().colors.clone();
         let compact_height = available.size.height < px(320.);
         let page = &pages::ALL[self.page];
@@ -286,7 +351,9 @@ impl Render for MobileGallery {
             };
             div()
                 .debug_selector(move || format!("gallery-rendered-{slug}"))
-                .when(page.slug == "charts", |el| el.w(available.size.width - px(16.)).min_w_0())
+                .when(page.slug == "charts", |el| {
+                    el.w(available.size.width - px(16.)).min_w_0()
+                })
                 .child(
                     div()
                         .debug_selector(|| "gallery-story-body".into())
@@ -302,20 +369,28 @@ impl Render for MobileGallery {
             .children((!self.catalog).then_some(story_navigation))
             .children((!self.catalog).then(|| {
                 div()
+                    .id("gallery-story-label-scroll")
                     .debug_selector(|| "gallery-story-label".into())
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .child(match self.story {
-                        Some(index) => format!(
-                            "{}/{} · {}",
-                            index + 1,
-                            specimens.len(),
-                            specimens[index].title
-                        ),
-                        None => {
-                            format!("All {} stories · Story › opens the first", specimens.len())
-                        }
+                    .min_w_0()
+                    .when(compact_height, |label| {
+                        label.max_h(px(48.)).overflow_y_scroll()
                     })
+                    .child(
+                        div()
+                            .debug_selector(|| "gallery-story-label-text".into())
+                            .child(match self.story {
+                                Some(index) => format!(
+                                    "{}/{} · {}",
+                                    index + 1,
+                                    specimens.len(),
+                                    specimens[index].title
+                                ),
+                                None => format!(
+                                    "All {} stories · Story › opens the first",
+                                    specimens.len()
+                                ),
+                            }),
+                    )
             }))
             .child(
                 div()
@@ -328,11 +403,17 @@ impl Render for MobileGallery {
                         self.visits
                     )),
             );
+        let (navigation, scroll_navigation) = if compact_height {
+            (None, Some(navigation))
+        } else {
+            (Some(navigation), None)
+        };
         let (header, scroll_header) = if compact_height {
             (None, Some(secondary))
         } else {
             (Some(secondary), None)
         };
+        let weak_scroll = cx.weak_entity();
         div()
             .size_full()
             .track_focus(&self.focus)
@@ -350,7 +431,7 @@ impl Render for MobileGallery {
                     .gap_2()
                     .p_2()
                     .overflow_hidden()
-                    .child(navigation)
+                    .children(navigation)
                     .children(header)
                     .child(
                         div()
@@ -362,8 +443,38 @@ impl Render for MobileGallery {
                             .overflow_y_scroll()
                             .overflow_x_scroll()
                             .track_scroll(&self.scroll)
+                            .on_scroll(move |_, window, cx| {
+                                let _ = weak_scroll.update(cx, |view, cx| {
+                                    let keyboard = keyboard_occlusion(
+                                        view.keyboard,
+                                        window.insets().ime.bottom,
+                                        view.floating_keyboard.is_some(),
+                                    );
+                                    if view.top_reach > px(0.)
+                                        || keyboard > px(0.)
+                                        || view.floating_keyboard.is_some()
+                                    {
+                                        view.reveal_retries = 1;
+                                        cx.notify();
+                                    }
+                                });
+                            })
+                            .when(self.top_reach > px(0.), |scroll| {
+                                scroll.child(div().h(self.top_reach).flex_none())
+                            })
+                            .children(scroll_navigation)
                             .children(scroll_header)
-                            .child(body),
+                            .child(body)
+                            .when(
+                                keyboard > px(0.) || self.floating_keyboard.is_some(),
+                                |scroll| {
+                                    let reach = keyboard.max(
+                                        self.floating_keyboard
+                                            .map_or(px(0.), |_| available.size.height),
+                                    );
+                                    scroll.child(div().h(reach).flex_none())
+                                },
+                            ),
                     ),
             )
     }
