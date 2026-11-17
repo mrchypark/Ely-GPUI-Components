@@ -13,6 +13,7 @@ mod hover_touch;
 mod images;
 mod player;
 mod stale;
+mod transcript;
 mod video;
 
 pub(super) fn setup(cx: &mut TestAppContext) {

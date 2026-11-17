@@ -9,6 +9,22 @@ use gpui::{
 use super::{Numeric, Scrub, commit, settle};
 use crate::theme::ActiveTheme;
 
+/// Wraps `face` in a scrub handle unless `disabled`, dimming it otherwise.
+pub(super) fn maybe_scrub(
+    id: ElementId,
+    face: AnyElement,
+    disabled: bool,
+    state: Entity<Numeric>,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    if disabled {
+        div().opacity(0.4).child(face).into_any_element()
+    } else {
+        scrub_handle(id, face, state, window, cx).into_any_element()
+    }
+}
+
 /// Wraps `face` so dragging it sideways moves the number, one step per notch.
 pub(super) fn scrub_handle(
     id: ElementId,

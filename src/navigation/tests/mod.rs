@@ -1,3 +1,4 @@
+mod bottom_bar;
 mod editor_tabs_touch;
 mod menu_touch;
 mod pages;

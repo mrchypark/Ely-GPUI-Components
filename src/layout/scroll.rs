@@ -9,7 +9,7 @@ use gpui::{
 use smallvec::SmallVec;
 use web_time::Instant;
 
-use super::ScrollShadow;
+use super::{ScrollShadow, scroll_refresh};
 use crate::{motion, theme::ActiveTheme};
 
 const IDLE: Duration = Duration::from_millis(900);
@@ -314,6 +314,8 @@ pub struct ScrollArea {
     vertical: bool,
     handle: Option<ScrollHandle>,
     body: SmallVec<[AnyElement; 2]>,
+    refreshing: bool,
+    on_refresh: Option<scroll_refresh::OnRefresh>,
 }
 
 impl ScrollArea {
@@ -325,6 +327,8 @@ impl ScrollArea {
             vertical: false,
             handle: None,
             body: SmallVec::new(),
+            refreshing: false,
+            on_refresh: None,
         }
     }
 
@@ -343,6 +347,18 @@ impl ScrollArea {
     /// Scrolls down only; content keeps the area's width.
     pub fn vertical(mut self) -> Self {
         self.vertical = true;
+        self
+    }
+
+    /// Shows the pull-to-refresh busy indicator while a refresh is in flight.
+    pub fn refreshing(mut self, refreshing: bool) -> Self {
+        self.refreshing = refreshing;
+        self
+    }
+
+    /// Called when the user pulls down past the top edge to refresh.
+    pub fn on_refresh(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_refresh = Some(Rc::new(handler));
         self
     }
 }
@@ -388,11 +404,23 @@ impl RenderOnce for ScrollArea {
             active_at: None,
             hovered: false,
         });
+        let pull_state = window.use_keyed_state((self.id.clone(), "pull-refresh"), cx, |_, _| {
+            scroll_refresh::PullState::default()
+        });
         let handle = match self.handle {
             Some(handle) => handle,
             None => state.read(cx).handle.clone(),
         };
         let presence = track_activity(&state, &handle, window, cx);
+        let refreshing = self.refreshing;
+        let on_refresh = self.on_refresh;
+        let banner = scroll_refresh::refresh_banner(
+            self.id.clone(),
+            refreshing,
+            pull_state.read(cx).pull,
+            window,
+            cx,
+        );
         self.base
             .id(self.id)
             .relative()
@@ -403,6 +431,15 @@ impl RenderOnce for ScrollArea {
                     activity.hovered = *hovered;
                     cx.notify();
                 })
+            })
+            .when_some(on_refresh.clone(), |area, on_refresh| {
+                scroll_refresh::attach_pointer_pull(
+                    area,
+                    pull_state.clone(),
+                    handle.clone(),
+                    refreshing,
+                    on_refresh,
+                )
             })
             .child(
                 div()
@@ -417,6 +454,17 @@ impl RenderOnce for ScrollArea {
                         let handle = handle.clone();
                         move |event, window, cx| {
                             let delta = event.delta.pixel_delta(window.line_height());
+                            if let Some(on_refresh) = &on_refresh {
+                                scroll_refresh::on_scroll_pull(
+                                    &pull_state,
+                                    &handle,
+                                    delta.y,
+                                    refreshing,
+                                    on_refresh,
+                                    window,
+                                    cx,
+                                );
+                            }
                             let reach = handle.max_offset();
                             let vertical = delta.y != Pixels::ZERO && reach.y > Pixels::ZERO;
                             if vertical || (delta.x != Pixels::ZERO && reach.x > Pixels::ZERO) {
@@ -424,6 +472,7 @@ impl RenderOnce for ScrollArea {
                             }
                         }
                     })
+                    .children(banner)
                     .map(|body| match self.vertical {
                         // Children fill and never widen, so rows wrap.
                         true => body.flex().flex_col().children(

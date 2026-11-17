@@ -13,6 +13,7 @@ mod scrubber;
 mod strip;
 mod subtitles;
 mod thumbnail;
+mod transcript;
 mod turn;
 mod upload;
 mod viewer;
@@ -39,6 +40,7 @@ pub use scrubber::Scrubber;
 pub use strip::VideoThumbnailStrip;
 pub use subtitles::{Cue, SubtitleEditor};
 pub use thumbnail::ImageThumbnail;
+pub use transcript::{SpeakerRole, TimedWord, TranscriptTurn, TranscriptView};
 pub use upload::ImageUpload;
 pub use viewer::ImageViewer;
 
