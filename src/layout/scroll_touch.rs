@@ -35,8 +35,7 @@ fn a_touch_scrollbar_stays_out_and_grabs_wide(cx: &mut TestAppContext) {
     });
     let (_, cx) = cx.add_window_view(|_, _| Long);
     cx.run_until_parked();
-    // The bar needs the measured box of the scroll area, which comes on the
-    // second frame.
+    // The bar needs the measured box of the scroll area, which comes on the second frame.
     cx.update(|window, _| window.refresh());
     cx.run_until_parked();
 
@@ -70,8 +69,7 @@ fn a_touch_scrollbar_stays_out_and_grabs_wide(cx: &mut TestAppContext) {
         bar.origin == desktop_bar.origin,
         "the bar sits where it always sat: {bar:?} against {desktop_bar:?}"
     );
-    // The wide target reaches past the visible bar toward the edge of the
-    // screen, where a thumb lands.
+    // The wide target reaches past the visible bar toward the edge of the screen, where a thumb lands.
     assert!(
         grab.right() > bar.right(),
         "the grab target reaches past the bar to the edge: {grab:?} against {bar:?}"

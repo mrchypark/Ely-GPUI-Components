@@ -180,11 +180,16 @@ impl Palette {
                 .control_height(ControlSize::Lg)
                 .to_pixels(window.rem_size()),
         );
-        let header = row_height + gpui::rems(2.5).to_pixels(window.rem_size()) + gpui::px(2.);
-        let room = tooltip_has_room(self.usable_bounds, gpui::rems(1.), window)
-            && self.usable_bounds.is_none_or(|area| {
-                area.size.height >= header + row_height && area.size.width > header * 2.
-            });
+        let header =
+            row_height + gpui::rems(2.5).to_pixels(window.rem_size()) + cx.theme().hairline() * 2.;
+        let room = tooltip_has_room(
+            self.usable_bounds,
+            gpui::rems(1.),
+            window,
+            cx.theme().hairline(),
+        ) && self.usable_bounds.is_none_or(|area| {
+            area.size.height >= header + row_height && area.size.width > header * 2.
+        });
         if !room {
             let previous = visible.update(cx, |state, _| {
                 state.suppressed = true;

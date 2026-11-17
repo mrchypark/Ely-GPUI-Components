@@ -227,8 +227,7 @@ impl RenderOnce for InlineEdit {
                             .invisible()
                             .group_hover(group, |style| style.visible())
                     })
-                    // A phone never hovers, so the pencil shows outright and keeps
-                    // a thumb-sized target.
+                    // A phone never hovers, so the pencil shows outright and keeps a thumb-sized target.
                     .when(touch, |pencil| {
                         pencil
                             .map(|pencil| theme.touch_target(pencil))

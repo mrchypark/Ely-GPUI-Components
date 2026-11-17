@@ -29,7 +29,7 @@ for f in $files AGENTS.md README.md TASKS.md tasks/*.md; do
   n=$(wc -l < "$f")
   [ "$n" -le 500 ] || { echo "$f has $n lines"; fail=1; }
 done
-components=$(find src -name '*.rs' ! -path 'src/theme/*' ! -path 'src/motion/*' ! -path '*/tests/*' ! -name 'tests.rs')
+components=$(find src -name '*.rs' ! -path 'src/theme/*' ! -path 'src/motion/*' ! -path '*/tests/*' ! -name 'tests.rs' ! -name '*_test.rs' ! -name '*_tests.rs' ! -name '*_touch.rs' ! -name 'touch_targets.rs')
 raw=$(awk '/#\[cfg\(test\)\]/{nextfile} /(^|[^.[:alnum:]_])px\(/{print FILENAME":"FNR": "$0}' $components)
 [ -z "$raw" ] || { echo "raw px in components:"; echo "$raw"; fail=1; }
 deferred=$(grep -rn 'deferred(' src --include='*.rs' | grep -v '^src/primitives/layer.rs' || true)

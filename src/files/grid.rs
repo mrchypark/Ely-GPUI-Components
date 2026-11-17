@@ -35,8 +35,7 @@ pub(crate) fn stepped(at: usize, count: usize, columns: usize, key: &str) -> Opt
     }
 }
 
-/// Files and folders as tiles. A press selects; touch mode supplies Open for the selection.
-/// Desktop double press and Enter open; arrows, Home and End move the selection.
+/// Select tiles; touch offers Open, desktop double-click or Enter opens, and keys move selection.
 #[derive(IntoElement)]
 pub struct FileGrid {
     id: ElementId,

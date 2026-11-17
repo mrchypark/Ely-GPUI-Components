@@ -1,0 +1,455 @@
+//! Data sources and append-only storage.
+
+mod store;
+mod summary;
+
+pub(crate) use store::SeriesStore;
+pub(crate) use summary::DecimationScratch;
+
+use crate::charts::advanced::geom::Point;
+use crate::charts::advanced::view::{Range, Viewport};
+
+/// Mode of the X axis data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum XMode {
+    /// X values are implicit indices.
+    Index,
+    /// X values are explicitly provided.
+    Explicit,
+}
+
+/// Errors that can occur when appending data. These errors indicate misuse of an append-only series (for example, mixing
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppendError {
+    /// Attempted to append with an incompatible X mode.
+    WrongMode,
+    /// Explicit X values are not monotonic. Non-monotonic X values disable fast range slicing.
+    NonMonotonicX,
+}
+
+/// Append-only data storage with incremental bounds tracking.
+#[derive(Debug, Clone)]
+pub(crate) struct AppendOnlyData {
+    points: Vec<Point>,
+    shared: Option<SharedSamples>,
+    x_mode: XMode,
+    monotonic: bool,
+    bounds: Option<Viewport>,
+}
+
+#[derive(Debug, Clone)]
+struct SharedSamples {
+    values: std::sync::Arc<[f32]>,
+    range: std::ops::Range<usize>,
+    sample_rate: f64,
+    first_sample: u64,
+}
+
+impl SharedSamples {
+    fn point(&self, index: usize) -> Option<Point> {
+        if index >= self.range.len() {
+            return None;
+        }
+        let index = self.range.start + index;
+        Some(Point::new(
+            (self.first_sample + index as u64) as f64 / self.sample_rate,
+            self.values[index] as f64,
+        ))
+    }
+
+    fn bound(&self, x: f64, inclusive: bool) -> usize {
+        let (mut low, mut high) = (0, self.range.len());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            let point_x =
+                (self.first_sample + (self.range.start + middle) as u64) as f64 / self.sample_rate;
+            if point_x < x || (inclusive && point_x == x) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        low
+    }
+}
+
+impl AppendOnlyData {
+    pub(crate) fn shared_samples(
+        values: std::sync::Arc<[f32]>,
+        range: std::ops::Range<usize>,
+        sample_rate: f64,
+    ) -> Result<Self, &'static str> {
+        Self::shared_samples_at(values, range, sample_rate, 0)
+    }
+
+    pub(crate) fn shared_samples_at(
+        values: std::sync::Arc<[f32]>,
+        range: std::ops::Range<usize>,
+        sample_rate: f64,
+        first_sample: u64,
+    ) -> Result<Self, &'static str> {
+        if range.start > range.end || range.end > values.len() {
+            return Err("sample range is out of bounds");
+        }
+        if !sample_rate.is_finite() || sample_rate <= 0. {
+            return Err("sample rate must be finite and positive");
+        }
+        if values[range.clone()].iter().any(|value| !value.is_finite()) {
+            return Err("samples must be finite");
+        }
+        if !range.is_empty() {
+            let last = first_sample
+                .checked_add((range.end - 1) as u64)
+                .ok_or("sample position overflow")?;
+            if !((last as f64) / sample_rate).is_finite() {
+                return Err("sample time must be finite");
+            }
+        }
+        let mut data = Self::explicit();
+        data.shared = Some(SharedSamples {
+            values,
+            range,
+            sample_rate,
+            first_sample,
+        });
+        for index in 0..data.len() {
+            data.update_bounds(data.point(index).expect("validated sample index"));
+        }
+        Ok(data)
+    }
+
+    pub(crate) fn iter_points(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> impl ExactSizeIterator<Item = Point> + Clone + '_ {
+        range.map(|index| self.point(index).expect("validated point range"))
+    }
+    /// Create an empty data set with implicit X indices.
+    pub fn indexed() -> Self {
+        Self {
+            points: Vec::new(),
+            shared: None,
+            x_mode: XMode::Index,
+            monotonic: true,
+            bounds: None,
+        }
+    }
+
+    /// Create an empty data set with explicit X values.
+    pub fn explicit() -> Self {
+        Self {
+            points: Vec::new(),
+            shared: None,
+            x_mode: XMode::Explicit,
+            monotonic: true,
+            bounds: None,
+        }
+    }
+
+    /// Build an indexed data set from an iterator of Y values.
+    pub fn from_iter_y<I, T>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<f64>,
+    {
+        let mut data = Self::indexed();
+        let _ = data.extend_y(iter);
+        data
+    }
+
+    /// Build an explicit data set from an iterator of points.
+    pub fn from_iter_points<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = Point>,
+    {
+        let mut data = Self::explicit();
+        let _ = data.extend_points(iter);
+        data
+    }
+
+    /// Build an explicit data set by sampling a callback function.
+    pub fn from_explicit_callback(
+        function: impl Fn(f64) -> f64,
+        x_range: Range,
+        points: usize,
+    ) -> Self {
+        let mut data = Self::explicit();
+        if points == 0 {
+            return data;
+        }
+        let span = x_range.span();
+        let step = if points > 1 {
+            span / (points - 1) as f64
+        } else {
+            0.0
+        };
+        for i in 0..points {
+            let x = x_range.min + step * i as f64;
+            let y = function(x);
+            let _ = data.push_point(Point::new(x, y));
+        }
+        data
+    }
+
+    /// Append a Y value for indexed data.
+    pub fn push_y(&mut self, y: f64) -> Result<usize, AppendError> {
+        let index = self.points.len();
+        self.extend_y([y]).map(|_| index)
+    }
+
+    /// Append multiple Y values for indexed data.
+    pub fn extend_y<I, T>(&mut self, values: I) -> Result<usize, AppendError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<f64>,
+    {
+        if self.shared.is_some() || self.x_mode != XMode::Index {
+            return Err(AppendError::WrongMode);
+        }
+
+        let values = values.into_iter();
+        let (reserve, _) = values.size_hint();
+        self.points.reserve(reserve);
+
+        let start_len = self.points.len();
+        for value in values {
+            let index = self.points.len();
+            let point = Point::new(index as f64, value.into());
+            self.points.push(point);
+            self.update_bounds(point);
+        }
+        Ok(self.points.len() - start_len)
+    }
+
+    /// Append a point with explicit X value.
+    pub fn push_point(&mut self, point: Point) -> Result<usize, AppendError> {
+        let index = self.points.len();
+        self.extend_points([point]).map(|_| index)
+    }
+
+    /// Append multiple points with explicit X values.
+    pub fn extend_points<I>(&mut self, points: I) -> Result<usize, AppendError>
+    where
+        I: IntoIterator<Item = Point>,
+    {
+        if self.shared.is_some() || self.x_mode != XMode::Explicit {
+            return Err(AppendError::WrongMode);
+        }
+
+        let points = points.into_iter();
+        let (reserve, _) = points.size_hint();
+        self.points.reserve(reserve);
+
+        let start_len = self.points.len();
+        let mut last_x = self.points.last().map(|point| point.x);
+        let mut non_monotonic = false;
+        for point in points {
+            if let Some(last_x) = last_x
+                && point.x < last_x
+            {
+                self.monotonic = false;
+                non_monotonic = true;
+            }
+            self.points.push(point);
+            self.update_bounds(point);
+            last_x = Some(point.x);
+        }
+
+        if non_monotonic {
+            Err(AppendError::NonMonotonicX)
+        } else {
+            Ok(self.points.len() - start_len)
+        }
+    }
+
+    /// Access all points as a slice.
+    #[cfg(test)]
+    pub fn points(&self) -> &[Point] {
+        &self.points
+    }
+
+    /// Access a single point by index.
+    pub fn point(&self, index: usize) -> Option<Point> {
+        match &self.shared {
+            Some(shared) => shared.point(index),
+            None => self.points.get(index).copied(),
+        }
+    }
+
+    /// Number of points stored.
+    pub fn len(&self) -> usize {
+        self.shared
+            .as_ref()
+            .map_or(self.points.len(), |shared| shared.range.len())
+    }
+
+    /// Check if there are no points.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Get the bounds for all points.
+    pub fn bounds(&self) -> Option<Viewport> {
+        self.bounds
+    }
+
+    /// Access the X mode.
+    pub fn x_mode(&self) -> XMode {
+        self.x_mode
+    }
+
+    /// Check whether explicit X values are monotonic.
+    pub fn is_monotonic(&self) -> bool {
+        self.monotonic
+    }
+
+    /// Find the index range that intersects the X range.
+    pub fn range_by_x(&self, range: Range) -> std::ops::Range<usize> {
+        if let Some(shared) = &self.shared {
+            return shared.bound(range.min, false)..shared.bound(range.max, true);
+        }
+        if self.points.is_empty() {
+            return 0..0;
+        }
+        match self.x_mode {
+            XMode::Index => index_range(range, self.points.len()),
+            XMode::Explicit => {
+                if !self.monotonic {
+                    return 0..self.points.len();
+                }
+                let start = lower_bound(&self.points, range.min);
+                let end = upper_bound(&self.points, range.max);
+                start..end
+            }
+        }
+    }
+
+    /// Find the index of the point with nearest X value.
+    pub fn nearest_index_by_x(&self, x: f64) -> Option<usize> {
+        if let Some(shared) = &self.shared {
+            if self.is_empty() || !x.is_finite() {
+                return None;
+            }
+            let right = shared.bound(x, false);
+            if right == 0 {
+                return Some(0);
+            }
+            if right == self.len() {
+                return Some(right - 1);
+            }
+            let left_distance = (shared.point(right - 1).unwrap().x - x).abs();
+            let right_distance = (shared.point(right).unwrap().x - x).abs();
+            return Some(if left_distance <= right_distance {
+                right - 1
+            } else {
+                right
+            });
+        }
+        if self.points.is_empty() || !x.is_finite() {
+            return None;
+        }
+
+        match self.x_mode {
+            XMode::Index => {
+                let max_index = self.points.len().saturating_sub(1) as f64;
+                let clamped = x.round().clamp(0.0, max_index);
+                Some(clamped as usize)
+            }
+            XMode::Explicit => {
+                if !self.monotonic {
+                    return self.nearest_index_linear(x);
+                }
+                let lower = lower_bound(&self.points, x);
+                if lower == 0 {
+                    return Some(0);
+                }
+                if lower >= self.points.len() {
+                    return Some(self.points.len() - 1);
+                }
+                let left = lower - 1;
+                let right = lower;
+                let left_dist = (self.points[left].x - x).abs();
+                let right_dist = (self.points[right].x - x).abs();
+                if left_dist <= right_dist {
+                    Some(left)
+                } else {
+                    Some(right)
+                }
+            }
+        }
+    }
+
+    fn update_bounds(&mut self, point: Point) {
+        match self.bounds {
+            None => {
+                self.bounds = Some(Viewport::new(
+                    Range::new(point.x, point.x),
+                    Range::new(point.y, point.y),
+                ));
+            }
+            Some(mut bounds) => {
+                bounds.x.expand_to_include(point.x);
+                bounds.y.expand_to_include(point.y);
+                self.bounds = Some(bounds);
+            }
+        }
+    }
+
+    fn nearest_index_linear(&self, x: f64) -> Option<usize> {
+        let mut best_index = None;
+        let mut best_distance = f64::INFINITY;
+        for (index, point) in self.points.iter().enumerate() {
+            let distance = (point.x - x).abs();
+            if distance < best_distance {
+                best_distance = distance;
+                best_index = Some(index);
+            }
+        }
+        best_index
+    }
+}
+
+fn index_range(range: Range, len: usize) -> std::ops::Range<usize> {
+    if len == 0 {
+        return 0..0;
+    }
+    let min = range.min.ceil() as isize;
+    let max = range.max.floor() as isize;
+    if max < 0 || min > max {
+        return 0..0;
+    }
+    let start = min.max(0) as usize;
+    let end = (max as usize).saturating_add(1).min(len);
+    start.min(end)..end
+}
+
+fn lower_bound(points: &[Point], target: f64) -> usize {
+    let mut left = 0;
+    let mut right = points.len();
+    while left < right {
+        let mid = (left + right) / 2;
+        if points[mid].x < target {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+    left
+}
+
+fn upper_bound(points: &[Point], target: f64) -> usize {
+    let mut left = 0;
+    let mut right = points.len();
+    while left < right {
+        let mid = (left + right) / 2;
+        if points[mid].x <= target {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+    left
+}
+
+#[cfg(test)]
+mod tests;

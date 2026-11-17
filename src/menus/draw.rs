@@ -66,16 +66,19 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
                 }),
         )
         // Touch menus give the action label the space used by desktop key hints.
-        .when_some(item.keys.as_ref().filter(|_| !theme.touch_mode), |row, keys| {
-            row.child(
-                div()
-                    .debug_selector(|| "menu-key-hint".into())
-                    .flex_none()
-                    .pl_4()
-                    .text_color(colors.fg_subtle)
-                    .child(KbdCombo::new(keys)),
-            )
-        })
+        .when_some(
+            item.keys.as_ref().filter(|_| !theme.touch_mode),
+            |row, keys| {
+                row.child(
+                    div()
+                        .debug_selector(|| "menu-key-hint".into())
+                        .flex_none()
+                        .pl_4()
+                        .text_color(colors.fg_subtle)
+                        .child(KbdCombo::new(keys)),
+                )
+            },
+        )
         .when(matches!(item.kind, Kind::Sub(_)), |row| {
             row.child(
                 Icon::new(IconName::ChevronRight)

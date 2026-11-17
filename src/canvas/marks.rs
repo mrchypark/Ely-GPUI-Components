@@ -69,12 +69,7 @@ pub(crate) fn handle_boxes(frame: &Frame, side: f32) -> Vec<(Handle, Frame)> {
         .collect()
 }
 
-/// Where each handle's *hit* square sits, in view pixels.
-///
-/// The square a handle draws is small -- it is a marker on the shape, not the
-/// shape -- so on a touch screen the drawn square stays as it is and the hit
-/// square grows to the touch target around the same centre. A finger then
-/// finds the handle without the canvas drawing eight handles instead of one.
+/// Touch expands each handle hit square around its center; the drawn marker stays unchanged.
 pub(crate) fn handle_hits(frame: &Frame, side: f32, touch: bool) -> Vec<(Handle, Frame)> {
     let hit_side = if touch {
         super::touch::touch_target(side)

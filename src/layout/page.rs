@@ -1,6 +1,6 @@
 use gpui::{
     AnyElement, App, Axis, ElementId, FontWeight, IntoElement, ParentElement, Pixels, RenderOnce,
-    SharedString, Styled, Window, div, prelude::*, px,
+    SharedString, Styled, Window, div, prelude::*,
 };
 use smallvec::SmallVec;
 
@@ -199,7 +199,8 @@ impl MasterDetail {
 impl RenderOnce for MasterDetail {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         if cx.theme().touch_mode
-            && self.available_width.unwrap_or(window.viewport_size().width) < px(600.)
+            && self.available_width.unwrap_or(window.viewport_size().width)
+                < cx.theme().touch_compact_width()
         {
             div()
                 .size_full()

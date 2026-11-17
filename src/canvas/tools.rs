@@ -174,8 +174,7 @@ impl RenderOnce for ToolLayer {
             theme.canvas().stroke.to_pixels(window.rem_size()),
         );
         let side = f32::from(theme.canvas().handle.to_pixels(window.rem_size()));
-        // Copied out of the theme so the press handler does not have to hold
-        // a borrow of the app while it runs.
+        // Copy the theme value so the press handler does not hold an App borrow.
         let touch = theme.touch_mode;
         let (nudge, guides) = match &gesture {
             Gesture::Moving { from, to } => {
@@ -360,9 +359,7 @@ impl RenderOnce for ToolLayer {
                     count: event.click_count,
                     shift: event.modifiers.shift,
                     side,
-                    // A finger reaches further than a mouse: on a touch screen
-                    // a small shape and a handle are found by a hit area of
-                    // the touch target, not by their drawn size.
+                    // Touch hit areas reach beyond small shapes and handles without changing drawn size.
                     touch,
                     back: held_focus.clone(),
                 };

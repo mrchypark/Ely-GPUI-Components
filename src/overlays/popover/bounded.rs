@@ -1,6 +1,6 @@
 use gpui::{
     AnyElement, App, Bounds, Display, Element, ElementId, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, Pixels, Point, Position, Rems, Size, Style, Window, point, px, rems,
+    IntoElement, LayoutId, Pixels, Point, Position, Rems, Size, Style, Window, point, rems,
 };
 
 use crate::primitives::raise;
@@ -8,9 +8,14 @@ use crate::primitives::raise;
 pub(in crate::overlays) const POPOVER_PADDING: Rems = rems(0.75);
 pub(in crate::overlays) const HOVER_PADDING: Rems = rems(1.);
 
-pub(crate) fn has_room(area: Option<Bounds<Pixels>>, padding: Rems, window: &Window) -> bool {
+pub(crate) fn has_room(
+    area: Option<Bounds<Pixels>>,
+    padding: Rems,
+    window: &Window,
+    hairline: Pixels,
+) -> bool {
     // Both surfaces use a one-pixel border; reserve a positive content viewport.
-    let frame = padding.to_pixels(window.rem_size()) * 2. + px(2.);
+    let frame = padding.to_pixels(window.rem_size()) * 2. + hairline * 2.;
     area.is_none_or(|area| area.size.width > frame && area.size.height > frame)
 }
 

@@ -123,16 +123,13 @@ impl MenuDismiss {
 }
 
 impl Menu {
-    /// Observes root open/close transitions, including teardown while open.
-    /// Called synchronously; use external state such as `Cell`, without reentering the App.
-    /// The callback selected when opening is retained until that session closes.
+    /// Observe root open/close, including teardown; callback is synchronous and retained for that session.
     pub fn on_open_change(mut self, handler: impl Fn(bool) + 'static) -> Self {
         self.on_open_change = Some(Rc::new(handler));
         self
     }
 
-    /// Observes the open menu's panel boxes, root level first; empty when closed.
-    /// Called synchronously; use external state such as `RefCell`, without reentering the App.
+    /// Observe open panel bounds, root first; empty when closed. Callback is synchronous and must not reenter App.
     pub fn on_panels_change(mut self, handler: impl Fn(&[Bounds<Pixels>]) + 'static) -> Self {
         self.on_panels_change = Some(Rc::new(handler));
         self

@@ -129,8 +129,7 @@ impl RenderOnce for QuickActions {
                             select(&hover, ix, cx);
                         }
                     })
-                    // A tap never hovers, so the press marks the row selected
-                    // the way the pointer does.
+                    // A tap never hovers, so the press marks the row selected the way the pointer does.
                     .on_mouse_down(MouseButton::Left, move |_, _, cx| select(&press, ix, cx))
                     .on_click(move |_, window, cx| run(&action_for_click, window, cx))
                     .child(

@@ -3,7 +3,7 @@ use std::{cell::Cell, rc::Rc};
 use gpui::{
     AnyElement, App, Axis, CursorStyle, DragMoveEvent, ElementId, EmptyView, EntityId, Hsla,
     InteractiveElement, IntoElement, Length, ParentElement, Pixels, RenderOnce, Stateful,
-    StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
 use super::seeded::use_seeded;
@@ -34,7 +34,7 @@ fn handle(
     let (lit, hit) = (theme.colors.focus, theme.handle_hit());
     // A touch has no hover, so the line is lit and the grab area is a thumb.
     let hit: Length = if theme.touch_mode {
-        theme.touch_minimum(px(48.)).into()
+        theme.touch_minimum(Pixels::ZERO).into()
     } else {
         hit.into()
     };

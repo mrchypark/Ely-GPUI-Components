@@ -23,19 +23,13 @@ struct InputOwnerReporter(Rc<dyn Fn(TextInputOwner)>);
 
 impl Global for InputOwnerReporter {}
 
-/// Sets one app-wide reporter for text input ownership queries.
-/// A per-instance `input_owner_observer` reports instead of the global reporter.
-/// Call during app initialization. A later call replaces the reporter.
+/// Set the app-wide owner reporter; per-instance observers override it. Call at startup; later calls replace it.
 pub fn set_input_owner_reporter(reporter: impl Fn(TextInputOwner) + 'static, cx: &mut App) {
     cx.set_global(InputOwnerReporter(Rc::new(reporter)));
 }
 
 impl TextInput {
-    /// Installs once during construction, before focus or disabled transitions.
-    /// The UI-thread callback only reports into the host's scoped owner query.
-    /// The host ignores reports outside that scope and rejects missing reports.
-    /// Query outside App borrows; never query synchronously from handler install.
-    /// It must not reenter GPUI, notify, or retain this entity through a cycle.
+    /// Install before focus changes; report outside App borrows. Do not reenter GPUI, notify, or retain this entity.
     pub fn input_owner_observer(mut self, observer: impl Fn(TextInputOwner) + 'static) -> Self {
         assert!(
             self.owner_observer.is_none(),

@@ -11,8 +11,7 @@ use crate::{
     theme::ActiveTheme,
 };
 
-/// Its children, and a menu that opens where a long press lands. The panel is the
-/// menus engine's own, so it occludes: a press on the menu never reaches what it covers.
+/// Opens at a long press; its panel occludes covered content and handles its own presses.
 #[derive(IntoElement)]
 pub struct TouchMenu {
     id: ElementId,

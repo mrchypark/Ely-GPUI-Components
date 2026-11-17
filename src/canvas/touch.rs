@@ -1,14 +1,6 @@
 use super::{Viewport, edit::hit, gesture::REACH, shape::Shape, view::Frame};
 
-/// The smallest hit area a finger can be trusted to land on, in logical pixels.
-///
-/// The floor is a *hit area* promise, not a layout one. It applies to the
-/// things a finger has to find: a shape to select, a socket to pull a wire
-/// from, a handle to drag. It does not apply to the things whose size *is* the
-/// meaning -- a drawn stroke, a note's text, a grid cell's mark, a minimap's
-/// view rectangle -- because growing those would redraw the canvas instead of
-/// helping the finger. Those keep their own size and are reached by a larger
-/// invisible hit region instead.
+/// Touch hit-area floor in logical pixels; never enlarge strokes, text, marks, or view bounds.
 pub const TOUCH_TARGET: f32 = 48.0;
 
 /// The size a hit area keeps, never below the touch target.
@@ -16,11 +8,7 @@ pub fn touch_target(size: f32) -> f32 {
     size.max(TOUCH_TARGET)
 }
 
-/// How much further a frame's edges reach, in canvas units, so that a frame
-/// smaller than the touch target still fills one on screen.
-///
-/// `zoom` is the view's zoom: the target is a screen measure, so the same
-/// frame needs a wider reach in canvas units the further the view is out.
+/// Extra canvas-unit reach for small frames, scaled by zoom to preserve screen-space target size.
 pub fn reach(frame: Frame, zoom: f32) -> f32 {
     if !zoom.is_finite() || zoom <= 0.0 {
         return 0.0;
@@ -33,15 +21,7 @@ pub fn reach(frame: Frame, zoom: f32) -> f32 {
     wanted / zoom
 }
 
-/// How far a shape's edges reach, in canvas units, so that a small shape can
-/// still be tapped with a finger.
-///
-/// A shape's own size is its meaning -- a note is a note's size -- so it is
-/// never drawn bigger. Instead the *hit* area grows around it, and only when
-/// the shape is small enough that its own edge would be hard to land on.
-///
-/// A shape already large on screen keeps the small reach it always had, so a
-/// crowded canvas does not turn into one big overlapping target.
+/// Extra hit reach for small shapes; drawn size stays fixed and large shapes keep existing reach.
 pub fn shape_reach(frame: Frame, zoom: f32) -> f32 {
     if !zoom.is_finite() || zoom <= 0.0 {
         return 0.0;
@@ -51,16 +31,7 @@ pub fn shape_reach(frame: Frame, zoom: f32) -> f32 {
     wanted.max(least)
 }
 
-/// The shape a touch at `at` lands on, if any.
-///
-/// A shape that is already big enough is hit by its own edge, as before. Only
-/// when nothing is hit does the finger get the reach of the touch target, so
-/// a small shape can be found without a big shape stealing its neighbour's
-/// taps. The shape drawn on the canvas never changes size; only what counts as
-/// touching it does.
-///
-/// On a desktop the reach is exactly the one it always had: a mouse has a
-/// pointer, so a shape is taken by its own edge.
+/// Hit existing shapes first, then nearby small shapes; drawn sizes and desktop edge-hit behavior stay unchanged.
 pub fn hit_touch(shapes: &[Shape], at: (f32, f32), zoom: f32, touch: bool) -> Option<usize> {
     if let Some(ix) = hit(shapes, at, REACH / zoom) {
         return Some(ix);
@@ -113,8 +84,7 @@ enum State {
     Blocked,
 }
 
-/// Opt-in touch arbitration; desktop input handlers remain the owner's responsibility.
-/// Use instead of GPUI's recognized gesture path, never alongside it for the same contacts.
+/// Opt-in touch arbitration; never combine with GPUI gestures for the same contacts.
 #[derive(Debug)]
 pub struct CanvasTouch {
     slop: f32,
@@ -134,17 +104,13 @@ impl CanvasTouch {
         }
     }
 
-    /// Cancels editing on focus loss, OS cancellation, or lifecycle suspension.
-    /// Supply an empty snapshot before accepting a new sequence; held fingers cannot restart edits.
+    /// Cancellation ends edits; clear contacts before a new sequence so held fingers cannot restart it.
     pub fn cancel(&mut self) -> TouchAction {
         self.state = State::Blocked;
         TouchAction::Cancel
     }
 
-    /// Supply all active contacts after each change, including an empty snapshot after release.
-    /// Deliver the final position before removing a contact; `End` uses its last supplied position.
-    /// Invalid coordinates or duplicate ids cancel the sequence; three contacts block until release.
-    /// Pinch scale is incremental (current distance / previous distance), never cumulative.
+    /// Send complete contact snapshots; see docs/touch-targets.md for the gesture contract.
     pub fn update(&mut self, contacts: &[TouchContact], view: Viewport) -> TouchAction {
         if contacts.iter().enumerate().any(|(i, c)| {
             !c.at.0.is_finite()

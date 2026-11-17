@@ -71,13 +71,9 @@ impl RenderOnce for Rating {
         );
         let focused = focus.is_focused(window);
         let hover = window.use_keyed_state((self.id.clone(), "hover"), cx, |_, _| None::<u8>);
-        // A finger has no hover, so the press alone shows the preview. A pointer
-        // previews on hover and keeps it after the release.
+        // Touch previews on press; pointers preview on hover and keep it after release.
         let pressed = window.use_keyed_state((self.id.clone(), "pressed"), cx, |_, _| None::<u8>);
-        // A click commits a rating, so that rating stays on screen even once
-        // the pointer leaves the row. The value it was committed against is
-        // kept alongside it, so a lock that belongs to an older rating is
-        // ignored instead of previewing a rating nobody asked for.
+        // Keep a committed rating until changed; ignore locks tied to an older rating.
         let locked_state =
             window.use_keyed_state((self.id.clone(), "locked"), cx, |_, _| None::<(u8, u8)>);
         let locked = locked_state
@@ -129,8 +125,7 @@ impl RenderOnce for Rating {
                     .when(!self.disabled, |star| {
                         star.cursor_pointer()
                             .on_hover(move |inside, _, cx| {
-                                // A finger never hovers, so a touch keeps the press
-                                // as the only preview it shows.
+                                // Touch has no hover, so only the pressed rating previews.
                                 if *inside && !cx.theme().touch_mode {
                                     hover.update(cx, |hover, cx| {
                                         *hover = Some(n);
@@ -138,8 +133,7 @@ impl RenderOnce for Rating {
                                     });
                                 }
                             })
-                            // A tap arrives as a mouse down without a hover,
-                            // so the press shows the preview the pointer would.
+                            // A tap has no hover, so press shows the pointer preview.
                             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                                 window.prevent_default();
                                 pressed.update(cx, |hover, cx| {
@@ -150,8 +144,7 @@ impl RenderOnce for Rating {
                             .on_click(move |_, window, cx| {
                                 let next = if n == value { 0 } else { n };
                                 if !cx.theme().touch_mode {
-                                    // The pointer keeps the rating it just
-                                    // committed, even once it leaves the row.
+                                    // Keep the committed rating when the pointer leaves.
                                     locked.update(cx, |locked, cx| {
                                         *locked = Some((value, n));
                                         cx.notify();
@@ -202,8 +195,7 @@ impl RenderOnce for Rating {
                     });
                 }
             })
-            // A finger that leaves the row before it lifts takes the press
-            // preview with it.
+            // A finger that leaves the row before it lifts takes the press preview with it.
             .on_mouse_up_out(MouseButton::Left, {
                 let pressed = pressed.clone();
                 move |_, _, cx| {
@@ -215,8 +207,7 @@ impl RenderOnce for Rating {
                     });
                 }
             })
-            // A touch that turns into a scroll or is cancelled by the system
-            // never delivers a release, so the press preview is dropped here.
+            // Clear the preview when scrolling or cancellation prevents release.
             .on_scroll({
                 let pressed = pressed.clone();
                 move |event, _, cx| {
@@ -241,8 +232,7 @@ impl RenderOnce for Rating {
                     };
                     cx.stop_propagation();
                     if next != value {
-                        // The keyboard owns the rating again, so a rating left
-                        // on screen by a click stops holding the preview.
+                        // Keyboard input clears the preview left by a click.
                         keys_locked.update(cx, |locked, cx| {
                             *locked = None;
                             cx.notify();

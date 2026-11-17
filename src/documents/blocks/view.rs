@@ -3,7 +3,7 @@ use std::{collections::HashSet, rc::Rc};
 use gpui::{
     AnyElement, App, Axis, Context, ElementId, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, Rems, Render, SharedString, Styled, Window, canvas, div,
-    prelude::*, px,
+    prelude::*,
 };
 
 use super::{Block, BlockData, BlockEditor, BlockKind, matching, span::Put};
@@ -303,7 +303,7 @@ impl Render for BlockEditor {
                         .top_0()
                         .left_0()
                         .flex()
-                        .when(touch, |gutter| gutter.min_w(px(48.)).min_h(px(48.)))
+                        .when(touch, |gutter| cx.theme().touch_target(gutter))
                         .opacity(if open { 1.0 } else { 0.0 })
                         .group_hover(group, |gutter| gutter.opacity(1.0))
                         .debug_selector(move || {

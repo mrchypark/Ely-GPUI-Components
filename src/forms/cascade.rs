@@ -231,8 +231,7 @@ impl RenderOnce for Cascader {
                     let press = state.clone();
                     let at: Vec<usize> = trail[..level].iter().copied().chain([ix]).collect();
                     let leaf = node.children.is_empty();
-                    // A tap never hovers, so the press opens the next level
-                    // the way the pointer does.
+                    // A tap never hovers, so the press opens the next level the way the pointer does.
                     let open_next = (!leaf).then(|| {
                         let at = at.clone();
                         let press = press.clone();

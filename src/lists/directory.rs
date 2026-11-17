@@ -305,7 +305,9 @@ impl RenderOnce for DirectoryListing {
                         .leading(
                             div()
                                 .debug_selector(move || format!("directory-entry-{selector}"))
-                                .when(touch, |icon| icon.min_h(gpui::px(48.)))
+                                .when(touch, |icon| {
+                                    icon.min_h(theme.touch_minimum(gpui::Pixels::ZERO))
+                                })
                                 .flex()
                                 .items_center()
                                 .child(

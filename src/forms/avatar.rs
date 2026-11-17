@@ -76,8 +76,7 @@ impl RenderOnce for AvatarUpload {
                 }
             })
         };
-        // A phone never hovers, so the camera shows outright in touch mode and
-        // a press reveals it everywhere else.
+        // Touch shows the camera; elsewhere, pressing the avatar reveals it.
         let revealed = window.use_keyed_state((self.id.clone(), "camera"), cx, |_, _| false);
         let theme = cx.theme();
         let corner = |element: gpui::Div, square: bool| {

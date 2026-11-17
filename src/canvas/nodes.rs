@@ -191,11 +191,7 @@ impl RenderOnce for NodeGraph {
                     let (press, edges, node_key) = (hold.clone(), edges.clone(), node.key.clone());
                     let (port_key, kind) = (port.key.clone(), port.kind.clone());
                     let nodes = nodes.clone();
-                    // The dot drawn on a socket says *which* port it is; its
-                    // size carries no meaning, so a finger may reach it by a
-                    // larger hit area than the dot itself. The dot keeps its
-                    // drawn size, and only the invisible target around it
-                    // grows to the touch target on a touch screen.
+                    // Touch enlarges the socket hit area; the port dot keeps its identifying size.
                     let hit = if theme.touch_mode {
                         Pixels::from(super::touch::touch_target(f32::from(dot)))
                     } else {

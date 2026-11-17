@@ -9,8 +9,7 @@ pub struct ViewportInsets {
     pub left: Pixels,
 }
 
-/// `keyboard_bottom` is occlusion from the original viewport bottom, including the safe area.
-/// Pass zero when the host has already resized the viewport for the keyboard.
+/// `keyboard_bottom` includes safe-area occlusion; pass zero if the host resized for the keyboard.
 pub fn usable_bounds(
     viewport: Bounds<Pixels>,
     safe: ViewportInsets,
@@ -117,10 +116,7 @@ pub fn reveal_offset(field: Bounds<Pixels>, visible: Bounds<Pixels>) -> Point<Pi
     )
 }
 
-/// Call after layout when focus or occlusion changes; request a frame when this returns true.
-/// Both bounds are painted window coordinates; the owner supplies a focused field or caret.
-/// The host must resize the scroll viewport or add keyboard padding to make the field reachable.
-/// Movement is clamped to the laid-out scroll range; true does not guarantee full visibility.
+/// Call after layout changes; bounds use window coordinates. Host must add keyboard reach; movement is clamped and may not fully reveal the field.
 pub fn reveal_in_bounds(
     scroll: &ScrollHandle,
     field: Bounds<Pixels>,

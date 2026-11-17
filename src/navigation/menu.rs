@@ -130,8 +130,7 @@ impl RenderOnce for NavigationMenu {
         };
         let theme = cx.theme();
         let colors = &theme.colors;
-        // On a phone the panel must fit the screen: the smaller of its usual
-        // width, the usable width, and the viewport.
+        // On phones, cap panel width at the smaller of its usual, usable, and viewport widths.
         let panel_width = {
             let usual = theme.nav_panel_width().to_pixels(window.rem_size());
             if theme.touch_mode {

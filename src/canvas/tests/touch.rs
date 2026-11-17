@@ -11,8 +11,7 @@ fn shape(key: &'static str, frame: Frame) -> Shape {
 fn a_small_shape_is_reached_by_a_finger_but_not_by_a_mouse() {
     let small = shape("a", Frame::new(100.0, 100.0, 10.0, 10.0));
     let shapes = [small];
-    // Past the shape's own edge and past the mouse's reach, but inside the
-    // touch target's reach.
+    // Past the shape's own edge and past the mouse's reach, but inside the touch target's reach.
     let near = (120.0, 105.0);
     assert_eq!(
         touch::hit_touch(&shapes, near, 1.0, false),

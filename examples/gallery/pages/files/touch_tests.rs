@@ -1,8 +1,8 @@
 use crate::ui::keep;
 use ely_gpui_component::{documents::Favorite, theme::Theme};
 use gpui::{
-    AppContext, Context, Entity, IntoElement, Modifiers, ParentElement, Render, SharedString,
-    Styled, TestAppContext, VisualTestContext, Window, div, point, px, size,
+    Context, Entity, IntoElement, Modifiers, ParentElement, Render, SharedString, Styled,
+    TestAppContext, VisualTestContext, Window, div, point, px, size,
 };
 
 struct Story {

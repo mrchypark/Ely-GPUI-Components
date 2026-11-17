@@ -34,8 +34,7 @@ struct Plane {
     grip: Option<(Point<Pixels>, Viewport)>,
 }
 
-/// An endless plane: a dot grid that thins as it zooms out, rulers along the top and left, guides, artboards with their names, and shapes. A drag on empty space pans it from where it was pressed, a wheel scrolls it, and Command or Control with the wheel zooms about the pointer. The owner keeps the viewport; a new one from the owner shows at once.
-/// GPUI pinch events zoom directly; do not also apply `CanvasTouch` or synthesized wheels for the same gesture.
+/// Endless plane; drag/wheel pans, modifier-wheel or GPUI pinch zooms. Do not combine pinch paths.
 #[derive(IntoElement)]
 pub struct InfiniteCanvas {
     id: ElementId,

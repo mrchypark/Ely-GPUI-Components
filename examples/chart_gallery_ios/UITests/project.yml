@@ -1,0 +1,24 @@
+name: ChartGalleryUITests
+
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: '16.0'
+
+targets:
+  ChartGalleryUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: .
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ely.chartgallery.uitests
+
+schemes:
+  ChartGalleryUITests:
+    build:
+      targets:
+        ChartGalleryUITests: all
+    test:
+      targets:
+        - ChartGalleryUITests

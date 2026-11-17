@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use ely_gpui_component::{media::{Cue, Scrubber, SubtitleEditor, VideoPlayer, VideoThumbnailStrip}, typography::Caption};
+use ely_gpui_component::{
+    media::{Cue, Scrubber, SubtitleEditor, VideoPlayer, VideoThumbnailStrip},
+    typography::Caption,
+};
 use gpui::{
     App, Entity, IntoElement, ParentElement, SharedString, Styled, TaskExt as _, Window, div, px,
 };

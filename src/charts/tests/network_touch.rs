@@ -98,3 +98,48 @@ fn a_press_away_from_every_node_leaves_nothing_pointed_at(cx: &mut TestAppContex
         "a press on nothing points at nothing"
     );
 }
+
+#[gpui::test]
+fn a_touch_drag_moves_a_node_and_ignores_drags_from_empty_space(cx: &mut TestAppContext) {
+    use gpui::{TouchDragEvent, TouchPhase};
+    cx.update(|cx| {
+        Theme::init(cx);
+        Theme::update(cx, |theme| {
+            theme.touch_mode = true;
+            theme.reduced_motion = true;
+        });
+    });
+    let (_, cx) = cx.add_window_view(|_, _| Graph);
+    cx.simulate_resize(gpui::size(px(400.0), px(400.0)));
+    settle(cx);
+    let root = cx.debug_bounds("chart-root").expect("the graph draws");
+    let start = root.center();
+    let end = point(start.x + px(70.0), start.y);
+    for phase in [TouchPhase::Started, TouchPhase::Ended] {
+        cx.simulate_event(TouchDragEvent {
+            phase,
+            start_position: start,
+            position: end,
+        });
+        settle(cx);
+    }
+    assert!(cx.debug_bounds("chart-tooltip").is_some());
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(start, MouseButton::Left, Modifiers::none());
+    settle(cx);
+    assert!(
+        cx.debug_bounds("chart-tooltip").is_none(),
+        "the node moved away from its original position"
+    );
+    let empty = point(root.left() + px(2.0), root.top() + px(2.0));
+    cx.simulate_event(TouchDragEvent {
+        phase: TouchPhase::Started,
+        start_position: empty,
+        position: end,
+    });
+    settle(cx);
+    assert!(
+        cx.debug_bounds("chart-tooltip").is_none(),
+        "empty-space drags do not select a node"
+    );
+}

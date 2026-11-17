@@ -4,7 +4,8 @@ use gpui::{App, Hsla, Rems, Rgba, SharedString};
 
 use super::{
     geometry::{Geometry, Ink, Rect, frame},
-    series::tangents,
+    paint::{sample_basis, symbol_vertices},
+    series::{Curve, tangents},
 };
 use crate::theme::{ActiveTheme, Palette, Radius, TextSize};
 
@@ -19,11 +20,11 @@ pub(crate) struct Sheet {
     font: SharedString,
     colors: Palette,
     horizontal: bool,
-    smooth: bool,
+    curve: Curve,
 }
 
 impl Sheet {
-    pub(crate) fn new(size: (f32, f32), horizontal: bool, smooth: bool, cx: &App) -> Self {
+    pub(crate) fn new(size: (f32, f32), horizontal: bool, curve: Curve, cx: &App) -> Self {
         let theme = cx.theme();
         let (sizes, rem) = (theme.chart(), theme.base_rem());
         let pixels = |length: Rems| f32::from(length.to_pixels(rem));
@@ -42,7 +43,7 @@ impl Sheet {
             font: theme.font_family.clone(),
             colors: theme.colors.clone(),
             horizontal,
-            smooth,
+            curve,
         }
     }
 }
@@ -70,33 +71,99 @@ fn escaped(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// A path's commands through `points`, straight or smooth.
-fn path(points: &[(f32, f32)], smooth: bool) -> String {
+fn path_curve(points: &[(f32, f32)], curve: Curve) -> String {
     let mut d = String::new();
     let Some((x, y)) = points.first() else {
         return d;
     };
-    write!(d, "M{x:.1},{y:.1}").expect("a string takes writes");
-    if !smooth || points.len() < 3 {
-        for (x, y) in &points[1..] {
-            write!(d, " L{x:.1},{y:.1}").expect("a string takes writes");
+    if matches!(curve, Curve::Basis) && points.len() >= 3 {
+        let expanded = sample_basis(points);
+        write!(d, "M{:.1},{:.1}", expanded[0].0, expanded[0].1).expect("svg");
+        for (x, y) in &expanded[1..] {
+            write!(d, " L{x:.1},{y:.1}").expect("svg");
         }
         return d;
     }
-    let slopes = tangents(points);
-    for ix in 0..points.len() - 1 {
-        let ((x0, y0), (x1, y1)) = (points[ix], points[ix + 1]);
-        let third = (x1 - x0) / 3.0;
-        let (ax, ay, bx, by) = (
-            x0 + third,
-            y0 + slopes[ix] * third,
-            x1 - third,
-            y1 - slopes[ix + 1] * third,
-        );
-        write!(d, " C{ax:.1},{ay:.1} {bx:.1},{by:.1} {x1:.1},{y1:.1}")
-            .expect("a string takes writes");
+    write!(d, "M{x:.1},{y:.1}").expect("a string takes writes");
+    if points.len() < 2 {
+        return d;
+    }
+    match curve {
+        Curve::Linear => {
+            for (x, y) in &points[1..] {
+                write!(d, " L{x:.1},{y:.1}").expect("a string takes writes");
+            }
+        }
+        Curve::Step => {
+            for pair in points.windows(2) {
+                let ((x0, y0), (x1, y1)) = (pair[0], pair[1]);
+                let xm = (x0 + x1) * 0.5;
+                write!(d, " L{xm:.1},{y0:.1} L{xm:.1},{y1:.1} L{x1:.1},{y1:.1}").expect("svg");
+            }
+        }
+        Curve::StepBefore => {
+            for pair in points.windows(2) {
+                let ((x0, _), (x1, y1)) = (pair[0], pair[1]);
+                write!(d, " L{x0:.1},{y1:.1} L{x1:.1},{y1:.1}").expect("svg");
+            }
+        }
+        Curve::StepAfter => {
+            for pair in points.windows(2) {
+                let ((_, y0), (x1, y1)) = (pair[0], pair[1]);
+                write!(d, " L{x1:.1},{y0:.1} L{x1:.1},{y1:.1}").expect("svg");
+            }
+        }
+        Curve::Monotone if points.len() >= 3 => {
+            let slopes = tangents(points);
+            for ix in 0..points.len() - 1 {
+                let ((x0, y0), (x1, y1)) = (points[ix], points[ix + 1]);
+                let third = (x1 - x0) / 3.0;
+                let (ax, ay, bx, by) = (
+                    x0 + third,
+                    y0 + slopes[ix] * third,
+                    x1 - third,
+                    y1 - slopes[ix + 1] * third,
+                );
+                write!(d, " C{ax:.1},{ay:.1} {bx:.1},{by:.1} {x1:.1},{y1:.1}")
+                    .expect("a string takes writes");
+            }
+        }
+        Curve::Cardinal if points.len() >= 3 => {
+            let n = points.len();
+            for ix in 0..n - 1 {
+                let p0 = points[ix.saturating_sub(1)];
+                let p1 = points[ix];
+                let p2 = points[ix + 1];
+                let p3 = points[(ix + 2).min(n - 1)];
+                let (ax, ay) = (p1.0 + (p2.0 - p0.0) / 6.0, p1.1 + (p2.1 - p0.1) / 6.0);
+                let (bx, by) = (p2.0 - (p3.0 - p1.0) / 6.0, p2.1 - (p3.1 - p1.1) / 6.0);
+                write!(
+                    d,
+                    " C{ax:.1},{ay:.1} {bx:.1},{by:.1} {:.1},{:.1}",
+                    p2.0, p2.1
+                )
+                .expect("svg");
+            }
+        }
+        _ => {
+            for (x, y) in &points[1..] {
+                write!(d, " L{x:.1},{y:.1}").expect("a string takes writes");
+            }
+        }
     }
     d
+}
+
+#[cfg(test)]
+fn path(points: &[(f32, f32)], smooth: bool) -> String {
+    path_curve(
+        points,
+        if smooth {
+            Curve::Monotone
+        } else {
+            Curve::Linear
+        },
+    )
 }
 
 /// A chart as a standalone SVG drawing: gridlines, marks and axis labels.
@@ -160,13 +227,13 @@ pub(crate) fn svg(geometry: &Geometry, sheet: &Sheet, format: &dyn Fn(f64) -> St
                 .collect();
             put(format!(
                 r#"<path d="{}{back} Z" fill="{}" fill-opacity="0.14"/>"#,
-                path(&line.points, sheet.smooth),
+                path_curve(&line.points, sheet.curve),
                 ink(line.ink)
             ));
         }
         put(format!(
             r#"<path d="{}" fill="none" stroke="{}" stroke-width="{}" stroke-linejoin="round"/>"#,
-            path(&line.points, sheet.smooth),
+            path_curve(&line.points, sheet.curve),
             ink(line.ink),
             sheet.stroke
         ));
@@ -185,7 +252,7 @@ pub(crate) fn svg(geometry: &Geometry, sheet: &Sheet, format: &dyn Fn(f64) -> St
     for (color, outline) in &geometry.shapes {
         put(format!(
             r#"<path d="{} Z" fill="{fill}" fill-opacity="0.3" stroke="{fill}" stroke-width="{}"/>"#,
-            path(outline, false),
+            path_curve(outline, Curve::Linear),
             sheet.hairline,
             fill = ink(*color)
         ));
@@ -203,12 +270,22 @@ pub(crate) fn svg(geometry: &Geometry, sheet: &Sheet, format: &dyn Fn(f64) -> St
     }
     for dot in &geometry.dots {
         let (x, y) = dot.center;
-        put(format!(
-            r#"<circle cx="{x:.1}" cy="{y:.1}" r="{:.1}" fill="{fill}" fill-opacity="0.6" stroke="{fill}" stroke-width="{}"/>"#,
-            dot.radius,
-            sheet.hairline,
-            fill = ink(dot.ink)
-        ));
+        let poly = symbol_vertices(dot.symbol, dot.center, dot.radius);
+        if poly.is_empty() {
+            put(format!(
+                r#"<circle cx="{x:.1}" cy="{y:.1}" r="{:.1}" fill="{fill}" fill-opacity="0.6" stroke="{fill}" stroke-width="{}"/>"#,
+                dot.radius,
+                sheet.hairline,
+                fill = ink(dot.ink)
+            ));
+        } else {
+            put(format!(
+                r#"<path d="{} Z" fill="{fill}" fill-opacity="0.6" stroke="{fill}" stroke-width="{}"/>"#,
+                path_curve(&poly, Curve::Linear),
+                sheet.hairline,
+                fill = ink(dot.ink)
+            ));
+        }
     }
     out.push_str("</svg>");
     out

@@ -29,11 +29,12 @@ fn visibility(id: &ElementId, window: &mut Window, cx: &mut App) -> Entity<Visib
 }
 
 // Match the card's p_6 and border; share clipping and no-content-space policy with popovers.
-fn has_room(bounds: Option<Bounds<Pixels>>, window: &Window) -> bool {
+fn has_room(bounds: Option<Bounds<Pixels>>, window: &Window, cx: &App) -> bool {
     bounded::has_room(
         bounded::available(bounds, false, window),
         gpui::rems(1.5),
         window,
+        cx.theme().hairline(),
     )
 }
 
@@ -116,8 +117,7 @@ impl Dialog {
         self
     }
 
-    /// Uses logical window bounds supplied by the host, including keyboard avoidance.
-    /// No content space closes once and returns focus; remove before explicitly reopening.
+    /// Use host bounds; no room closes and restores focus until explicitly reopened.
     pub fn usable_bounds(mut self, bounds: Bounds<Pixels>) -> Self {
         self.usable_bounds = Some(bounds);
         self
@@ -155,7 +155,7 @@ impl RenderOnce for Dialog {
         if visibility.read(cx).suppressed {
             return div().into_any_element();
         }
-        if !has_room(self.usable_bounds, window) {
+        if !has_room(self.usable_bounds, window, cx) {
             let takeover = visibility.update(cx, |state, _| {
                 state.suppressed = true;
                 state.takeover.take()

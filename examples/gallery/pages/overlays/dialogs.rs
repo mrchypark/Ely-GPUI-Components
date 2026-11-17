@@ -8,8 +8,8 @@ use ely_gpui_component::{
     typography::Caption,
 };
 use gpui::{
-    AnyElement, App, Axis, Entity, Focusable, IntoElement, ParentElement, ScrollHandle, SharedString, Styled,
-    Window, div, prelude::*,
+    AnyElement, App, Axis, Entity, Focusable, IntoElement, ParentElement, ScrollHandle,
+    SharedString, Styled, Window, div, prelude::*,
 };
 
 use crate::{
@@ -79,109 +79,116 @@ pub fn dialogs(
         .map_or("each opens over a scrim; Escape closes it".into(), |said| {
             said.to_string()
         });
-    let overlay: Option<AnyElement> = (*open.read(cx)).map(|which| {
-        let (saved, confirmed, renamed) = (said.clone(), said.clone(), said.clone());
-        match which {
-            Open::Profile => Dialog::new("profile", "Edit profile", shut.clone())
-                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
-                .body_scroll(&profile_scroll)
-                .detail("How others see you across the workspace.")
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .child(div().relative().child(Input::new(&name)).children(bounds.map(|area| {
-                            reveal_when_focused_in_bounds(
-                                "profile-name-reveal",
-                                &profile_scroll,
-                                &name.focus_handle(cx),
-                                Axis::Vertical,
-                                area,
-                                window,
-                                cx,
-                            )
-                        })))
-                        .child(div().relative().child(Input::new(&email)).children(bounds.map(|area| {
-                            reveal_when_focused_in_bounds(
-                                "profile-email-reveal",
-                                &profile_scroll,
-                                &email.focus_handle(cx),
-                                Axis::Vertical,
-                                area,
-                                window,
-                                cx,
-                            )
-                        }))),
-                )
-                .action(|close| {
-                    Button::new("profile-cancel", "Cancel")
-                        .variant(ButtonVariant::Ghost)
-                        .on_click(move |_, window, cx| close(window, cx))
-                })
-                .action(move |close| {
-                    Button::new("profile-save", "Save")
-                        .primary()
-                        .on_click(move |_, window, cx| {
-                            set(&saved, Some("profile saved".into()), cx);
-                            close(window, cx);
-                        })
-                })
-                .into_any_element(),
-            Open::Alert => AlertDialog::new(
-                "expired",
-                Severity::Warning,
-                "Session expired",
-                "Sign in again to keep your changes. Nothing you wrote is lost.",
-                shut.clone(),
-            )
-            .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
-            .label("Sign in")
-            .into_any_element(),
-            Open::Confirm => ConfirmDialog::new(
-                "delete",
-                "Delete this project?",
-                "Its pages, files and history go with it. This cannot be undone.",
-                shut.clone(),
-            )
-            .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
-            .confirm("Delete project")
-            .destructive()
-            .on_confirm(move |_, cx| set(&confirmed, Some("project deleted".into()), cx))
-            .into_any_element(),
-            Open::Prompt => PromptDialog::new("rename", "Rename", &rename, shut.clone())
-                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
-                .label("New name")
-                .submit("Rename")
-                .check(|text| match text.trim() {
-                    "" => Err("A name cannot be empty.".into()),
-                    text if text.contains('/') => Err("Names cannot hold a slash.".into()),
-                    _ => Ok(()),
-                })
-                .on_submit(move |text, _, cx| {
-                    set(&renamed, Some(format!("renamed to {text}").into()), cx)
-                })
-                .into_any_element(),
-            Open::Fullscreen => Dialog::new("notes", "Release notes", shut.clone())
-                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
-                .detail("Version 0.9 · September 2026")
-                .fullscreen()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .max_w(
-                            cx.theme()
-                                .container_width(ely_gpui_component::theme::ContainerSize::Sm),
+    let overlay: Option<AnyElement> =
+        (*open.read(cx)).map(|which| {
+            let (saved, confirmed, renamed) = (said.clone(), said.clone(), said.clone());
+            match which {
+                Open::Profile => {
+                    Dialog::new("profile", "Edit profile", shut.clone())
+                        .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+                        .body_scroll(&profile_scroll)
+                        .detail("How others see you across the workspace.")
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_3()
+                                .child(div().relative().child(Input::new(&name)).children(
+                                    bounds.map(|area| {
+                                        reveal_when_focused_in_bounds(
+                                            "profile-name-reveal",
+                                            &profile_scroll,
+                                            &name.focus_handle(cx),
+                                            Axis::Vertical,
+                                            area,
+                                            window,
+                                            cx,
+                                        )
+                                    }),
+                                ))
+                                .child(div().relative().child(Input::new(&email)).children(
+                                    bounds.map(|area| {
+                                        reveal_when_focused_in_bounds(
+                                            "profile-email-reveal",
+                                            &profile_scroll,
+                                            &email.focus_handle(cx),
+                                            Axis::Vertical,
+                                            area,
+                                            window,
+                                            cx,
+                                        )
+                                    }),
+                                )),
                         )
-                        .child(Caption::new("Menus nest, filter and follow their buttons."))
-                        .child(Caption::new("Palettes pick on release, as buttons do."))
-                        .child(Caption::new("Overlays hand focus back on every close.")),
+                        .action(|close| {
+                            Button::new("profile-cancel", "Cancel")
+                                .variant(ButtonVariant::Ghost)
+                                .on_click(move |_, window, cx| close(window, cx))
+                        })
+                        .action(move |close| {
+                            Button::new("profile-save", "Save").primary().on_click(
+                                move |_, window, cx| {
+                                    set(&saved, Some("profile saved".into()), cx);
+                                    close(window, cx);
+                                },
+                            )
+                        })
+                        .into_any_element()
+                }
+                Open::Alert => AlertDialog::new(
+                    "expired",
+                    Severity::Warning,
+                    "Session expired",
+                    "Sign in again to keep your changes. Nothing you wrote is lost.",
+                    shut.clone(),
                 )
+                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+                .label("Sign in")
                 .into_any_element(),
-        }
-    });
+                Open::Confirm => ConfirmDialog::new(
+                    "delete",
+                    "Delete this project?",
+                    "Its pages, files and history go with it. This cannot be undone.",
+                    shut.clone(),
+                )
+                .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+                .confirm("Delete project")
+                .destructive()
+                .on_confirm(move |_, cx| set(&confirmed, Some("project deleted".into()), cx))
+                .into_any_element(),
+                Open::Prompt => PromptDialog::new("rename", "Rename", &rename, shut.clone())
+                    .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+                    .label("New name")
+                    .submit("Rename")
+                    .check(|text| match text.trim() {
+                        "" => Err("A name cannot be empty.".into()),
+                        text if text.contains('/') => Err("Names cannot hold a slash.".into()),
+                        _ => Ok(()),
+                    })
+                    .on_submit(move |text, _, cx| {
+                        set(&renamed, Some(format!("renamed to {text}").into()), cx)
+                    })
+                    .into_any_element(),
+                Open::Fullscreen => Dialog::new("notes", "Release notes", shut.clone())
+                    .when_some(bounds, |overlay, area| overlay.usable_bounds(area))
+                    .detail("Version 0.9 · September 2026")
+                    .fullscreen()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_3()
+                            .max_w(
+                                cx.theme()
+                                    .container_width(ely_gpui_component::theme::ContainerSize::Sm),
+                            )
+                            .child(Caption::new("Menus nest, filter and follow their buttons."))
+                            .child(Caption::new("Palettes pick on release, as buttons do."))
+                            .child(Caption::new("Overlays hand focus back on every close.")),
+                    )
+                    .into_any_element(),
+            }
+        });
     section(
         "Dialog / Modal / AlertDialog / ConfirmDialog / PromptDialog / FullscreenDialog",
         "A card over a scrim; Tab stays inside and focus returns on close. An alert holds until acknowledged, a confirm asks first, a prompt checks its one line, and a fullscreen dialog fills the window.",

@@ -154,7 +154,7 @@ impl RenderOnce for TooltipTrigger {
         let state = window.use_keyed_state(self.id.clone(), cx, |_, _| TriggerState::default());
         let touch = cx.theme().touch_mode;
         let available = tooltip_available(self.usable_bounds, touch, window);
-        let room = tooltip_has_room(available, rems(0.5), window);
+        let room = tooltip_has_room(available, rems(0.5), window, cx.theme().hairline());
         if touch || !room {
             state.update(cx, |trigger, _| {
                 trigger.visible = false;
@@ -310,8 +310,7 @@ impl RenderOnce for HelpTooltip {
             .when_some(self.usable_bounds, |popover, bounds| {
                 popover.usable_bounds(bounds)
             });
-            // A flex item keeps the popover host at its button's intrinsic width
-            // even when HelpTooltip is placed in a full-width block.
+            // Keep the popover host at the button's intrinsic width.
             return div().flex().items_start().child(popover).into_any_element();
         }
         let mark = div().id(self.id.clone()).flex_none().child(

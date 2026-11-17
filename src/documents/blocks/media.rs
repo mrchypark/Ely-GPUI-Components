@@ -141,8 +141,7 @@ pub(super) fn media(
     let column = window.use_keyed_state((id.clone(), format!("column-{key}")), cx, |_, _| {
         Bounds::<Pixels>::default()
     });
-    // A phone never hovers, so the align tools show outright in touch mode and
-    // a press on the picture reveals them everywhere else.
+    // Touch shows alignment tools; elsewhere, pressing the picture reveals them.
     let revealed = window.use_keyed_state((id.clone(), format!("tools-{key}")), cx, |_, _| false);
     let touch = cx.theme().touch_mode;
     let showing = touch || *revealed.read(cx);

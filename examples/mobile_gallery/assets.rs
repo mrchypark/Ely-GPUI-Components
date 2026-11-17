@@ -8,8 +8,7 @@ pub use base::CUSTOM_ICON;
 pub struct GalleryAssets;
 static FILE_ROOT: OnceLock<std::path::PathBuf> = OnceLock::new();
 
-/// Call once with an app-private writable directory before rendering specimens.
-/// No install path is compiled into the binary; all bytes are bundled offline.
+/// Set the app-private asset directory before rendering; assets are bundled, with no install path.
 pub fn prepare_files(root: &Path) -> anyhow::Result<()> {
     if let Some(existing) = FILE_ROOT.get() {
         anyhow::ensure!(
@@ -63,66 +62,6 @@ impl AssetSource for GalleryAssets {
                 .map(Into::into),
         );
         Ok(result)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fixture_files_are_removed_on_drop_and_can_be_recreated() {
-        for _ in 0..2 {
-            let fixture = prepare_test_files();
-            let root = fixture.root.clone();
-            assert!(root.is_dir());
-            drop(fixture);
-            let _owner = FIXTURE_OWNER
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            assert!(!root.exists(), "private gallery fixture leaked");
-        }
-    }
-
-    #[test]
-    fn cleanup_failure_during_unwind_preserves_the_original_panic() {
-        let result = std::panic::catch_unwind(|| {
-            let fixture = prepare_test_files();
-            // Removing our directory first makes Drop's removal fail without leaving files.
-            std::fs::remove_dir_all(&fixture.root).expect("remove owned failure fixture");
-            panic!("original gallery test failure");
-        });
-        let original = result.expect_err("the original panic must propagate");
-        assert_eq!(
-            original.downcast_ref::<&str>(),
-            Some(&"original gallery test failure")
-        );
-    }
-
-    #[test]
-    fn bundled_catalog_is_nonempty_unique_and_loadable() {
-        for (index, (name, bytes)) in embedded::FILES.iter().enumerate() {
-            assert!(!bytes.is_empty(), "{name}");
-            assert!(
-                !embedded::FILES[..index]
-                    .iter()
-                    .any(|(prior, _)| prior == name)
-            );
-            assert_eq!(
-                GalleryAssets
-                    .load(&format!("gallery-assets/{name}"))
-                    .unwrap()
-                    .unwrap()
-                    .as_ref(),
-                *bytes
-            );
-        }
-        assert!(
-            GalleryAssets
-                .load("gallery-assets/missing.png")
-                .unwrap()
-                .is_none()
-        );
     }
 }
 
@@ -201,4 +140,64 @@ pub(crate) fn prepare_test_files() -> TestFiles {
         );
     }
     fixture
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixture_files_are_removed_on_drop_and_can_be_recreated() {
+        for _ in 0..2 {
+            let fixture = prepare_test_files();
+            let root = fixture.root.clone();
+            assert!(root.is_dir());
+            drop(fixture);
+            let _owner = FIXTURE_OWNER
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert!(!root.exists(), "private gallery fixture leaked");
+        }
+    }
+
+    #[test]
+    fn cleanup_failure_during_unwind_preserves_the_original_panic() {
+        let result = std::panic::catch_unwind(|| {
+            let fixture = prepare_test_files();
+            // Removing our directory first makes Drop's removal fail without leaving files.
+            std::fs::remove_dir_all(&fixture.root).expect("remove owned failure fixture");
+            panic!("original gallery test failure");
+        });
+        let original = result.expect_err("the original panic must propagate");
+        assert_eq!(
+            original.downcast_ref::<&str>(),
+            Some(&"original gallery test failure")
+        );
+    }
+
+    #[test]
+    fn bundled_catalog_is_nonempty_unique_and_loadable() {
+        for (index, (name, bytes)) in embedded::FILES.iter().enumerate() {
+            assert!(!bytes.is_empty(), "{name}");
+            assert!(
+                !embedded::FILES[..index]
+                    .iter()
+                    .any(|(prior, _)| prior == name)
+            );
+            assert_eq!(
+                GalleryAssets
+                    .load(&format!("gallery-assets/{name}"))
+                    .unwrap()
+                    .unwrap()
+                    .as_ref(),
+                *bytes
+            );
+        }
+        assert!(
+            GalleryAssets
+                .load("gallery-assets/missing.png")
+                .unwrap()
+                .is_none()
+        );
+    }
 }

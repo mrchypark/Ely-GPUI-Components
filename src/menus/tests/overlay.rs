@@ -87,8 +87,7 @@ fn the_context_menu_panel_blocks_taps_to_the_canvas_underneath(cx: &mut TestAppC
     let base_downs = view.read_with(cx, |view, _| view.downs);
     let base_clicks = view.read_with(cx, |view, _| view.clicks);
 
-    // A tap on the disabled row and on the panel's padding reaches neither the
-    // canvas under the menu nor a row of the menu.
+    // Taps on the disabled row or panel padding reach neither menu rows nor the covered canvas.
     for at in [
         copy.center(),
         point(panel.left() + px(2.0), panel.top() + px(2.0)),
@@ -133,8 +132,7 @@ fn the_context_menu_panel_blocks_taps_to_the_canvas_underneath(cx: &mut TestAppC
         "a tap on the menu panel reached the canvas under it"
     );
 
-    // With the menu shut that same point is bare canvas, so the tap lands
-    // there; without this the assertions above would prove nothing.
+    // With the menu closed, the same tap must reach the canvas for the checks above to be meaningful.
     assert!(
         cx.debug_bounds("menu-panel-0").is_none(),
         "the menu stayed open"

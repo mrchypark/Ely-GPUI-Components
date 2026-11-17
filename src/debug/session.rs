@@ -156,10 +156,7 @@ pub struct Breakpoint {
     pub hits: usize,
 }
 
-/// A breakpoint's own key: where it sits and what guards it.
-///
-/// Reveal 상태는 index가 아니라 이 키로 묶는다. index로 묶으면 항목 하나가 지워질 때
-/// 뒤의 항목들이 한 칸씩 밀리며, reveal이 남은 채 다른 항목의 제거 버튼으로 옮겨 붙는다.
+/// Stable breakpoint key keeps reveal state with its row when another breakpoint is deleted.
 fn breakpoint_key(point: &Breakpoint) -> SharedString {
     format!(
         "{}:{}:{}",
@@ -215,8 +212,7 @@ impl BreakpointList {
 
 impl RenderOnce for BreakpointList {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        // A phone never hovers, so a press on a row reveals its remove action.
-        // Reveal은 행마다 따로 든다: 몇 행을 눌러도 그 행들만 함께 열리고, 각자 닫힌다.
+        // Touch reveals each pressed row independently; phones have no hover.
         let revealed = window.use_keyed_state((self.id.clone(), "remove"), cx, |_, _| {
             HashSet::<SharedString>::new()
         });
@@ -258,8 +254,7 @@ impl RenderOnce for BreakpointList {
                     .id((self.id.clone(), format!("row-{ix}")))
                     .group(group.clone())
                     .debug_selector(move || format!("breakpoint-row-{ix}"))
-                    // A phone never hovers, so a press on a row reveals its remove action.
-                    // A pointer keeps its hover, so a press there must not change the reveal.
+                    // Touch reveals on press; pointer hover already reveals and must remain unchanged.
                     .when(touch, |row| {
                         let press = press.clone();
                         let key = key.clone();
