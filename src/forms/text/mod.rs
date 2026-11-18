@@ -14,8 +14,8 @@ mod password_security_tests;
 use std::{ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
-    App, Bounds, Context, EventEmitter, FocusHandle, Focusable, KeyboardType, Pixels, Point,
-    SharedString, Subscription, Task, TextInputConfiguration, Window, WrappedLine,
+    App, Bounds, Context, EventEmitter, FocusHandle, Focusable, Pixels, Point, SharedString,
+    Subscription, Task, TextInputConfiguration, Window, WrappedLine,
 };
 
 pub(crate) use actions::{
@@ -64,7 +64,6 @@ pub struct TextInput {
     filter: Option<Filter>,
     fit: Option<Fit>,
     max_len: Option<usize>,
-    keyboard_type: KeyboardType,
     reveal_bounds: Option<Bounds<Pixels>>,
     highlighter: Option<Highlighter>,
     disabled: bool,
@@ -132,7 +131,6 @@ impl TextInput {
             filter: None,
             fit: None,
             max_len: None,
-            keyboard_type: KeyboardType::Default,
             reveal_bounds: None,
             highlighter: None,
             disabled: false,
@@ -203,12 +201,6 @@ impl TextInput {
     /// Longest text, in characters.
     pub fn max_len(mut self, len: usize) -> Self {
         self.max_len = Some(len);
-        self
-    }
-
-    /// The software keyboard to request when this input gains focus.
-    pub fn keyboard_type(mut self, keyboard_type: KeyboardType) -> Self {
-        self.keyboard_type = keyboard_type;
         self
     }
 
@@ -325,15 +317,9 @@ impl TextInput {
         }
     }
 
-    pub(crate) fn set_keyboard_type(
-        &mut self,
-        keyboard_type: KeyboardType,
-        cx: &mut Context<Self>,
-    ) {
-        if self.keyboard_type != keyboard_type {
-            self.keyboard_type = keyboard_type;
-            cx.notify();
-        }
+    #[cfg(test)]
+    pub(crate) fn is_secure(&self) -> bool {
+        self.secure
     }
 
     pub(crate) fn reveal_bounds(&self) -> Option<Bounds<Pixels>> {

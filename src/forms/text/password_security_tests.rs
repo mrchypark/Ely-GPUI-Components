@@ -1,6 +1,6 @@
 use gpui::{
-    AppContext as _, Context, Entity, EntityInputHandler, IntoElement, Modifiers, ParentElement,
-    Render, TestAppContext, TextInputConfiguration, VisualTestContext, Window, div,
+    AppContext as _, Context, Entity, IntoElement, Modifiers, ParentElement, Render,
+    TestAppContext, VisualTestContext, Window, div,
 };
 
 use super::TextInput;
@@ -28,14 +28,6 @@ fn draw(cx: &mut VisualTestContext) {
     cx.run_until_parked();
 }
 
-fn configuration(input: &Entity<TextInput>, cx: &mut VisualTestContext) -> TextInputConfiguration {
-    cx.update(|window, cx| {
-        input.update(cx, |input, cx| {
-            EntityInputHandler::text_input_configuration(input, window, cx)
-        })
-    })
-}
-
 #[gpui::test]
 fn password_visibility_toggle_keeps_secure_configuration(cx: &mut TestAppContext) {
     cx.update(|cx| {
@@ -50,20 +42,20 @@ fn password_visibility_toggle_keeps_secure_configuration(cx: &mut TestAppContext
     cx.update(|window, _| window.activate_window());
     draw(cx);
 
-    assert!(configuration(&password, cx).secure);
-    assert!(!configuration(&plain, cx).secure);
+    assert!(password.read_with(cx, |input, _| input.is_secure()));
+    assert!(!plain.read_with(cx, |input, _| input.is_secure()));
 
     let eye = cx
         .debug_bounds("password-visibility")
         .expect("password eye");
     cx.simulate_click(eye.center(), Modifiers::none());
     assert!(!password.read_with(cx, |input, _| input.is_masked()));
-    assert!(configuration(&password, cx).secure);
+    assert!(password.read_with(cx, |input, _| input.is_secure()));
 
     let eye = cx
         .debug_bounds("password-visibility")
         .expect("password eye");
     cx.simulate_click(eye.center(), Modifiers::none());
     assert!(password.read_with(cx, |input, _| input.is_masked()));
-    assert!(configuration(&password, cx).secure);
+    assert!(password.read_with(cx, |input, _| input.is_secure()));
 }

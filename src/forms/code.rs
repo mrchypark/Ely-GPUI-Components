@@ -308,7 +308,4 @@ mod tests {
 }
 
 #[cfg(all(test, feature = "test-support"))]
-mod keyboard_reveal_tests;
-
-#[cfg(all(test, feature = "test-support"))]
 mod reveal_reuse_tests;

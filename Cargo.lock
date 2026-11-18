@@ -2260,7 +2260,8 @@ dependencies = [
 [[package]]
 name = "gpui-fast"
 version = "0.1.17"
-source = "git+https://github.com/mrchypark/gpui-mobile?rev=e5576ae98aef35879344071c493d74d06e7de1db#e5576ae98aef35879344071c493d74d06e7de1db"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4481f1c7729d23de02a516384278293a4f95a3bdd4b735fc474076675fed9634"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2399,7 +2400,8 @@ dependencies = [
 [[package]]
 name = "gpui-fast-macos"
 version = "0.1.17"
-source = "git+https://github.com/mrchypark/gpui-mobile?rev=e5576ae98aef35879344071c493d74d06e7de1db#e5576ae98aef35879344071c493d74d06e7de1db"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c74b7984a584eebefdf69aec1b5d89d928e2efde862006427b09695425117ad0"
 dependencies = [
  "accesskit",
  "accesskit_macos",

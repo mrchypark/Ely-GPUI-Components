@@ -134,7 +134,3 @@ path = "examples/docs/i18n.rs"
 [[example]]
 name = "docs_render"
 path = "examples/docs/render.rs"
-
-[patch.crates-io]
-gpui-fast = { git = "https://github.com/mrchypark/gpui-mobile", rev = "e5576ae98aef35879344071c493d74d06e7de1db" }
-gpui-fast-macos = { git = "https://github.com/mrchypark/gpui-mobile", rev = "e5576ae98aef35879344071c493d74d06e7de1db" }

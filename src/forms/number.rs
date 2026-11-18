@@ -2,8 +2,8 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     AnyElement, App, Context, ElementId, Entity, EntityId, InteractiveElement, IntoElement,
-    KeyboardType, MouseButton, ParentElement, Pixels, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*,
+    MouseButton, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, Window, div, prelude::*,
 };
 
 use super::{
@@ -45,15 +45,6 @@ pub(super) fn settle(value: f64, min: f64, max: f64, precision: usize) -> f64 {
         "no {precision}-place number lies in {min}..={max}"
     );
     ((value * scale).round() / scale).clamp(low, high)
-}
-
-fn keyboard_hint(min: f64, precision: usize) -> KeyboardType {
-    match (min < 0.0, precision > 0) {
-        (false, false) => KeyboardType::NumberPad,
-        (true, false) => KeyboardType::SignedNumber,
-        (false, true) => KeyboardType::Decimal,
-        (true, true) => KeyboardType::SignedDecimal,
-    }
 }
 
 /// `bound` on the `1 / scale` grid: kept if float error alone put it off, else moved `inward`.
@@ -314,7 +305,6 @@ impl RenderOnce for NumberInput {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = numeric(&self.id, window, cx);
         let (value, min, max, step) = (self.value, self.min, self.max, self.step);
-        let keyboard_type = keyboard_hint(min, self.precision);
         let shown = match self.blank {
             Some(_) => String::new(),
             None => format::number(value, self.precision, Separators::EN),
@@ -322,13 +312,10 @@ impl RenderOnce for NumberInput {
         let disabled = self.disabled;
         let input = state.read(cx).input.clone();
         input.update(cx, |input, cx| {
-            input.set_keyboard_type(keyboard_type, cx);
             if input.is_disabled() != disabled {
                 input.set_disabled(disabled, cx);
             }
         });
-        #[cfg(all(test, feature = "test-support"))]
-        keyboard_hint_tests::record(self.id.clone(), input.clone());
         let editing = input.read(cx).focus().is_focused(window);
         let echo = input.read(cx).text() == shown;
         let reseed = state.update(cx, |numeric, _| {
@@ -496,6 +483,3 @@ pub use scrub::ScrubInput;
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(all(test, feature = "test-support"))]
-mod keyboard_hint_tests;

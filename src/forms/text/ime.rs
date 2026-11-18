@@ -34,11 +34,7 @@ impl EntityInputHandler for TextInput {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> TextInputConfiguration {
-        TextInputConfiguration {
-            keyboard_type: self.keyboard_type,
-            secure: self.secure,
-            ..self.input_configuration.clone()
-        }
+        self.input_configuration.clone()
     }
 
     fn accepts_text_input(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {

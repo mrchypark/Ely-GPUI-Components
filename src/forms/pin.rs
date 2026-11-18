@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Context, ElementId, Entity, FontWeight, IntoElement, KeyboardType, MouseButton,
-    ParentElement, RenderOnce, SharedString, Styled, Subscription, Window, div, prelude::*,
+    App, Context, ElementId, Entity, FontWeight, IntoElement, MouseButton, ParentElement,
+    RenderOnce, SharedString, Styled, Subscription, Window, div, prelude::*,
 };
 
 use super::{InputEvent, TextInput};
@@ -74,11 +74,6 @@ impl RenderOnce for PinInput {
             let input = cx.new(|cx| {
                 TextInput::new(window, cx)
                     .max_len(length)
-                    .keyboard_type(if letters {
-                        KeyboardType::Default
-                    } else {
-                        KeyboardType::NumberPad
-                    })
                     .filter(move |ch| ch.is_ascii_digit() || (letters && ch.is_ascii_alphabetic()))
             });
             let events = cx.subscribe_in(&input, window, |pin, input, event, window, cx| {
@@ -98,15 +93,8 @@ impl RenderOnce for PinInput {
                 _events: events,
             }
         });
-        let keyboard_type = if letters {
-            KeyboardType::Default
-        } else {
-            KeyboardType::NumberPad
-        };
         state.update(cx, |pin, cx| {
             pin.on_complete = self.on_complete.clone();
-            pin.input
-                .update(cx, |field, cx| field.set_keyboard_type(keyboard_type, cx));
             if pin.attempt != attempt {
                 pin.attempt = attempt;
                 log::info!("pin input: cleared for attempt {attempt}");
@@ -114,8 +102,6 @@ impl RenderOnce for PinInput {
             }
         });
         let input = state.read(cx).input.clone();
-        #[cfg(all(test, feature = "test-support"))]
-        keyboard_hint_tests::record(self.id.clone(), input.clone());
         let (code, focused, caret_on) = {
             let field = input.read(cx);
             (
@@ -191,6 +177,3 @@ impl RenderOnce for PinInput {
             .child(div().absolute().inset_0().opacity(0.0).child(input))
     }
 }
-
-#[cfg(all(test, feature = "test-support"))]
-mod keyboard_hint_tests;

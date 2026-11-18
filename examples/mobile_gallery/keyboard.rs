@@ -139,7 +139,7 @@ impl super::MobileGallery {
                 viewport,
                 window.fully_visible_bounds(),
             );
-            window.after_next_paint(move |window, cx| {
+            window.on_next_frame(move |window, cx| {
                 let _ = weak.update(cx, |view, cx| {
                     view.reveal_pending = false;
                     let keyboard = keyboard_occlusion(

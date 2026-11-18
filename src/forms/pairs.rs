@@ -220,7 +220,7 @@ fn render_rows(id: &ElementId, state: Entity<Rows>, add: &'static str, cx: &App)
                 rows.push(&[], window, cx);
                 let last = rows.rows.last().expect("just pushed");
                 let field = last[0].0.clone();
-                window.after_next_paint(move |window, cx| {
+                window.on_next_frame(move |window, cx| {
                     pending.update(cx, |rows, cx| {
                         let Some(index) = rows.rows.iter().position(|row| row[0].0 == field) else {
                             return;

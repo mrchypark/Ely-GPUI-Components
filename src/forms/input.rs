@@ -296,9 +296,8 @@ impl RenderOnce for PasswordInput {
 #[cfg(all(test, feature = "test-support"))]
 mod password_tests {
     use gpui::{
-        AppContext as _, Context, Entity, EntityInputHandler, InteractiveElement, IntoElement,
-        Modifiers, ParentElement, Render, TestAppContext, TextInputConfiguration,
-        VisualTestContext, Window, div, point, px,
+        AppContext as _, Context, Entity, InteractiveElement, IntoElement, Modifiers,
+        ParentElement, Render, TestAppContext, VisualTestContext, Window, div, point, px,
     };
 
     use super::{Input, PasswordInput, TextInput};
@@ -338,17 +337,6 @@ mod password_tests {
         cx.run_until_parked();
     }
 
-    fn configuration(
-        input: &Entity<TextInput>,
-        cx: &mut VisualTestContext,
-    ) -> TextInputConfiguration {
-        cx.update(|window, cx| {
-            input.update(cx, |input, cx| {
-                EntityInputHandler::text_input_configuration(input, window, cx)
-            })
-        })
-    }
-
     #[gpui::test]
     fn ordinary_text_state_becomes_secure_on_first_password_render(cx: &mut TestAppContext) {
         cx.update(|cx| {
@@ -364,14 +352,14 @@ mod password_tests {
         draw(cx);
 
         assert!(input.read_with(cx, |input, _| input.is_masked()));
-        assert!(configuration(&input, cx).secure);
+        assert!(input.read_with(cx, |input, _| input.is_secure()));
 
         let eye = cx
             .debug_bounds("password-visibility")
             .expect("password eye");
         cx.simulate_click(eye.center(), Modifiers::none());
         assert!(!input.read_with(cx, |input, _| input.is_masked()));
-        assert!(configuration(&input, cx).secure);
+        assert!(input.read_with(cx, |input, _| input.is_secure()));
 
         view.update(cx, |view, cx| {
             view.mode = Mode::Hidden;
@@ -384,7 +372,7 @@ mod password_tests {
         });
         draw(cx);
         assert!(input.read_with(cx, |input, _| input.is_masked()));
-        assert!(configuration(&input, cx).secure);
+        assert!(input.read_with(cx, |input, _| input.is_secure()));
 
         view.update(cx, |view, cx| {
             view.mode = Mode::Plain;
@@ -392,7 +380,7 @@ mod password_tests {
         });
         draw(cx);
         assert!(!input.read_with(cx, |input, _| input.is_masked()));
-        assert!(!configuration(&input, cx).secure);
+        assert!(!input.read_with(cx, |input, _| input.is_secure()));
     }
 
     #[gpui::test]
@@ -409,14 +397,14 @@ mod password_tests {
         draw(cx);
 
         assert!(input.read_with(cx, |input, _| input.is_masked()));
-        assert!(configuration(&input, cx).secure);
+        assert!(input.read_with(cx, |input, _| input.is_secure()));
         view.update(cx, |view, cx| {
             view.mode = Mode::Plain;
             cx.notify();
         });
         draw(cx);
         assert!(input.read_with(cx, |input, _| input.is_masked()));
-        assert!(configuration(&input, cx).secure);
+        assert!(input.read_with(cx, |input, _| input.is_secure()));
     }
 
     #[gpui::test]
@@ -442,7 +430,7 @@ mod password_tests {
         draw(cx);
 
         assert!(input.read_with(cx, |input, _| input.is_masked()));
-        assert!(configuration(&input, cx).secure);
+        assert!(input.read_with(cx, |input, _| input.is_secure()));
     }
 
     #[test]

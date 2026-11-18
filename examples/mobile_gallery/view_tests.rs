@@ -88,7 +88,7 @@ fn focused_palette_keyboard_does_not_scroll_gallery(cx: &mut TestAppContext) {
         let focused = window.focused(cx).unwrap();
         let other = cx.focus_handle();
         let stale_seen = stale_seen.clone();
-        window.after_next_paint(move |window, cx| {
+        window.on_next_frame(move |window, cx| {
             window.focus(&other, cx);
             window.focus(&focused, cx);
             stale_seen.set(window.focused_text_input_geometry().is_none());
